@@ -559,7 +559,7 @@ export function App() {
   // An illegal selection disables Play upfront — no tap needed to find out.
   const selectionInvalid = validation != null && !validation.ok;
   const selectionReason = selectionInvalid
-    ? reasonText(validation.reason ?? null)
+    ? reasonText(validation.reason ?? null, state.activeSuit)
     : null;
 
   const toggleSelect = (card: Card) => {
@@ -591,7 +591,7 @@ export function App() {
         setSuitPickerFor(null);
         setSuperPickerFor(null);
       }
-      flash(reasonText(r.reason ?? null));
+      flash(reasonText(r.reason ?? null, state.activeSuit));
       bump();
       return;
     }
@@ -805,7 +805,7 @@ export function App() {
             topLabel: cardLabel(top),
             selectedCount: selectedCards.length,
             comboValid: validation ? validation.ok : null,
-            invalidReason: validation && !validation.ok ? reasonText(validation.reason ?? null) : null,
+            invalidReason: validation && !validation.ok ? reasonText(validation.reason ?? null, state.activeSuit) : null,
             legalCount: hints.size,
             kadiReady: canDeclareKadi(state, 0) && shouldDeclareKadi(state, 0),
           })}
@@ -924,14 +924,29 @@ export function App() {
   );
 }
 
-function reasonText(reason: string | null): string {
+function reasonText(reason: string | null, activeSuit?: Suit | null): string {
   switch (reason) {
     case "NO_MATCH":
+      if (activeSuit) {
+        const glyph =
+          activeSuit === "hearts"
+            ? "♥"
+            : activeSuit === "diamonds"
+              ? "♦"
+              : activeSuit === "spades"
+                ? "♠"
+                : "♣";
+        const name =
+          activeSuit.charAt(0).toUpperCase() + activeSuit.slice(1);
+        return `Must follow ${name} ${glyph} — Ace called it.`;
+      }
       return "Must match suit or rank of the top card.";
     case "QUESTION_NEEDS_ANSWER":
       return "Q / 8 needs a same-suit answer (4 5 6 7 9 10) in the same move.";
     case "PENALTY_MUST_STACK_OR_BLOCK":
-      return "Only a matching 2 / 3 / Joker, or an Ace, answers a penalty.";
+      return "2 / 3 / Joker only stack with other penalties — never with normal cards. Stack, block with Ace, or eat.";
+    case "ACE_ONLY_STACKS_WITH_ACE":
+      return "An Ace plays solo or with another Ace — never stacked with normal cards.";
     case "SKIP_MUST_COUNTER_OR_ACCEPT":
       return "Jump! Counter with your own J or accept the skip.";
     case "UNMET_REQUEST":

@@ -8,6 +8,7 @@ import { advanceTurn, drawCards, topCard, type GameState } from './state';
 export type InvalidReason =
   | 'NOT_YOUR_TURN' | 'CARD_NOT_IN_HAND' | 'GAME_OVER'
   | 'NO_MATCH' | 'QUESTION_NEEDS_ANSWER' | 'PENALTY_MUST_STACK_OR_BLOCK'
+  | 'ACE_ONLY_STACKS_WITH_ACE'
   | 'SKIP_MUST_COUNTER_OR_ACCEPT' | 'CANNOT_WIN_YET' | 'UNMET_REQUEST';
 
 export interface ComboCheck {
@@ -95,6 +96,19 @@ export function penaltyAnswerOk(card: Card, table: Card, config: RulesConfig): b
     return colorFamilyOf(card) === colorFamilyOf(table);
   }
   return card.rank === table.rank || card.suit === table.suit;
+}
+
+/** Penalty cards (2/3/Joker) never mix with normal cards in one combo. */
+function mixesPenaltyWithNormal(cards: Card[], config: RulesConfig): boolean {
+  return (
+    cards.some((c) => isPenaltyRank(c.rank, config)) &&
+    !cards.every((c) => isPenaltyRank(c.rank, config))
+  );
+}
+
+/** An Ace plays solo or stacks only with other Aces — never with normal cards. */
+function mixesAceWithNonAce(cards: Card[]): boolean {
+  return cards.some((c) => c.rank === 'A') && !cards.every((c) => c.rank === 'A');
 }
 
 /** Chained cards must connect to previous by suit-or-rank (Ace/Joker wild connect). */
@@ -206,6 +220,12 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
     const isExact = first.rank === req.rank && first.suit === req.suit;
     const isAce = first.rank === 'A';
     if (!isExact && !isAce) return { ok: false, reason: 'UNMET_REQUEST' };
+    if (mixesAceWithNonAce(cards)) {
+      return { ok: false, reason: 'ACE_ONLY_STACKS_WITH_ACE' };
+    }
+    if (mixesPenaltyWithNormal(cards, config)) {
+      return { ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' };
+    }
     const links = validateChainLinks(cards);
     if (!links.ok) return links;
     // An unanswered question here is legal too — draw obligation applies.
@@ -215,6 +235,15 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
   // Normal: first card matches top.
   if (!singleMatchesTop(cards[0], state)) return { ok: false, reason: 'NO_MATCH' };
 
+  // An Ace plays solo or with Aces only — A + 10 is never a combo, even suited.
+  if (mixesAceWithNonAce(cards)) {
+    return { ok: false, reason: 'ACE_ONLY_STACKS_WITH_ACE' };
+  }
+  // A penalty card only stacks with other penalties — never with normal cards,
+  // even when the suits connect. Eat the debt first, then resume normal play.
+  if (mixesPenaltyWithNormal(cards, config)) {
+    return { ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' };
+  }
   const links = validateChainLinks(cards);
   if (!links.ok) return links;
   // An unanswered question is legal — the obligation is to draw (see playCombo),

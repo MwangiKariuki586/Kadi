@@ -58,7 +58,8 @@ export function createGame({ numPlayers, config = STANDARD_MAUA, random = Math.r
   const [starter] = deck.splice(starterIndex, 1);
 
   return {
-    config,
+    // Copy: games must never alias (and pollute) the shared preset objects.
+    config: { ...config },
     hands,
     drawPile: deck,
     discardPile: [starter],
