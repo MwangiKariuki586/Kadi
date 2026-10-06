@@ -291,7 +291,7 @@ export function EventBanner({ events }: { events: FeedEvent[] }) {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        class={`w-full rounded-xl bg-black/40 border ${TONE_BAR[latest.tone]} px-3 py-1.5 text-left active:scale-[0.99] transition`}
+        class={`w-full rounded-xl bg-black/40 border ${TONE_BAR[latest.tone]} px-3 py-1.5 text-center active:scale-[0.99] transition`}
       >
         {previous && (
           <span class="block truncate text-[11px] text-white/55">
@@ -300,10 +300,10 @@ export function EventBanner({ events }: { events: FeedEvent[] }) {
         )}
         <span
           key={events.length}
-          class="anim-fly-in flex items-center gap-1.5 text-xs text-white/90"
+          class="anim-fly-in flex items-center justify-center gap-1.5 text-xs text-white/90"
         >
           <span>{latest.icon}</span>
-          <span class="flex-1">{latest.text}</span>
+          <span class="flex-1 text-center">{latest.text}</span>
           <span class="text-white/40 text-[10px]">
             {open ? "▲" : `📜 ${events.length}`}
           </span>
@@ -471,5 +471,33 @@ export function QuitConfirmModal({
         </button>
       </div>
     </div>
+  );
+}
+
+/** Arcade-style 3D buzzer for declaring Kadi — chrome ring, glossy red dome. */
+export function KadiBuzzer({
+  urgent,
+  onPress,
+}: {
+  urgent: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onPress}
+      aria-label="Declare Kadi"
+      class={`kadi-buzzer ${urgent ? "kadi-buzzer-urgent" : "kadi-buzzer-idle"}`}
+    >
+      <span class="kadi-buzzer-shadow" aria-hidden="true" />
+      <span class="kadi-buzzer-base" aria-hidden="true">
+        <span class="kadi-buzzer-dome" aria-hidden="true">
+          <span class="kadi-buzzer-gloss" aria-hidden="true" />
+          <span class="kadi-buzzer-label" aria-hidden="true">
+            KADI!
+          </span>
+        </span>
+      </span>
+    </button>
   );
 }

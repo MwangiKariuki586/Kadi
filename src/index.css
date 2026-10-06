@@ -40,14 +40,101 @@ html, body {
   50% { transform: scale(1.04); }
   100% { transform: scale(1); }
 }
+@keyframes kadi-buzzer-pulse {
+  0%, 100% { box-shadow: 0 6px 14px rgba(0, 0, 0, 0.55), 0 0 0 0 rgba(239, 43, 32, 0.55); }
+  50% { box-shadow: 0 6px 14px rgba(0, 0, 0, 0.55), 0 0 0 12px rgba(239, 43, 32, 0); }
+}
+@keyframes kadi-buzzer-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
 
 .anim-fly-in { animation: kadi-fly-in 280ms ease-out; }
 .anim-kadi-glow { animation: kadi-pulse-glow 1.6s ease-in-out infinite; }
 .anim-shake { animation: kadi-shake 220ms ease-in-out 2; }
 .anim-fanfare { animation: kadi-fanfare 350ms ease-out; }
 
+/* Arcade buzzer — chrome base ring, glossy red dome, floor reflection */
+.kadi-buzzer {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 120ms ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+.kadi-buzzer:focus-visible {
+  outline: 3px solid #facc15;
+  outline-offset: 3px;
+}
+.kadi-buzzer:active { transform: translateY(3px) scale(0.97); }
+.kadi-buzzer:active .kadi-buzzer-dome { filter: brightness(0.82); }
+.kadi-buzzer-shadow {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: -7px;
+  height: 14px;
+  border-radius: 9999px;
+  background: radial-gradient(ellipse at center, rgba(239, 43, 32, 0.45), rgba(0, 0, 0, 0.5) 70%);
+  filter: blur(3px);
+}
+.kadi-buzzer-base {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(from 210deg, #f8fafc, #94a3b8, #e2e8f0, #64748b, #f1f5f9, #94a3b8, #f8fafc);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.55), inset 0 2px 3px rgba(255, 255, 255, 0.8), inset 0 -3px 6px rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.kadi-buzzer-dome {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 35% 28%, #ffc9c2 0%, #ff6b5e 18%, #ef2b20 42%, #b0140c 72%, #7a0d08 100%);
+  box-shadow: inset 0 -6px 10px rgba(0, 0, 0, 0.45), inset 0 4px 8px rgba(255, 255, 255, 0.45), 0 3px 6px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.kadi-buzzer-idle .kadi-buzzer-dome { filter: saturate(0.55) brightness(0.8); }
+.kadi-buzzer-urgent .kadi-buzzer-base { animation: kadi-buzzer-pulse 1.6s ease-in-out infinite; }
+.kadi-buzzer-urgent .kadi-buzzer-dome { animation: kadi-buzzer-breathe 1.6s ease-in-out infinite; }
+.kadi-buzzer-gloss {
+  position: absolute;
+  top: 5%;
+  left: 12%;
+  width: 56%;
+  height: 32%;
+  border-radius: 9999px;
+  background: linear-gradient(rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0));
+  transform: rotate(-18deg);
+  filter: blur(1px);
+  pointer-events: none;
+}
+.kadi-buzzer-label {
+  position: relative;
+  z-index: 1;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: #fff;
+  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.65);
+  pointer-events: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .anim-fly-in, .anim-kadi-glow, .anim-shake, .anim-fanfare {
+  .anim-fly-in, .anim-kadi-glow, .anim-shake, .anim-fanfare,
+  .kadi-buzzer-urgent .kadi-buzzer-base, .kadi-buzzer-urgent .kadi-buzzer-dome {
     animation: none;
   }
 }

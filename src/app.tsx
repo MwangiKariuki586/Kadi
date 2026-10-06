@@ -27,6 +27,7 @@ import {
   CardView,
   CoachBar,
   EventBanner,
+  KadiBuzzer,
   Pill,
   QuitConfirmModal,
   SuitPicker,
@@ -848,24 +849,31 @@ export function App() {
       )}
 
       {/* hand */}
-      <div class="flex-1 flex items-end justify-center px-4 pb-2 overflow-x-auto">
-        <div class="flex" style={{ paddingLeft: 8 }}>
-          {myHand.map((c) => (
-            <div key={c.id} class="-ml-4 first:ml-0">
-              <CardView
-                card={c}
-                selected={selected.includes(c.id)}
-                order={selectedOrder.get(c.id) ?? null}
-                hint={hints.has(c.id) && selected.length === 0}
-                onClick={() => toggleSelect(c)}
-              />
-            </div>
-          ))}
-          {myHand.length === 0 && (
-            <p class="text-white/60 text-sm pb-6">
-              Cardless — you'll pick on your turn.
-            </p>
-          )}
+      <div class="flex-1 flex flex-col justify-end px-4 pb-2">
+        {canDeclareKadi(state, 0) && !state.gameOver && (
+          <div class="flex flex-1 items-center justify-center py-3 anim-fly-in">
+            <KadiBuzzer urgent={shouldDeclareKadi(state, 0)} onPress={onKadi} />
+          </div>
+        )}
+        <div class="flex justify-center overflow-x-auto">
+          <div class="flex" style={{ paddingLeft: 8 }}>
+            {myHand.map((c) => (
+              <div key={c.id} class="-ml-4 first:ml-0">
+                <CardView
+                  card={c}
+                  selected={selected.includes(c.id)}
+                  order={selectedOrder.get(c.id) ?? null}
+                  hint={hints.has(c.id) && selected.length === 0}
+                  onClick={() => toggleSelect(c)}
+                />
+              </div>
+            ))}
+            {myHand.length === 0 && (
+              <p class="text-white/60 text-sm pb-6">
+                Cardless — you'll pick on your turn.
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -890,15 +898,6 @@ export function App() {
                 ? "Accept reverse"
                 : "Pick"}
         </button>
-        {canDeclareKadi(state, 0) && !state.gameOver && (
-          <button
-            type="button"
-            onClick={onKadi}
-            class={`rounded-2xl px-4 py-3.5 text-sm font-black ${shouldDeclareKadi(state, 0) ? "bg-yellow-400 text-gray-900 anim-kadi-glow" : "bg-white/10"}`}
-          >
-            Kadi!
-          </button>
-        )}
         <button
           type="button"
           onClick={onPlayPress}
