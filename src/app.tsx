@@ -702,7 +702,8 @@ export function App() {
       )}
       {confirmQuit && !state.gameOver && (
         <QuitConfirmModal
-          onKeepPlaying={() => setConfirmQuit(false)}
+          onClose={() => setConfirmQuit(false)}
+          onExit={() => quitToHome(true)}
           onSaveExit={() => quitToHome(false)}
         />
       )}
