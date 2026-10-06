@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  margin: 0;
+  overscroll-behavior: none;
+  background: #052e16;
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#app {
+  min-height: 100svh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Card play / pick animations — GPU-friendly transforms only */
+@keyframes kadi-fly-in {
+  from { transform: translateY(24px) scale(0.92); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes kadi-pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.55); }
+  50% { box-shadow: 0 0 0 10px rgba(250, 204, 21, 0); }
+}
+@keyframes kadi-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+@keyframes kadi-fanfare {
+  0% { transform: scale(0.9); }
+  50% { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+
+.anim-fly-in { animation: kadi-fly-in 280ms ease-out; }
+.anim-kadi-glow { animation: kadi-pulse-glow 1.6s ease-in-out infinite; }
+.anim-shake { animation: kadi-shake 220ms ease-in-out 2; }
+.anim-fanfare { animation: kadi-fanfare 350ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-fly-in, .anim-kadi-glow, .anim-shake, .anim-fanfare {
+    animation: none;
+  }
+}
+
+.card-btn {
+  touch-action: manipulation;
+  transition: transform 140ms ease-out;
+}
+.card-btn:active { transform: translateY(2px) scale(0.98); }
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
