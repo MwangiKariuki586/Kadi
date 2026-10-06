@@ -573,6 +573,16 @@ export function App() {
   const top = topCard(state);
   const myHand = state.hands[0];
   const myTurn = state.currentPlayer === 0 && !state.gameOver;
+  // Buzzer states: always rendered, dimmed when unavailable, flashing when live.
+  const kadiOpen = canDeclareKadi(state, 0);
+  const kadiHot = shouldDeclareKadi(state, 0);
+  const kadiTitle = state.kadiCalls[0]
+    ? "KADI already called — go out and finish!"
+    : myHand.length === 0
+      ? "Cardless — nothing to declare with"
+      : kadiHot
+        ? "Niko Kadi! Tap to declare"
+        : "Declare Kadi — call it the turn before you finish";
   const selectedCards = selected.flatMap(
     (id) => myHand.find((c) => c.id === id) ?? [],
   );
@@ -850,9 +860,14 @@ export function App() {
 
       {/* hand */}
       <div class="flex-1 flex flex-col justify-end px-4 pb-2">
-        {canDeclareKadi(state, 0) && !state.gameOver && (
-          <div class="flex flex-1 items-center justify-center py-3 anim-fly-in">
-            <KadiBuzzer urgent={shouldDeclareKadi(state, 0)} onPress={onKadi} />
+        {!state.gameOver && (
+          <div class="flex flex-1 items-center justify-center py-3">
+            <KadiBuzzer
+              urgent={kadiHot}
+              disabled={!kadiOpen}
+              title={kadiTitle}
+              onPress={onKadi}
+            />
           </div>
         )}
         <div class="flex justify-center overflow-x-auto">

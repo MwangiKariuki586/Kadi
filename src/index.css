@@ -107,6 +107,9 @@ html, body {
   overflow: hidden;
 }
 .kadi-buzzer-idle .kadi-buzzer-dome { filter: saturate(0.55) brightness(0.8); }
+.kadi-buzzer-disabled { cursor: not-allowed; }
+.kadi-buzzer-disabled:active { transform: none; }
+.kadi-buzzer-disabled .kadi-buzzer-dome { filter: saturate(0.2) brightness(0.6); animation: none; }
 .kadi-buzzer-urgent .kadi-buzzer-base { animation: kadi-buzzer-pulse 1.6s ease-in-out infinite; }
 .kadi-buzzer-urgent .kadi-buzzer-dome { animation: kadi-buzzer-breathe 1.6s ease-in-out infinite; }
 .kadi-buzzer-gloss {

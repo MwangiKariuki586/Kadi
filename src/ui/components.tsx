@@ -477,17 +477,24 @@ export function QuitConfirmModal({
 /** Arcade-style 3D buzzer for declaring Kadi — chrome ring, glossy red dome. */
 export function KadiBuzzer({
   urgent,
+  disabled,
+  title,
   onPress,
 }: {
   urgent: boolean;
+  disabled?: boolean;
+  title: string;
   onPress: () => void;
 }) {
+  const off = disabled === true;
   return (
     <button
       type="button"
       onClick={onPress}
+      disabled={off}
       aria-label="Declare Kadi"
-      class={`kadi-buzzer ${urgent ? "kadi-buzzer-urgent" : "kadi-buzzer-idle"}`}
+      title={title}
+      class={`kadi-buzzer ${urgent && !off ? "kadi-buzzer-urgent" : "kadi-buzzer-idle"}${off ? " kadi-buzzer-disabled" : ""}`}
     >
       <span class="kadi-buzzer-shadow" aria-hidden="true" />
       <span class="kadi-buzzer-base" aria-hidden="true">
