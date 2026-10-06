@@ -436,121 +436,130 @@ export function App() {
 
   if (screen === "lobby") {
     return (
-      <div class="min-h-dvh bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col px-6 py-8 safe-top safe-bottom">
-        <button
-          type="button"
-          onClick={() => setScreen("home")}
-          class="self-start text-white/60 text-sm"
-        >
-          ← Back
-        </button>
-        <h2 class="mt-2 text-3xl font-black text-yellow-300">New Game</h2>
-
-        <p class="mt-6 text-xs font-bold uppercase tracking-widest text-white/50">
-          Opponents (bots)
-        </p>
-        <div class="mt-2 grid grid-cols-3 gap-2">
-          {[1, 2, 3].map((n) => (
+      <div class="h-dvh overflow-hidden bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col safe-top safe-bottom">
+        <div class="mx-auto flex h-full w-full max-w-md flex-col px-6 pb-4 pt-4">
+          <div class="shrink-0">
             <button
-              key={n}
               type="button"
-              onClick={() => setNumBots(n)}
-              class={`rounded-2xl py-3 font-black ${numBots === n ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"}`}
+              aria-label="Back to home"
+              onClick={() => setScreen("home")}
+              class="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-bold text-white shadow-sm transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-300"
             >
-              {n + 1}P
-              <span class="block text-[10px] font-normal">you + {n} 🤖</span>
+              <span aria-hidden="true">←</span> Back
             </button>
-          ))}
-        </div>
+            <h2 class="mt-2 text-3xl font-black text-yellow-300">New Game</h2>
+          </div>
 
-        <p class="mt-6 text-xs font-bold uppercase tracking-widest text-white/50">
-          Bot smarts
-        </p>
-        <div class="mt-2 grid grid-cols-3 gap-2">
-          {(["easy", "medium", "hard"] as Difficulty[]).map((d) => (
+          <div class="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1">
+            <p class="text-xs font-bold uppercase tracking-widest text-white/50">
+              Opponents (bots)
+            </p>
+            <div class="mt-2 grid grid-cols-3 gap-2">
+              {[1, 2, 3].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setNumBots(n)}
+                  class={`rounded-2xl py-3 font-black ${numBots === n ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"}`}
+                >
+                  {n + 1}P
+                  <span class="block text-[10px] font-normal">you + {n} 🤖</span>
+                </button>
+              ))}
+            </div>
+
+            <p class="mt-5 text-xs font-bold uppercase tracking-widest text-white/50">
+              Bot smarts
+            </p>
+            <div class="mt-2 grid grid-cols-3 gap-2">
+              {(["easy", "medium", "hard"] as Difficulty[]).map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => {
+                    setDifficulty(d);
+                    void store.saveSettings({ difficulty: d });
+                  }}
+                  class={`rounded-2xl py-3 font-bold capitalize ${difficulty === d ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"}`}
+                >
+                  {d === "easy" ? "😌" : d === "medium" ? "🧠" : "🔥"} {d}
+                </button>
+              ))}
+            </div>
+
+            <p class="mt-5 text-xs font-bold uppercase tracking-widest text-white/50">
+              House rules
+            </p>
+            <div class="mt-2 flex flex-col gap-2">
+              {PRESETS.map((p) => (
+                <button
+                  key={p.name}
+                  type="button"
+                  onClick={() => {
+                    setPreset(p);
+                    void store.saveSettings({ presetName: p.name });
+                  }}
+                  class={`rounded-2xl border p-3 text-left ${preset.name === p.name ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-white/5"}`}
+                >
+                  <span class="font-bold text-sm">{p.name}</span>
+                  <span class="block text-[11px] text-white/60 mt-0.5">
+                    {p.jokersEnabled
+                      ? "With Jokers (+5, color-matched)"
+                      : "No Jokers in deck"}{" "}
+                    • {p.dealCount} cards each
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <p class="mt-5 text-xs font-bold uppercase tracking-widest text-white/50">
+              Extra spice
+            </p>
             <button
-              key={d}
               type="button"
               onClick={() => {
-                setDifficulty(d);
-                void store.saveSettings({ difficulty: d });
+                const v = !superAceOn;
+                setSuperAceOn(v);
+                void store.saveSettings({ superAce: v });
               }}
-              class={`rounded-2xl py-3 font-bold capitalize ${difficulty === d ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"}`}
+              class={`mt-2 w-full rounded-2xl border p-3 text-left ${superAceOn ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-white/5"}`}
             >
-              {d === "easy" ? "😌" : d === "medium" ? "🧠" : "🔥"} {d}
-            </button>
-          ))}
-        </div>
-
-        <p class="mt-6 text-xs font-bold uppercase tracking-widest text-white/50">
-          House rules
-        </p>
-        <div class="mt-2 flex flex-col gap-2">
-          {PRESETS.map((p) => (
-            <button
-              key={p.name}
-              type="button"
-              onClick={() => {
-                setPreset(p);
-                void store.saveSettings({ presetName: p.name });
-              }}
-              class={`rounded-2xl border p-3 text-left ${preset.name === p.name ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-white/5"}`}
-            >
-              <span class="font-bold text-sm">{p.name}</span>
+              <span class="font-bold text-sm">
+                ⚡ Special Ace {superAceOn ? "(on)" : "(off)"}
+              </span>
               <span class="block text-[11px] text-white/60 mt-0.5">
-                {p.jokersEnabled
-                  ? "With Jokers (+5, color-matched)"
-                  : "No Jokers in deck"}{" "}
-                • {p.dealCount} cards each
+                A♠ alone demands an exact card. Stacked Aces always can — answer
+                it, lift it with a lone Ace (suit stays), or pick.
               </span>
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => {
+                const v = !strictOn;
+                setStrictOn(v);
+                void store.saveSettings({ strict: v });
+              }}
+              class={`mt-2 w-full rounded-2xl border p-3 text-left ${strictOn ? "border-red-400 bg-red-400/10" : "border-white/10 bg-white/5"}`}
+            >
+              <span class="font-bold text-sm">
+                🚨 Strict table {strictOn ? "(on)" : "(off)"}
+              </span>
+              <span class="block text-[11px] text-white/60 mt-0.5">
+                Wrong plays are fined +1 and turn passes. Off: Play blocks them free.
+              </span>
+            </button>
+          </div>
+
+          <div class="shrink-0 border-t border-white/10 pt-3">
+            <button
+              type="button"
+              onClick={startGame}
+              class="w-full rounded-2xl bg-yellow-400 py-4 text-xl font-black text-gray-900 shadow-xl active:scale-95 transition"
+            >
+              Deal me in 🂡
+            </button>
+          </div>
         </div>
-
-        <p class="mt-6 text-xs font-bold uppercase tracking-widest text-white/50">
-          Extra spice
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            const v = !superAceOn;
-            setSuperAceOn(v);
-            void store.saveSettings({ superAce: v });
-          }}
-          class={`mt-2 w-full rounded-2xl border p-3 text-left ${superAceOn ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-white/5"}`}
-        >
-          <span class="font-bold text-sm">
-            ⚡ Special Ace {superAceOn ? "(on)" : "(off)"}
-          </span>
-          <span class="block text-[11px] text-white/60 mt-0.5">
-            A♠ alone demands an exact card. Stacked Aces always can — answer
-            it, lift it with a lone Ace (suit stays), or pick.
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            const v = !strictOn;
-            setStrictOn(v);
-            void store.saveSettings({ strict: v });
-          }}
-          class={`mt-2 w-full rounded-2xl border p-3 text-left ${strictOn ? "border-red-400 bg-red-400/10" : "border-white/10 bg-white/5"}`}
-        >
-          <span class="font-bold text-sm">
-            🚨 Strict table {strictOn ? "(on)" : "(off)"}
-          </span>
-          <span class="block text-[11px] text-white/60 mt-0.5">
-            Wrong plays are fined +1 and turn passes. Off: Play blocks them free.
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={startGame}
-          class="mt-8 w-full rounded-2xl bg-yellow-400 py-4 text-xl font-black text-gray-900 shadow-xl active:scale-95 transition"
-        >
-          Deal me in 🂡
-        </button>
       </div>
     );
   }
