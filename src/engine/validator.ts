@@ -8,7 +8,7 @@ import { advanceTurn, drawCards, topCard, type GameState } from './state';
 export type InvalidReason =
   | 'NOT_YOUR_TURN' | 'CARD_NOT_IN_HAND' | 'GAME_OVER'
   | 'NO_MATCH' | 'QUESTION_NEEDS_ANSWER' | 'PENALTY_MUST_STACK_OR_BLOCK'
-  | 'ACE_ONLY_STACKS_WITH_ACE'
+  | 'ACE_ONLY_STACKS_WITH_ACE' | 'MUST_BE_SAME_RANK'
   | 'SKIP_MUST_COUNTER_OR_ACCEPT' | 'CANNOT_WIN_YET' | 'UNMET_REQUEST';
 
 export interface ComboCheck {
@@ -109,6 +109,34 @@ function mixesPenaltyWithNormal(cards: Card[], config: RulesConfig): boolean {
 /** An Ace plays solo or stacks only with other Aces — never with normal cards. */
 function mixesAceWithNonAce(cards: Card[]): boolean {
   return cards.some((c) => c.rank === 'A') && !cards.every((c) => c.rank === 'A');
+}
+
+/**
+ * Free-play combo shape: every card shares one rank (first matches the top,
+ * rest match rank, any suit) — except J/K family stacks together, and a
+ * question leads same-suit winning answers (4 5 6 7 9 10) only. Returns a
+ * rejection, or null when the shape is acceptable (suit/rank chaining and
+ * question closure are validated separately by the caller).
+ */
+function checkComboShape(cards: Card[], state: GameState): ComboCheck | null {
+  const { config } = state;
+  const allSameRank = cards.every((c) => c.rank === cards[0].rank);
+  const allJumpKickback = cards.every(
+    (c) => isJumpRank(c.rank, config) || isKickbackRank(c.rank, config),
+  );
+  const questionLed = rankNeedsAnswer(cards[0].rank, state);
+  if (!allSameRank && !allJumpKickback && !questionLed) {
+    return { ok: false, reason: 'MUST_BE_SAME_RANK' };
+  }
+  if (questionLed && !allSameRank) {
+    for (const c of cards.slice(1)) {
+      if (!isWinningRank(c.rank, config)) return { ok: false, reason: 'MUST_BE_SAME_RANK' };
+      if (config.mustAnswerSameSuit && c.suit !== cards[0].suit) {
+        return { ok: false, reason: 'MUST_BE_SAME_RANK' };
+      }
+    }
+  }
+  return null;
 }
 
 /** Chained cards must connect to previous by suit-or-rank (Ace/Joker wild connect). */
@@ -226,6 +254,8 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
     if (mixesPenaltyWithNormal(cards, config)) {
       return { ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' };
     }
+    const shapeReq = checkComboShape(cards, state);
+    if (shapeReq) return shapeReq;
     const links = validateChainLinks(cards);
     if (!links.ok) return links;
     // An unanswered question here is legal too — draw obligation applies.
@@ -244,6 +274,9 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
   if (mixesPenaltyWithNormal(cards, config)) {
     return { ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' };
   }
+  // Same-rank stacks (J/K family together; questions take same-suit answers).
+  const shape = checkComboShape(cards, state);
+  if (shape) return shape;
   const links = validateChainLinks(cards);
   if (!links.ok) return links;
   // An unanswered question is legal — the obligation is to draw (see playCombo),

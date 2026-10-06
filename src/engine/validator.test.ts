@@ -110,13 +110,19 @@ describe('question + answer', () => {
     expect(r0.becameCardless).toBe(true);
   });
 
-  it('stacked open questions draw once', () => {
+  it('cross-rank question stacks are illegal; same-rank questions draw once', () => {
     const q1 = C('Q', 'hearts', 'q1');
-    const q2 = C('8', 'hearts', 'q2');
+    const q2 = C('Q', 'spades', 'q2');
+    const eight = C('8', 'hearts', 'e1');
+    // Q + 8 (different ranks) is no longer a combo — answers are 4 5 6 7 9 10.
+    const sA = rigged([q1, eight], C('Q', 'spades'), [C('4', 'clubs')]);
+    expect(validateCombo([q1, eight], sA, 0)).toMatchObject({ ok: false, reason: 'MUST_BE_SAME_RANK' });
+    // Same-rank Q + Q stays legal and draws once for the open questions.
     const s = rigged([q1, q2, C('4', 'clubs', 'k')], C('Q', 'spades'));
     expect(validateCombo([q1, q2], s, 0).ok).toBe(true);
+    const before = s.hands[0].length;
     playCombo(s, 0, [q1, q2]);
-    expect(s.hands[0].length).toBe(2); // played 2, drew 1 → 3 - 2 + 1
+    expect(s.hands[0].length).toBe(before - 1); // played 2, drew 1
   });
 
   it('custom obligation count is respected', () => {
@@ -188,11 +194,19 @@ describe('penalties', () => {
     expect(s2.pendingPenalty).toBe(5);
   });
 
-  it('free play: pure normal stacks still work (suit chain, Q + answer)', () => {
+  it('free play: cross-rank normal chains are illegal (same rank or Q-answer only)', () => {
     const six = C('6', 'hearts', 'n1');
     const five = C('5', 'hearts', 'n2');
     const s = rigged([six, five], C('9', 'hearts'), [C('4', 'clubs')]);
-    expect(validateCombo([six, five], s, 0).ok).toBe(true);
+    expect(validateCombo([six, five], s, 0)).toMatchObject({ ok: false, reason: 'MUST_BE_SAME_RANK' });
+    expect(validateCombo([five, six], s, 0)).toMatchObject({ ok: false, reason: 'MUST_BE_SAME_RANK' });
+    expect(playCombo(s, 0, [six, five])).toMatchObject({ ok: false });
+    // Same-rank stack, any suits — first matches top, rest match rank.
+    const seven = C('7', 'spades', 'n3');
+    const sevenH = C('7', 'hearts', 'n4');
+    const s2 = rigged([seven, sevenH], C('9', 'spades'), [C('4', 'clubs')]);
+    expect(validateCombo([seven, sevenH], s2, 0).ok).toBe(true);
+    // Question + same-suit answer still closes.
     const q = C('Q', 'hearts', 'q1');
     const ans = C('5', 'hearts', 'a1');
     const s3 = rigged([q, ans], C('9', 'hearts'), [C('4', 'clubs')]);

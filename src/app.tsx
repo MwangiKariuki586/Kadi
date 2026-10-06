@@ -947,6 +947,8 @@ function reasonText(reason: string | null, activeSuit?: Suit | null): string {
       return "2 / 3 / Joker only stack with other penalties — never with normal cards. Stack, block with Ace, or eat.";
     case "ACE_ONLY_STACKS_WITH_ACE":
       return "An Ace plays solo or with another Ace — never stacked with normal cards.";
+    case "MUST_BE_SAME_RANK":
+      return "Combos share one rank — e.g. 7♥ + 7♠. Questions pair with same-suit answers (4 5 6 7 9 10); J/K stack together.";
     case "SKIP_MUST_COUNTER_OR_ACCEPT":
       return "Jump! Counter with your own J or accept the skip.";
     case "UNMET_REQUEST":
