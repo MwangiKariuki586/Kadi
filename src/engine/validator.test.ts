@@ -110,19 +110,27 @@ describe('question + answer', () => {
     expect(r0.becameCardless).toBe(true);
   });
 
-  it('cross-rank question stacks are illegal; same-rank questions draw once', () => {
-    const q1 = C('Q', 'hearts', 'q1');
-    const q2 = C('Q', 'spades', 'q2');
-    const eight = C('8', 'hearts', 'e1');
-    // Q + 8 (different ranks) is no longer a combo — answers are 4 5 6 7 9 10.
-    const sA = rigged([q1, eight], C('Q', 'spades'), [C('4', 'clubs')]);
-    expect(validateCombo([q1, eight], sA, 0)).toMatchObject({ ok: false, reason: 'MUST_BE_SAME_RANK' });
+  it('questions stack across ranks; the answer must match the last question', () => {
+    const qh = C('Q', 'hearts', 'q1');
+    const qs = C('Q', 'spades', 'q2');
+    const eightH = C('8', 'hearts', 'e1');
+    const nineS = C('9', 'spades', 'a1');
+    const nineH = C('9', 'hearts', 'a2');
+    // Q + matching 8 stacks and stays open (draws once).
+    const sA = rigged([qh, eightH], C('Q', 'spades'), [C('4', 'clubs')]);
+    expect(validateCombo([qh, eightH], sA, 0).ok).toBe(true);
     // Same-rank Q + Q stays legal and draws once for the open questions.
-    const s = rigged([q1, q2, C('4', 'clubs', 'k')], C('Q', 'spades'));
-    expect(validateCombo([q1, q2], s, 0).ok).toBe(true);
+    const s = rigged([qh, qs, C('4', 'clubs', 'k')], C('Q', 'spades'));
+    expect(validateCombo([qh, qs], s, 0).ok).toBe(true);
     const before = s.hands[0].length;
-    playCombo(s, 0, [q1, q2]);
+    playCombo(s, 0, [qh, qs]);
     expect(s.hands[0].length).toBe(before - 1); // played 2, drew 1
+    // Screenshot repro: Q♥ + Q♠ + 9♠ closes on the last question — legal.
+    const sB = rigged([qh, qs, nineS], C('3', 'hearts'), [C('4', 'clubs')]);
+    expect(validateCombo([qh, qs, nineS], sB, 0).ok).toBe(true);
+    // Answer matching the first question instead of the last stays illegal.
+    const sC = rigged([qh, qs, nineH], C('3', 'hearts'), [C('4', 'clubs')]);
+    expect(validateCombo([qh, qs, nineH], sC, 0)).toMatchObject({ ok: false, reason: 'MUST_BE_SAME_RANK' });
   });
 
   it('custom obligation count is respected', () => {

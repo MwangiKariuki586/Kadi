@@ -26,7 +26,7 @@ export interface RulesConfig {
   kickbackRanks: Rank[];
   kickbackCounterable: boolean;
   questionRanks: Rank[];
-  /** Question must be followed by same-suit answer in the same combo. */
+  /** Stacked questions (Q/8) are closed by a same-suit answer to the last open question. */
   mustAnswerSameSuit: boolean;
   /** Asking a question without an answer is legal but draws this many cards. */
   unansweredQuestionPickCount: number;

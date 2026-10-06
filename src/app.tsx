@@ -393,7 +393,7 @@ export function App() {
               </p>
               <p class="mt-2">
                 🃏 Match <b>suit or rank</b>. J = Jump (skip) • K = reverse •
-                Q/8 = question — pair a same-suit answer or pick 1 • A blocks
+                Q/8 = question — stack Qs/8s, answer matches the last one or pick 1 • A blocks
                 2/3 (no call) • played freely, A requests a suit • 2/3 = pick
                 2/3 (answer to forward, latest count stands).
               </p>
@@ -1000,7 +1000,7 @@ function reasonText(reason: string | null, activeSuit?: Suit | null): string {
     case "ACE_ONLY_STACKS_WITH_ACE":
       return "An Ace plays solo or with another Ace — never stacked with normal cards.";
     case "MUST_BE_SAME_RANK":
-      return "Combos share one rank — e.g. 7♥ + 7♠. Questions pair with same-suit answers (4 5 6 7 9 10); J/K stack together.";
+      return "Combos share one rank — e.g. 7♥ + 7♠. Questions stack (Q/8) and the answer matches the last question (4 5 6 7 9 10, same suit); J/K stack together.";
     case "SKIP_MUST_COUNTER_OR_ACCEPT":
       return "Jump! Refuse with any single J to keep your turn, or accept the skip. Stacks can't be refused.";
     case "REVERSE_MUST_COUNTER_OR_ACCEPT":

@@ -114,9 +114,10 @@ function mixesAceWithNonAce(cards: Card[]): boolean {
 /**
  * Free-play combo shape: every card shares one rank (first matches the top,
  * rest match rank, any suit) — except J/K family stacks together, and a
- * question leads same-suit winning answers (4 5 6 7 9 10) only. Returns a
- * rejection, or null when the shape is acceptable (suit/rank chaining and
- * question closure are validated separately by the caller).
+ * question opens a Q/8 chain: questions may stack on questions, winning
+ * answers (4 5 6 7 9 10) close the currently open question and must match
+ * its suit. Returns a rejection, or null when the shape is acceptable
+ * (suit/rank chaining and question closure are validated separately).
  */
 function checkComboShape(cards: Card[], state: GameState): ComboCheck | null {
   const { config } = state;
@@ -128,12 +129,18 @@ function checkComboShape(cards: Card[], state: GameState): ComboCheck | null {
   if (!allSameRank && !allJumpKickback && !questionLed) {
     return { ok: false, reason: 'MUST_BE_SAME_RANK' };
   }
-  if (questionLed && !allSameRank) {
+  if (questionLed && !allSameRank && !allJumpKickback) {
+    let open: Card | null = cards[0];
     for (const c of cards.slice(1)) {
+      if (rankNeedsAnswer(c.rank, state)) {
+        open = c;
+        continue;
+      }
       if (!isWinningRank(c.rank, config)) return { ok: false, reason: 'MUST_BE_SAME_RANK' };
-      if (config.mustAnswerSameSuit && c.suit !== cards[0].suit) {
+      if (config.mustAnswerSameSuit && open && c.suit !== open.suit) {
         return { ok: false, reason: 'MUST_BE_SAME_RANK' };
       }
+      open = null;
     }
   }
   return null;
