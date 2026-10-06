@@ -115,7 +115,7 @@ export class LocalStore implements GameStore {
   }
 
   async loadActiveGame(): Promise<ActiveGameSave | null> {
-    let raw: unknown = null;
+    let raw: unknown;
     try {
       raw = await get('kadi-active-game');
     } catch {
