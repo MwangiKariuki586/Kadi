@@ -159,4 +159,4 @@ channels (~1 write/move for turn-based). Leaderboards/coins only on demand.
      room without reminders — **not built** (see bot loop constant).
   3. *Capacitor wrapper + Play listing* ($25) — deferred.
   4. *Real PNG icons* — currently SVG placeholders (installable, but store-ready art pending).
-  5. *Online multiplayer (v2)* — designed, not built.
+  5. *Online multiplayer (v2)* — designed, not built. 
