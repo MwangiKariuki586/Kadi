@@ -449,10 +449,26 @@ export function playCombo(
       const liveDemand = state.activeCardRequest;
       if (answersPenalty) {
         // Pure block: neutralise the penalty and call nothing — no suit,
-        // no exact-card demand, even from a super ace.
+        // no exact-card demand, even from a super ace. Preserve the suit in
+        // force so the Ace's own suit does NOT take over (estate rule): keep
+        // a prior request, else the penalty suit, else the last suited
+        // discard (Joker penalties carry no suit).
+        let preserved: Suit | null = state.activeSuit ?? suitOrNull(prevTop.suit);
+        if (!preserved) {
+          preserved =
+            state.lastSuitBeforeRequest ??
+            (() => {
+              for (let i = state.discardPile.length - cards.length - 1; i >= 0; i--) {
+                const s = suitOrNull(state.discardPile[i].suit);
+                if (s) return s;
+              }
+              return null;
+            })();
+        }
         state.pendingPenalty = 0;
         state.pendingPenaltyRank = null;
         state.activeCardRequest = null;
+        state.activeSuit = preserved;
         effect = 'Blocked!';
       } else if (isSuper && requested) {
         // Super ace: exact-card request replaces any suit/request state.

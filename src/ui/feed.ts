@@ -125,7 +125,8 @@ export function describePlay(
 
   // Suit request (new or changed) on free play. Demand resolutions (lift /
   // counter) narrate themselves below — the responder never calls a fresh suit.
-  if (!reqBefore && after.activeSuit && after.activeSuit !== before.activeSuit) {
+  // A penalty block preserves the suit in force — never narrate it as a call.
+  if (!reqBefore && after.activeSuit && after.activeSuit !== before.activeSuit && before.pendingPenalty === 0) {
     const prev = before.activeSuit ?? before.topSuit;
     evts.push({
       icon: '🎯',

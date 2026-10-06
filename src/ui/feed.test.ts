@@ -63,6 +63,9 @@ describe('feed', () => {
     playCombo(s2, 1, [s2.hands[1][0]], 'clubs');
     const evts = describePlay(b2, s2, 1, NAMES, [C('A', 'clubs', 'a')]);
     expect(evts.map((e) => e.text).join(' | ')).toMatch(/neutralizes the \+2.*no one picks/);
+    // Pure block preserves hearts — never narrated as a fresh suit call.
+    expect(s2.activeSuit).toBe('hearts');
+    expect(evts.map((e) => e.text).join(' | ')).not.toMatch(/calls/);
   });
 
   it('suit request always names the previous suit', () => {

@@ -244,16 +244,48 @@ describe('penalties', () => {
     expect(s.pendingPenalty).toBe(0);
   });
 
-  it('Ace block calls nothing — a passed suit is ignored', () => {
+  it('Ace block calls nothing — a passed suit is ignored, penalty suit preserved', () => {
     const two = C('2', 'hearts', 't1');
-    const ace = C('A', 'hearts', 'a1');
+    const ace = C('A', 'spades', 'a1');
     const s = rigged([two], C('9', 'hearts'), [ace]);
     playCombo(s, 0, [two]);
     playCombo(s, 1, [ace], 'spades');
     expect(s.pendingPenalty).toBe(0);
-    expect(s.activeSuit).toBeNull();
+    // Pure block: no fresh call — the suit in force (hearts) persists,
+    // the Ace's own suit (spades) and the passed 'spades' must NOT take over.
+    expect(s.activeSuit).toBe('hearts');
     expect(s.activeCardRequest).toBeNull();
+    expect(s.lastSuitBeforeRequest).toBeNull();
     expect(s.lastEffect).toMatch(/^Blocked!/);
+    // Effective play follows hearts, not the blocking Ace's spades.
+    s.currentPlayer = 0;
+    s.hands[0] = [C('5', 'hearts', 'h'), C('5', 'spades', 'sp')];
+    expect(validateCombo([s.hands[0][0]], s, 0).ok).toBe(true);
+    expect(validateCombo([s.hands[0][1]], s, 0).ok).toBe(false);
+  });
+
+  it('Ace block preserves a prior suit request, not the penalty or Ace suit', () => {
+    const two = C('2', 'diamonds', 't1');
+    const ace = C('A', 'clubs', 'a1');
+    const s = rigged([two], C('9', 'diamonds'), [ace]);
+    s.activeSuit = 'diamonds';
+    playCombo(s, 0, [two]);
+    playCombo(s, 1, [ace]);
+    expect(s.pendingPenalty).toBe(0);
+    expect(s.activeSuit).toBe('diamonds');
+    expect(s.lastEffect).toMatch(/^Blocked!/);
+  });
+
+  it('Ace block on a Joker recovers the last suited discard', () => {
+    const red: Card = { id: 'JOKER-1', suit: 'none', rank: 'JOKER' };
+    const ace = C('A', 'spades', 'a1');
+    const s = rigged([red], C('9', 'hearts'), [ace]);
+    playCombo(s, 0, [red]);
+    expect(s.pendingPenalty).toBe(5);
+    playCombo(s, 1, [ace]);
+    expect(s.pendingPenalty).toBe(0);
+    // Joker carries no suit — fall back to the 9♥ underneath, not the Ace's spades.
+    expect(s.activeSuit).toBe('hearts');
   });
 
   it('strict differs from standard only by jokers — stacking still allowed', () => {
@@ -799,7 +831,7 @@ describe('super ace', () => {
     expect(s.discardPile[s.discardPile.length - 1]).toMatchObject({ rank: '8', suit: 'clubs' });
   });
 
-  it('super ace blocking a penalty is a pure block — no demand', () => {
+  it('super ace blocking a penalty is a pure block — no demand, suit preserved', () => {
     const two = C('2', 'hearts', 't');
     const ace = C('A', 'spades', 'as');
     const s = rigged([two], C('9', 'hearts'), [ace, C('5', 'hearts', 'e')], 2, SUPER);
@@ -807,10 +839,10 @@ describe('super ace', () => {
     playCombo(s, 1, [ace], null, { rank: '5', suit: 'hearts' });
     expect(s.pendingPenalty).toBe(0);
     expect(s.activeCardRequest).toBeNull();
-    expect(s.activeSuit).toBeNull();
+    expect(s.activeSuit).toBe('hearts');
   });
 
-  it('stacked aces blocking a penalty call nothing', () => {
+  it('stacked aces blocking a penalty call nothing, suit preserved', () => {
     const two = C('2', 'hearts', 't');
     const a1 = C('A', 'spades', 'a1');
     const a2 = C('A', 'hearts', 'a2');
@@ -819,6 +851,6 @@ describe('super ace', () => {
     expect(playCombo(s, 1, [a1, a2], null, { rank: '5', suit: 'clubs' }).ok).toBe(true);
     expect(s.pendingPenalty).toBe(0);
     expect(s.activeCardRequest).toBeNull();
-    expect(s.activeSuit).toBeNull();
+    expect(s.activeSuit).toBe('hearts');
   });
 });
