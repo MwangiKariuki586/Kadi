@@ -195,6 +195,8 @@ export function App() {
   }, [restoreSave, flash]);
 
   // ---- bot loop: any non-human turn advances after a thinking delay ----
+  // A refusal keeps the turn, so the bot may act several times in a row
+  // (bounded — a kept turn that keeps nothing eventually picks).
   const currentPlayer = state?.currentPlayer ?? 0;
   const gameOver = state?.gameOver ?? false;
   useEffect(() => {
@@ -203,59 +205,79 @@ export function App() {
     const st = stateRef.current;
     if (st.currentPlayer === 0) return;
     setBusy(true);
-    const id = window.setTimeout(
-      () => {
-        const s = stateRef.current;
-        if (!s || s.gameOver) {
-          setBusy(false);
-          return;
-        }
-        const me = s.currentPlayer;
-        const before = snapshotState(s, me);
-        if (difficulty !== "easy" || Math.random() < 0.6) {
-          if (shouldDeclareKadi(s, me)) {
-            declareKadi(s, me);
-            sfx.kadi();
-          }
-        }
-        const move = chooseMove(s, me, difficulty);
-        if (move) {
-          const r = playCombo(
-            s,
-            me,
-            move.cards,
-            move.declaredSuit,
-            move.requestedCard ?? null,
-          );
-          if (r.ok) {
-            pushFeed(
-              ...describePlay(before, s, me, NAMES, move.cards, {
-                won: r.won,
-                cardless: r.becameCardless,
-                fined: r.fined,
-              }),
-            );
-            if (r.won) sfx.win();
-            else sfx.play();
-          } else {
-            // Should never happen (moves are pre-validated) — narrate instead
-            // of silently swallowing so ghosts leave evidence, not confusion.
-            pushFeed({
-              icon: "🐞",
-              text: `${NAMES[me]} stalls — illegal move blocked (${move.cards.map(cardLabel).join(" + ")})`,
-              tone: "info",
-            });
-          }
-        } else {
-          const pr = passOrPick(s, me);
-          pushFeed(...describePick(before, me, NAMES, pr.picked, pr.skipped));
-          sfx.pick();
-        }
+    let actions = 0;
+    let id = 0;
+    const runBot = () => {
+      const s = stateRef.current;
+      if (!s || s.gameOver) {
+        setBusy(false);
+        return;
+      }
+      const me = s.currentPlayer;
+      if (me === 0) {
+        setBusy(false);
+        return;
+      }
+      if (actions >= 4) {
+        // Safety valve: a kept turn that never ends picks and passes on.
+        const stuck = snapshotState(s, me);
+        const pr = passOrPick(s, me);
+        pushFeed(...describePick(stuck, me, NAMES, pr.picked, pr.skipped));
         setBusy(false);
         bump();
-      },
-      650 + Math.random() * 350,
-    );
+        return;
+      }
+      actions += 1;
+      const before = snapshotState(s, me);
+      if (difficulty !== "easy" || Math.random() < 0.6) {
+        if (shouldDeclareKadi(s, me)) {
+          declareKadi(s, me);
+          sfx.kadi();
+        }
+      }
+      const move = chooseMove(s, me, difficulty);
+      let keepGoing = false;
+      if (move) {
+        const r = playCombo(
+          s,
+          me,
+          move.cards,
+          move.declaredSuit,
+          move.requestedCard ?? null,
+        );
+        if (r.ok) {
+          pushFeed(
+            ...describePlay(before, s, me, NAMES, move.cards, {
+              won: r.won,
+              cardless: r.becameCardless,
+              fined: r.fined,
+            }),
+          );
+          if (r.won) sfx.win();
+          else sfx.play();
+          keepGoing = r.keptTurn === true && !r.won;
+        } else {
+          // Should never happen (moves are pre-validated) — narrate instead
+          // of silently swallowing so ghosts leave evidence, not confusion.
+          pushFeed({
+            icon: "🐞",
+            text: `${NAMES[me]} stalls — illegal move blocked (${move.cards.map(cardLabel).join(" + ")})`,
+            tone: "info",
+          });
+        }
+      } else {
+        const pr = passOrPick(s, me);
+        pushFeed(...describePick(before, me, NAMES, pr.picked, pr.skipped));
+        sfx.pick();
+      }
+      if (keepGoing) {
+        id = window.setTimeout(runBot, 500 + Math.random() * 300);
+      } else {
+        setBusy(false);
+        bump();
+      }
+    };
+    id = window.setTimeout(runBot, 650 + Math.random() * 350);
     return () => window.clearTimeout(id);
   }, [screen, currentPlayer, gameOver, difficulty, bump, pushFeed]);
 
@@ -764,6 +786,9 @@ export function App() {
             {state.pendingSkip > 0 && (
               <Pill tone="amber">SKIP ×{state.pendingSkip}</Pill>
             )}
+            {(state.pendingReverse ?? 0) > 0 && (
+              <Pill tone="amber">REVERSE ×{state.pendingReverse}</Pill>
+            )}
             {state.activeSuit && (
               <Pill tone="green">Suit: {state.activeSuit}</Pill>
             )}
@@ -799,6 +824,7 @@ export function App() {
             busyThinking: busy && state.currentPlayer !== 0,
             pendingPenalty: state.pendingPenalty,
             pendingSkip: state.pendingSkip,
+            pendingReverse: state.pendingReverse ?? 0,
             activeSuit: state.activeSuit,
             prevSuit: state.lastSuitBeforeRequest ?? null,
             request: state.activeCardRequest,
@@ -859,7 +885,9 @@ export function App() {
             ? `Eat +${state.pendingPenalty}`
             : state.pendingSkip > 0
               ? "Accept skip"
-              : "Pick"}
+              : (state.pendingReverse ?? 0) > 0
+                ? "Accept reverse"
+                : "Pick"}
         </button>
         {canDeclareKadi(state, 0) && !state.gameOver && (
           <button
@@ -950,7 +978,9 @@ function reasonText(reason: string | null, activeSuit?: Suit | null): string {
     case "MUST_BE_SAME_RANK":
       return "Combos share one rank — e.g. 7♥ + 7♠. Questions pair with same-suit answers (4 5 6 7 9 10); J/K stack together.";
     case "SKIP_MUST_COUNTER_OR_ACCEPT":
-      return "Jump! Counter with your own J or accept the skip.";
+      return "Jump! Refuse with any single J to keep your turn, or accept the skip. Stacks can't be refused.";
+    case "REVERSE_MUST_COUNTER_OR_ACCEPT":
+      return "Kickback! Refuse with any single K to keep your turn, or accept the reversal. Stacks can't be refused.";
     case "UNMET_REQUEST":
       return "Super Ace demand: play the exact card, an Ace, or pick.";
     case "NOT_YOUR_TURN":

@@ -292,48 +292,120 @@ describe('penalties', () => {
 });
 
 describe('jump + kickback', () => {
-  it('J skips next player (3P table)', () => {
+  it('fresh J defers to the victim (3P): pending 1, no instant skip', () => {
     const s = createGame({ numPlayers: 3, random: () => 0.5 });
-    const j: Card = C('J', s.discardPile[0].suit === 'hearts' ? 'hearts' : s.discardPile[0].suit, 'j1');
-    // force match: give current player a matching card by suit
-    j.suit = s.discardPile[0].suit;
+    const j: Card = C('J', s.discardPile[0].suit, 'j1');
     s.hands[0] = [j, C('4', 'clubs', 'x1')];
-    const cur = s.currentPlayer;
-    playCombo(s, cur, [j]);
-    expect(s.pendingSkip).toBe(0); // consumed by advanceTurn
-    expect(s.currentPlayer).toBe((cur + 2) % 3); // skipped one
+    const r = playCombo(s, 0, [j]);
+    expect(r.ok).toBe(true);
+    expect(r.keptTurn).toBeFalsy();
+    expect(s.pendingSkip).toBe(1);
+    expect(s.currentPlayer).toBe(1); // victim decides — refuse or sit out
   });
 
-  it('K reverses direction', () => {
+  it('victim refuses a single with any single J and keeps the turn', () => {
+    const j = C('J', 'hearts', 'j1');
+    const s = rigged([j, C('4', 'clubs', 'x1')], C('9', 'hearts'), [C('J', 'spades', 'c1'), C('4', 'diamonds', 'o')], 3);
+    playCombo(s, 0, [j]); // pending 1 over player 1
+    expect(s.currentPlayer).toBe(1);
+    const r = playCombo(s, 1, [s.hands[1][0]]); // J♠ refuses J♥ — any suit
+    expect(r.ok).toBe(true);
+    expect(r.keptTurn).toBe(true);
+    expect(s.pendingSkip).toBe(0);
+    expect(s.currentPlayer).toBe(1); // kept turn — plays on
+  });
+
+  it('victim accepts a skip: sits out, debt consumed', () => {
+    const j = C('J', 'hearts', 'j1');
+    const s = rigged([j, C('4', 'clubs', 'x1')], C('9', 'hearts'), [C('4', 'clubs')], 3);
+    playCombo(s, 0, [j]);
+    const r = passOrPick(s, 1);
+    expect(r).toMatchObject({ picked: 0, skipped: true });
+    expect(s.pendingSkip).toBe(0);
+    expect(s.currentPlayer).toBe(2); // victim sat out
+  });
+
+  it('stacks are unrefusable: no single or multi answer to J×2', () => {
+    const jh = C('J', 'hearts', 'jh');
+    const js = C('J', 'spades', 'js');
+    const s = rigged(
+      [jh, js, C('4', 'clubs', 'x1')], C('10', 'hearts'),
+      [C('J', 'clubs', 'c1'), C('J', 'diamonds', 'c2'), C('4', 'spades', 'o')], 3,
+    );
+    playCombo(s, 0, [jh, js]); // pending 2 over player 1
+    expect(s.pendingSkip).toBe(2);
+    expect(s.currentPlayer).toBe(1);
+    expect(validateCombo([s.hands[1][0]], s, 1)).toMatchObject({ ok: false, reason: 'SKIP_MUST_COUNTER_OR_ACCEPT' });
+    expect(validateCombo([s.hands[1][0], s.hands[1][1]], s, 1)).toMatchObject({ ok: false, reason: 'SKIP_MUST_COUNTER_OR_ACCEPT' });
+    passOrPick(s, 1); // accept: consume the whole stack at once
+    expect(s.pendingSkip).toBe(0);
+    expect(s.currentPlayer).toBe(0); // (1 + 2) % 3 — same math as the old instant skip
+  });
+
+  it('2P: J defers too — accept hands the turn back, refuse steals it', () => {
+    const j = C('J', 'hearts', 'j1');
+    const s = rigged([j, C('4', 'clubs', 'x1')], C('9', 'hearts'), [C('4', 'clubs')], 2, STANDARD_MAUA);
+    playCombo(s, 0, [j]);
+    expect(s.pendingSkip).toBe(1);
+    expect(s.currentPlayer).toBe(1);
+    passOrPick(s, 1);
+    expect(s.pendingSkip).toBe(0);
+    expect(s.currentPlayer).toBe(0);
+  });
+
+  it('fresh K defers without flipping (3P): victim decides', () => {
     const s = createGame({ numPlayers: 3, random: () => 0.5 });
     const top = s.discardPile[0];
     const k: Card = C('K', top.suit, 'k1');
     s.hands[0] = [k, C('4', 'clubs', 'x1')];
-    const dir = s.direction;
-    playCombo(s, 0, [k]);
-    expect(s.direction).toBe((dir * -1) as 1 | -1);
+    const r = playCombo(s, 0, [k]);
+    expect(r.ok).toBe(true);
+    expect(s.pendingReverse).toBe(1);
+    expect(s.direction).toBe(1); // not yet flipped
+    expect(s.currentPlayer).toBe(1);
   });
 
-  it('2P: J skips (no question) — jumper goes again', () => {
-    const j = C('J', 'hearts', 'j1');
-    const s = rigged([j, C('4', 'clubs', 'x1')], C('9', 'hearts'), [C('4', 'clubs')], 2, STANDARD_MAUA);
-    expect(validateCombo([j], s, 0).ok).toBe(true);
-    const before = s.hands[0].length;
-    playCombo(s, 0, [j]);
-    expect(s.hands[0].length).toBe(before - 1); // played 1, drew 0
-    expect(s.pendingSkip).toBe(0); // consumed by advanceTurn
-    expect(s.currentPlayer).toBe(0); // skipped rival — self to play
-  });
-
-  it('2P: K reverses (no question) — no draw owed', () => {
+  it('victim refuses a single with any single K: no flip, keeps the turn', () => {
     const k = C('K', 'hearts', 'k1');
-    const s = rigged([k, C('4', 'clubs', 'x1')], C('9', 'hearts'), [C('4', 'clubs')], 2, STANDARD_MAUA);
-    expect(validateCombo([k], s, 0).ok).toBe(true);
-    const dir = s.direction;
-    const before = s.hands[0].length;
+    const s = rigged([k, C('4', 'clubs', 'x1')], C('9', 'hearts'), [C('K', 'spades', 'c1'), C('4', 'diamonds', 'o')], 3);
     playCombo(s, 0, [k]);
-    expect(s.direction).toBe((dir * -1) as 1 | -1);
-    expect(s.hands[0].length).toBe(before - 1);
+    const r = playCombo(s, 1, [s.hands[1][0]]); // K♠ refuses K♥ — any suit
+    expect(r.ok).toBe(true);
+    expect(r.keptTurn).toBe(true);
+    expect(s.pendingReverse).toBe(0);
+    expect(s.direction).toBe(1);
+    expect(s.currentPlayer).toBe(1);
+  });
+
+  it('victim accepts a reversal: sits out with the flip applied', () => {
+    const k = C('K', 'hearts', 'k1');
+    const s = rigged([k, C('4', 'clubs', 'x1')], C('9', 'hearts'), [C('4', 'clubs')], 3);
+    playCombo(s, 0, [k]);
+    const r = passOrPick(s, 1);
+    expect(r).toMatchObject({ picked: 0, skipped: true });
+    expect(s.pendingReverse).toBe(0);
+    expect(s.direction).toBe(-1);
+    expect(s.currentPlayer).toBe(0); // (1 - 1 + 3) % 3 — attacker plays after the sit-out
+  });
+
+  it('2P: K forces burn-or-lose — refuse keeps the turn, accept hands it back', () => {
+    const s = rigged(
+      [C('K', 'hearts', 'k1'), C('4', 'clubs', 'x1')], C('9', 'hearts'),
+      [C('K', 'spades', 'c1'), C('4', 'diamonds', 'o')], 2, STANDARD_MAUA,
+    );
+    playCombo(s, 0, [s.hands[0][0]]);
+    expect(s.pendingReverse).toBe(1);
+    const r = playCombo(s, 1, [s.hands[1][0]]);
+    expect(r.keptTurn).toBe(true);
+    expect(s.direction).toBe(1);
+    expect(s.currentPlayer).toBe(1);
+    const s2 = rigged(
+      [C('K', 'hearts', 'k2'), C('4', 'clubs', 'x2')], C('9', 'hearts'), [C('4', 'clubs')], 2, STANDARD_MAUA,
+    );
+    playCombo(s2, 0, [s2.hands[0][0]]);
+    passOrPick(s2, 1);
+    expect(s2.direction).toBe(-1);
+    expect(s2.currentPlayer).toBe(0);
   });
 });
 
@@ -435,12 +507,15 @@ describe('canFinishNow (live KADI! threat)', () => {
     expect(canFinishNow(s, 0)).toBe(false);
   });
 
-  it('false while a penalty or skip debt is outstanding', () => {
+  it('false while a penalty, skip or reversal debt is outstanding', () => {
     const s = declared(rigged([C('5', 'hearts', 'f')], C('9', 'hearts'), [C('4', 'clubs')]), 0);
     s.pendingPenalty = 2;
     expect(canFinishNow(s, 0)).toBe(false);
     s.pendingPenalty = 0;
     s.pendingSkip = 1;
+    expect(canFinishNow(s, 0)).toBe(false);
+    s.pendingSkip = 0;
+    s.pendingReverse = 1;
     expect(canFinishNow(s, 0)).toBe(false);
   });
 
@@ -504,7 +579,7 @@ describe('tap-order K/J stacks', () => {
     expect(validateCombo([kd, ks], s, 0).ok).toBe(true);
   });
 
-  it('J+J final calculation: skip 2 in 3P anti-clockwise returns to self', () => {
+  it('J+J defers an unrefusable stack: accept consumes all at once', () => {
     const js = C('J', 'spades', 'js');
     const jh = C('J', 'hearts', 'jh');
     const s = rigged([jh, js], C('10', 'hearts'), [C('4', 'clubs')], 3);
@@ -512,8 +587,12 @@ describe('tap-order K/J stacks', () => {
     s.currentPlayer = 0;
     const r = playCombo(s, 0, [jh, js]);
     expect(r.ok).toBe(true);
-    expect(s.currentPlayer).toBe(0); // skipped both rivals
-    expect(s.lastEffect).toMatch(/Jump/);
+    expect(s.pendingSkip).toBe(2);
+    expect(s.currentPlayer).toBe(2); // anti-clockwise victim must accept the stack
+    expect(s.lastEffect).toMatch(/Unrefusable/);
+    passOrPick(s, 2); // accept: consume all, advance 2 from the victim
+    expect(s.pendingSkip).toBe(0);
+    expect(s.currentPlayer).toBe(0); // (2 - 2 + 3) % 3 — same math as the old instant skip
   });
 
   it('K+K final calculation: double reverse restores direction, turn passes on', () => {

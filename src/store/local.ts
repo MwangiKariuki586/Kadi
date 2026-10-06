@@ -72,6 +72,9 @@ export function refreshResumeConfig(save: ActiveGameSave): void {
     superAceEnabled: save.meta.superAce,
     strictWrongPlay: save.state.config.strictWrongPlay,
   };
+  // Fields that did not exist when older saves were written.
+  if (typeof save.state.pendingReverse !== 'number') save.state.pendingReverse = 0;
+  if (typeof save.state.pendingSkip !== 'number') save.state.pendingSkip = 0;
 }
 
 export interface GameStore {

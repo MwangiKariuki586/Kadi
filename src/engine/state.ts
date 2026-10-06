@@ -19,6 +19,8 @@ export interface GameState {
   activeCardRequest: { rank: Rank; suit: Suit } | null;
   /** Number of players to skip at next advance (from Jacks). */
   pendingSkip: number;
+  /** Pending kickback reversals (from Kings): odd = flips on accept, even = fizzle. */
+  pendingReverse: number;
   kadiCalls: boolean[];
   kadiCallTurn: number[];
   turnNumber: number;
@@ -71,6 +73,7 @@ export function createGame({ numPlayers, config = STANDARD_MAUA, random = Math.r
     lastSuitBeforeRequest: null,
     activeCardRequest: null,
     pendingSkip: 0,
+    pendingReverse: 0,
     kadiCalls: Array(numPlayers).fill(false),
     kadiCallTurn: Array(numPlayers).fill(-1),
     turnNumber: 0,
@@ -80,11 +83,11 @@ export function createGame({ numPlayers, config = STANDARD_MAUA, random = Math.r
   };
 }
 
-/** Move turn forward, consuming pending skips. */
-export function advanceTurn(state: GameState): void {
+/** Move turn forward, consuming pending skips (unless kept for a victim decision). */
+export function advanceTurn(state: GameState, opts?: { steps?: number; keepSkip?: boolean }): void {
   const n = state.hands.length;
-  const steps = 1 + state.pendingSkip;
-  state.pendingSkip = 0;
+  const steps = opts?.steps ?? 1 + state.pendingSkip;
+  if (!opts?.keepSkip) state.pendingSkip = 0;
   let next = state.currentPlayer;
   for (let i = 0; i < steps; i++) {
     next = (next + state.direction + n) % n;

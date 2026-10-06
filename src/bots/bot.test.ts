@@ -61,6 +61,28 @@ describe('bots', () => {
     expect(deckCount).toBe(54);
   });
 
+  it('refuses a jump/reversal with one card at medium+, easy sometimes sits out', () => {
+    const s = createGame({ numPlayers: 3, random: () => 0.1 });
+    s.discardPile = [{ id: 'j-top', suit: 'hearts', rank: 'J' }];
+    s.pendingSkip = 1;
+    s.hands[1] = [
+      { id: 'j-clubs', suit: 'clubs', rank: 'J' },
+      { id: '9-clubs', suit: 'clubs', rank: '9' },
+    ];
+    s.currentPlayer = 1;
+    expect(chooseMove(s, 1, 'medium', () => 0.9)?.cards[0]).toMatchObject({ rank: 'J' });
+    expect(chooseMove(s, 1, 'easy', () => 0.9)).toBeNull();
+
+    s.pendingSkip = 0;
+    s.pendingReverse = 1;
+    s.hands[1] = [
+      { id: 'k-spades', suit: 'spades', rank: 'K' },
+      { id: '9-clubs', suit: 'clubs', rank: '9' },
+    ];
+    expect(chooseMove(s, 1, 'medium', () => 0.9)?.cards[0]).toMatchObject({ rank: 'K' });
+    expect(chooseMove(s, 1, 'easy', () => 0.9)).toBeNull();
+  });
+
   it('answers 2♥ with same-suit 3♥ when holding no other 2', () => {
     const s = createGame({ numPlayers: 2, random: () => 0.1 });
     s.discardPile = [{ id: '2-hearts-top', suit: 'hearts', rank: '2' }];
