@@ -240,7 +240,6 @@ export function App() {
           } else {
             // Should never happen (moves are pre-validated) — narrate instead
             // of silently swallowing so ghosts leave evidence, not confusion.
-            console.warn("[kadi] rejected bot move", r.reason, move.cards);
             pushFeed({
               icon: "🐞",
               text: `${NAMES[me]} stalls — illegal move blocked (${move.cards.map(cardLabel).join(" + ")})`,

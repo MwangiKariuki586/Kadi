@@ -82,7 +82,7 @@ export function createGame({ numPlayers, config = STANDARD_MAUA, random = Math.r
 /** Move turn forward, consuming pending skips. */
 export function advanceTurn(state: GameState): void {
   const n = state.hands.length;
-  let steps = 1 + state.pendingSkip;
+  const steps = 1 + state.pendingSkip;
   state.pendingSkip = 0;
   let next = state.currentPlayer;
   for (let i = 0; i < steps; i++) {
