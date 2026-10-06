@@ -868,9 +868,9 @@ export function App() {
       )}
 
       {/* hand */}
-      <div class="flex-1 flex flex-col justify-end px-4 pb-2">
+      <div class="flex-1 flex min-h-0 flex-col justify-end px-4 pb-2">
         {!state.gameOver && (
-          <div class="flex flex-1 items-center justify-center py-3">
+          <div class="flex shrink-0 items-center justify-center py-2">
             <KadiBuzzer
               urgent={kadiHot}
               disabled={!kadiOpen}
@@ -879,7 +879,7 @@ export function App() {
             />
           </div>
         )}
-        <div class="flex justify-center overflow-x-auto">
+        <div class="flex shrink-0 justify-center overflow-x-auto pt-3">
           <div class="flex" style={{ paddingLeft: 8 }}>
             {myHand.map((c) => (
               <div key={c.id} class="-ml-4 first:ml-0">

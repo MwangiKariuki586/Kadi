@@ -142,6 +142,13 @@ html, body {
   }
 }
 
+/* Short viewports: compact the buzzer so it never crowds the hand's tap zone */
+@media (max-height: 700px) {
+  .kadi-buzzer { width: 60px; height: 60px; }
+  .kadi-buzzer-dome { width: 44px; height: 44px; }
+  .kadi-buzzer-label { font-size: 12px; }
+}
+
 .card-btn {
   touch-action: manipulation;
   transition: transform 140ms ease-out;
