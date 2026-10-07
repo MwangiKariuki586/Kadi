@@ -16,6 +16,7 @@ export interface FeedEvent {
 export interface TurnSnapshot {
   pendingPenalty: number;
   pendingSkip: number;
+  pendingReverse: number;
   activeSuit: Suit | null;
   activeCardRequest: { rank: Card['rank']; suit: Suit } | null;
   direction: 1 | -1;
@@ -29,6 +30,7 @@ export function snapshotState(s: GameState, me: number): TurnSnapshot {
   return {
     pendingPenalty: s.pendingPenalty,
     pendingSkip: s.pendingSkip,
+    pendingReverse: s.pendingReverse ?? 0,
     activeSuit: s.activeSuit,
     activeCardRequest: s.activeCardRequest ? { ...s.activeCardRequest } : null,
     direction: s.direction,
@@ -123,7 +125,8 @@ export function describePlay(
 
   // Suit request (new or changed) on free play. Demand resolutions (lift /
   // counter) narrate themselves below — the responder never calls a fresh suit.
-  if (!reqBefore && after.activeSuit && after.activeSuit !== before.activeSuit) {
+  // A penalty block preserves the suit in force — never narrate it as a call.
+  if (!reqBefore && after.activeSuit && after.activeSuit !== before.activeSuit && before.pendingPenalty === 0) {
     const prev = before.activeSuit ?? before.topSuit;
     evts.push({
       icon: '🎯',
@@ -162,23 +165,26 @@ export function describePlay(
     }
   }
 
-  // Jump: counter vs fresh, and who is actually up next (final calculation).
+  // Jump: refusal keeps the turn; a fresh single-family debt hangs over the
+  // next player (stacks must be sat out); mixed K+J still resolves instantly.
   const jumps = played.filter((c) => countsAsJump(c, after)).length;
   if (before.pendingSkip > 0 && jumps > 0) {
-    evts.push({ icon: '⏭', text: `${actor} answers jump with jump — skip rolls on`, tone: 'skip' });
+    evts.push({ icon: '⏭', text: `${actor} refuses the jump — plays on`, tone: 'skip' });
+  } else if (jumps > 0 && after.pendingSkip > 0) {
+    const big = after.pendingSkip > 1 ? ` ×${after.pendingSkip} (too big to refuse — must sit out)` : '';
+    evts.push({ icon: '⏭', text: `Jump${big} hangs over ${next} — refuse with a J or sit out`, tone: 'skip' });
   } else if (jumps > 0) {
-    evts.push({
-      icon: '⏭',
-      text: after.currentPlayer === me
-        ? `Jump ×${jumps} skips everyone — ${actor} goes again!`
-        : `Jump ×${jumps} — ${next} is up`,
-      tone: 'skip',
-    });
+    evts.push({ icon: '⏭', text: `Jump ×${jumps} — ${next} is up`, tone: 'skip' });
   }
 
-  // Reverse (single flips, double restores).
+  // Reversal: refusal keeps the turn; a fresh odd debt hangs over the next
+  // player; even counts (or mixed K+J) resolve immediately as before.
   const flips = played.filter((c) => countsAsReverse(c, after)).length;
-  if (flips > 0) {
+  if (before.pendingReverse > 0 && flips > 0) {
+    evts.push({ icon: '↺', text: `${actor} refuses the reversal — plays on`, tone: 'reverse' });
+  } else if (flips > 0 && (after.pendingReverse ?? 0) > 0) {
+    evts.push({ icon: '↺', text: `Kickback hangs over ${next} — refuse with a K or sit out`, tone: 'reverse' });
+  } else if (flips > 0) {
     evts.push({
       icon: '↺',
       text: flips % 2 === 0
@@ -215,6 +221,9 @@ export function describePick(
 ): FeedEvent[] {
   const actor = names[me] ?? `Player ${me + 1}`;
   if (skipped) {
+    if (before.pendingReverse > 0) {
+      return [{ icon: '↺', text: `${actor} sits out the reversal`, tone: 'reverse' }];
+    }
     return [{ icon: '⏭', text: `${actor} sits out the jump`, tone: 'skip' }];
   }
   if (before.pendingPenalty > 0) {
@@ -264,6 +273,7 @@ export interface CoachInput {
   busyThinking: boolean;
   pendingPenalty: number;
   pendingSkip: number;
+  pendingReverse: number;
   activeSuit: Suit | null;
   prevSuit: Suit | null;
   request: { rank: Card['rank']; suit: Suit } | null;
@@ -301,6 +311,7 @@ export function turnCoach(i: CoachInput): CoachMsg {
     let extra = '';
     if (i.pendingPenalty > 0) extra = ` — owes +${i.pendingPenalty}`;
     else if (i.pendingSkip > 0) extra = ' — was jumped';
+    else if (i.pendingReverse > 0) extra = ' — was reversed';
     else if (i.request) extra = ` — must bring ${i.request.rank}${suitGlyphLocal(i.request.suit)}`;
     else if (i.activeSuit) extra = ` — must follow ${suitName(i.activeSuit)}`;
     return { icon: '⏳', text: `Waiting on ${i.waitingOn}${i.busyThinking ? '…' : ''}${extra}`, tone: 'wait' };
@@ -309,7 +320,10 @@ export function turnCoach(i: CoachInput): CoachMsg {
     return { icon: '🔥', text: `You owe +${i.pendingPenalty} — stack, block with Ace, or Eat`, tone: 'action' };
   }
   if (i.pendingSkip > 0) {
-    return { icon: '⏭', text: 'You were jumped — counter with J or Accept skip', tone: 'action' };
+    return { icon: '⏭', text: 'You were jumped — refuse with a J (keep your turn) or Accept', tone: 'action' };
+  }
+  if (i.pendingReverse > 0) {
+    return { icon: '↺', text: 'You were reversed — refuse with a K (keep your turn) or Accept', tone: 'action' };
   }
   if (i.request) {
     return {

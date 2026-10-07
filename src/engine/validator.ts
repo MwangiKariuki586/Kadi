@@ -8,7 +8,8 @@ import { advanceTurn, drawCards, topCard, type GameState } from './state';
 export type InvalidReason =
   | 'NOT_YOUR_TURN' | 'CARD_NOT_IN_HAND' | 'GAME_OVER'
   | 'NO_MATCH' | 'QUESTION_NEEDS_ANSWER' | 'PENALTY_MUST_STACK_OR_BLOCK'
-  | 'SKIP_MUST_COUNTER_OR_ACCEPT' | 'CANNOT_WIN_YET' | 'UNMET_REQUEST';
+  | 'ACE_ONLY_STACKS_WITH_ACE' | 'MUST_BE_SAME_RANK'
+  | 'SKIP_MUST_COUNTER_OR_ACCEPT' | 'REVERSE_MUST_COUNTER_OR_ACCEPT' | 'CANNOT_WIN_YET' | 'UNMET_REQUEST';
 
 export interface ComboCheck {
   ok: boolean;
@@ -97,6 +98,54 @@ export function penaltyAnswerOk(card: Card, table: Card, config: RulesConfig): b
   return card.rank === table.rank || card.suit === table.suit;
 }
 
+/** Penalty cards (2/3/Joker) never mix with normal cards in one combo. */
+function mixesPenaltyWithNormal(cards: Card[], config: RulesConfig): boolean {
+  return (
+    cards.some((c) => isPenaltyRank(c.rank, config)) &&
+    !cards.every((c) => isPenaltyRank(c.rank, config))
+  );
+}
+
+/** An Ace plays solo or stacks only with other Aces — never with normal cards. */
+function mixesAceWithNonAce(cards: Card[]): boolean {
+  return cards.some((c) => c.rank === 'A') && !cards.every((c) => c.rank === 'A');
+}
+
+/**
+ * Free-play combo shape: every card shares one rank (first matches the top,
+ * rest match rank, any suit) — except J/K family stacks together, and a
+ * question opens a Q/8 chain: questions may stack on questions, winning
+ * answers (4 5 6 7 9 10) close the currently open question and must match
+ * its suit. Returns a rejection, or null when the shape is acceptable
+ * (suit/rank chaining and question closure are validated separately).
+ */
+function checkComboShape(cards: Card[], state: GameState): ComboCheck | null {
+  const { config } = state;
+  const allSameRank = cards.every((c) => c.rank === cards[0].rank);
+  const allJumpKickback = cards.every(
+    (c) => isJumpRank(c.rank, config) || isKickbackRank(c.rank, config),
+  );
+  const questionLed = rankNeedsAnswer(cards[0].rank, state);
+  if (!allSameRank && !allJumpKickback && !questionLed) {
+    return { ok: false, reason: 'MUST_BE_SAME_RANK' };
+  }
+  if (questionLed && !allSameRank && !allJumpKickback) {
+    let open: Card | null = cards[0];
+    for (const c of cards.slice(1)) {
+      if (rankNeedsAnswer(c.rank, state)) {
+        open = c;
+        continue;
+      }
+      if (!isWinningRank(c.rank, config)) return { ok: false, reason: 'MUST_BE_SAME_RANK' };
+      if (config.mustAnswerSameSuit && open && c.suit !== open.suit) {
+        return { ok: false, reason: 'MUST_BE_SAME_RANK' };
+      }
+      open = null;
+    }
+  }
+  return null;
+}
+
 /** Chained cards must connect to previous by suit-or-rank (Ace/Joker wild connect). */
 function validateChainLinks(cards: Card[]): ComboCheck {
   for (let i = 1; i < cards.length; i++) {
@@ -166,11 +215,23 @@ export function validateCombo(cards: Card[], state: GameState, playerIndex: numb
 function validateVsTable(cards: Card[], state: GameState): ComboCheck {
   const { config } = state;
 
-  // Pending skip: only a counter-Jump (any J) or accept-skip is legal.
+  // Pending skip: only a single counter-Jump (any J) against a single skip,
+  // or accept-skip, is legal. Stacks are unrefusable.
   if (state.pendingSkip > 0) {
     if (!config.jumpCounterable) return { ok: false, reason: 'SKIP_MUST_COUNTER_OR_ACCEPT' };
-    const allJumps = cards.every((c) => isJumpRank(c.rank, config));
-    if (!allJumps) return { ok: false, reason: 'SKIP_MUST_COUNTER_OR_ACCEPT' };
+    const singleRefusal =
+      cards.length === 1 && state.pendingSkip === 1 && isJumpRank(cards[0].rank, config);
+    if (!singleRefusal) return { ok: false, reason: 'SKIP_MUST_COUNTER_OR_ACCEPT' };
+    return { ok: true };
+  }
+
+  // Pending reversal: only a single counter-Kickback (any K) against a single
+  // reversal, or accept, is legal. Stacks are unrefusable.
+  if ((state.pendingReverse ?? 0) > 0) {
+    if (!config.kickbackCounterable) return { ok: false, reason: 'REVERSE_MUST_COUNTER_OR_ACCEPT' };
+    const singleRefusal =
+      cards.length === 1 && (state.pendingReverse ?? 0) === 1 && isKickbackRank(cards[0].rank, config);
+    if (!singleRefusal) return { ok: false, reason: 'REVERSE_MUST_COUNTER_OR_ACCEPT' };
     return { ok: true };
   }
 
@@ -206,6 +267,14 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
     const isExact = first.rank === req.rank && first.suit === req.suit;
     const isAce = first.rank === 'A';
     if (!isExact && !isAce) return { ok: false, reason: 'UNMET_REQUEST' };
+    if (mixesAceWithNonAce(cards)) {
+      return { ok: false, reason: 'ACE_ONLY_STACKS_WITH_ACE' };
+    }
+    if (mixesPenaltyWithNormal(cards, config)) {
+      return { ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' };
+    }
+    const shapeReq = checkComboShape(cards, state);
+    if (shapeReq) return shapeReq;
     const links = validateChainLinks(cards);
     if (!links.ok) return links;
     // An unanswered question here is legal too — draw obligation applies.
@@ -215,6 +284,18 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
   // Normal: first card matches top.
   if (!singleMatchesTop(cards[0], state)) return { ok: false, reason: 'NO_MATCH' };
 
+  // An Ace plays solo or with Aces only — A + 10 is never a combo, even suited.
+  if (mixesAceWithNonAce(cards)) {
+    return { ok: false, reason: 'ACE_ONLY_STACKS_WITH_ACE' };
+  }
+  // A penalty card only stacks with other penalties — never with normal cards,
+  // even when the suits connect. Eat the debt first, then resume normal play.
+  if (mixesPenaltyWithNormal(cards, config)) {
+    return { ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' };
+  }
+  // Same-rank stacks (J/K family together; questions take same-suit answers).
+  const shape = checkComboShape(cards, state);
+  if (shape) return shape;
   const links = validateChainLinks(cards);
   if (!links.ok) return links;
   // An unanswered question is legal — the obligation is to draw (see playCombo),
@@ -277,8 +358,8 @@ export function canFinishNow(state: GameState, playerIndex: number): boolean {
   if (state.gameOver) return false;
   const hand = state.hands[playerIndex];
   if (hand.length === 0 || hand.length > FINISH_SEARCH_CAP) return false;
-  // Penalty/skip debts must be answered first — and their answers can never close.
-  if (state.pendingPenalty > 0 || state.pendingSkip > 0) return false;
+  // Penalty/skip/reversal debts must be answered first — and their answers can never close.
+  if (state.pendingPenalty > 0 || state.pendingSkip > 0 || (state.pendingReverse ?? 0) > 0) return false;
   // Must have said Kadi on a strictly earlier turn (same rule as the win itself).
   if (!state.kadiCalls[playerIndex] || !(state.kadiCallTurn[playerIndex] < state.turnNumber)) return false;
   if (config.cardlessBlocksWin && state.hands.some((h, i) => i !== playerIndex && h.length === 0)) return false;
@@ -322,6 +403,8 @@ export interface PlayResult {
   won?: boolean;
   becameCardless?: boolean;
   fined?: number;
+  /** Refusal cleared a skip/reversal debt: the turn stays with the player. */
+  keptTurn?: boolean;
 }
 
 export function playCombo(
@@ -373,10 +456,26 @@ export function playCombo(
       const liveDemand = state.activeCardRequest;
       if (answersPenalty) {
         // Pure block: neutralise the penalty and call nothing — no suit,
-        // no exact-card demand, even from a super ace.
+        // no exact-card demand, even from a super ace. Preserve the suit in
+        // force so the Ace's own suit does NOT take over (estate rule): keep
+        // a prior request, else the penalty suit, else the last suited
+        // discard (Joker penalties carry no suit).
+        let preserved: Suit | null = state.activeSuit ?? suitOrNull(prevTop.suit);
+        if (!preserved) {
+          preserved =
+            state.lastSuitBeforeRequest ??
+            (() => {
+              for (let i = state.discardPile.length - cards.length - 1; i >= 0; i--) {
+                const s = suitOrNull(state.discardPile[i].suit);
+                if (s) return s;
+              }
+              return null;
+            })();
+        }
         state.pendingPenalty = 0;
         state.pendingPenaltyRank = null;
         state.activeCardRequest = null;
+        state.activeSuit = preserved;
         effect = 'Blocked!';
       } else if (isSuper && requested) {
         // Super ace: exact-card request replaces any suit/request state.
@@ -407,11 +506,9 @@ export function playCombo(
         // Silent variant (aceCallsSuit=false): Ace only blocks, suit follows top.
       }
     } else if (isJumpRank(c.rank, config) && !jumpActsAsQuestion(state)) {
-      state.pendingSkip += 1;
-      effect = 'Jump! Skipped';
+      // Counted in bulk below (response model needs the full combo shape).
     } else if (isKickbackRank(c.rank, config) && !kickbackActsAsQuestion(state)) {
-      state.direction = (state.direction * -1) as 1 | -1;
-      effect = state.direction === 1 ? 'Reversed ↻' : 'Reversed ↺';
+      // Counted in bulk below (response model needs the full combo shape).
     }
     // Non-Ace normal play clears a declared suit.
     if (c.rank !== 'A' && state.activeSuit && state.pendingPenalty === 0) {
@@ -421,14 +518,51 @@ export function playCombo(
     }
   }
 
-  // Counter-Jump consumes the skip instead of adding: net effect handled above
-  // (pendingSkip was >0 and we played jumps). Each counter-J offsets one skip.
-  if (state.pendingSkip > 0 && cards.every((c) => isJumpRank(c.rank, config))) {
-    // played N jumps while skipped: first offsets, rest add. Simplify: keep as-is
-    // (skip was not yet consumed since advanceTurn consumes it).
+  // Jump/kickback response model. A pure single-family combo defers to the
+  // victim (refuse-with-one keeps the turn; stacks must be accepted); mixed
+  // J+K resolves instantly exactly as before.
+  const skipBefore = state.pendingSkip;
+  const revBefore = state.pendingReverse ?? 0;
+  const jumps = cards.filter((c) => isJumpRank(c.rank, config) && !jumpActsAsQuestion(state));
+  const kicks = cards.filter((c) => isKickbackRank(c.rank, config) && !kickbackActsAsQuestion(state));
+  const mixedJK = jumps.length > 0 && kicks.length > 0;
+  // Refusal (validator guarantees exactly one card): clear the live debt and
+  // keep the turn — the victim plays on.
+  let keptTurn = false;
+  if (!mixedJK && skipBefore > 0 && jumps.length === 1 && kicks.length === 0) {
+    state.pendingSkip = 0;
+    effect = 'Jump refused! Play on';
+    keptTurn = true;
+  } else if (!mixedJK && revBefore > 0 && kicks.length === 1 && jumps.length === 0) {
+    state.pendingReverse = 0;
+    effect = 'Reversal refused! Play on';
+    keptTurn = true;
+  } else {
+    if (jumps.length > 0) {
+      state.pendingSkip += jumps.length;
+      effect = !mixedJK && jumps.length > 1 ? `Jump ×${jumps.length}! Unrefusable` : 'Jump! Skipped';
+    }
+    if (kicks.length > 0 && (mixedJK || kicks.length % 2 === 0)) {
+      // Instant path (mixed, or even counts cancelling out): flip per card now.
+      for (let i = 0; i < kicks.length; i++) {
+        state.direction = (state.direction * -1) as 1 | -1;
+      }
+      effect = state.direction === 1 ? 'Reversed ↻' : 'Reversed ↺';
+    } else if (kicks.length > 0) {
+      // Odd reversals defer to the victim (stacks unrefusable).
+      state.pendingReverse = revBefore + kicks.length;
+      effect = kicks.length > 1 ? `Reverse ×${kicks.length}! Unrefusable` : 'Kickback! Answer or sit out';
+    }
   }
 
   state.lastEffect = effect;
+
+  // A fresh J/K debt defers to the victim (advance one step, debt stays live)
+  // on every exit — even when the hand empties below. Refusal already kept
+  // the turn above, so no advance at all in that case.
+  const freshDebt =
+    !mixedJK &&
+    (state.pendingSkip > skipBefore || (state.pendingReverse ?? 0) > revBefore);
 
   // Asked without an answer: the obligation is to draw — never a blocked move.
   // Drawn before the win check so an emptied hand refills and play continues.
@@ -459,28 +593,44 @@ export function playCombo(
       if (owed > 0) {
         const drawn = drawCards(state, playerIndex, owed);
         state.lastEffect = (state.lastEffect ? state.lastEffect + ' • ' : '') + `No call — fined +${drawn.length}`;
-        advanceTurn(state);
+        if (freshDebt) advanceTurn(state, { steps: 1, keepSkip: true });
+        else advanceTurn(state);
         return { ok: true, fined: drawn.length };
       }
       // owed 0 → legacy cardless path below.
     }
     // Emptied hand with a non-finisher (or no Kadi call): cardless, game continues.
     state.lastEffect = (state.lastEffect ? state.lastEffect + ' • ' : '') + 'Cardless — keep playing';
-    advanceTurn(state);
+    if (freshDebt) advanceTurn(state, { steps: 1, keepSkip: true });
+    else advanceTurn(state);
     return { ok: true, becameCardless: true };
   }
 
-  advanceTurn(state);
-  return { ok: true };
+  if (!keptTurn) {
+    if (freshDebt) advanceTurn(state, { steps: 1, keepSkip: true });
+    else advanceTurn(state);
+  }
+  return { ok: true, keptTurn };
 }
 
 /** Current player cannot/does not play: draw 1 (or eat pending penalty). */
 export function passOrPick(state: GameState, playerIndex: number): { picked: number; skipped: boolean } {
   if (playerIndex !== state.currentPlayer || state.gameOver) return { picked: 0, skipped: false };
-  // Accept a skip
+  // Accept a skip: sit out, consuming the whole stack at once.
   if (state.pendingSkip > 0) {
-    advanceTurn(state);
+    const n = state.pendingSkip;
+    state.pendingSkip = 0;
+    advanceTurn(state, { steps: n });
     state.lastEffect = 'Skipped';
+    return { picked: 0, skipped: true };
+  }
+  // Accept a reversal: sit out with the flip applied (odd counts flip).
+  if ((state.pendingReverse ?? 0) > 0) {
+    const r = state.pendingReverse ?? 0;
+    state.pendingReverse = 0;
+    if (r % 2 === 1) state.direction = (state.direction * -1) as 1 | -1;
+    advanceTurn(state);
+    state.lastEffect = 'Reversal accepted — turn passes';
     return { picked: 0, skipped: true };
   }
   // Eat penalty

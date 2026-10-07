@@ -136,11 +136,20 @@ export function chooseMove(
     return null;
   }
 
-  // 2. Skipped: counter with a Jump if we can (medium+ always, easy sometimes).
+  // 2. Skipped: refuse with a Jump if we can (medium+ always, easy sometimes).
   if (state.pendingSkip > 0) {
     const jumps = hand.filter((c) => validateCombo([c], state, playerIndex).ok);
     if (jumps.length > 0 && (difficulty !== 'easy' || random() < 0.5)) {
       return { cards: [randomOf(jumps, random)] };
+    }
+    return null;
+  }
+
+  // 2b. Reversed: refuse with a Kickback if we can (medium+ always, easy sometimes).
+  if ((state.pendingReverse ?? 0) > 0) {
+    const kicks = hand.filter((c) => validateCombo([c], state, playerIndex).ok);
+    if (kicks.length > 0 && (difficulty !== 'easy' || random() < 0.5)) {
+      return { cards: [randomOf(kicks, random)] };
     }
     return null;
   }

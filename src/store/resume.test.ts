@@ -3,11 +3,13 @@ import { chooseMove } from '../bots/bot';
 import { migrateRules, STANDARD_MAUA } from '../engine/rules';
 import { createGame } from '../engine/state';
 import { playCombo } from '../engine/validator';
-import { isResumable, DEFAULT_SETTINGS, type ActiveGameSave } from './local';
+import { isResumable, refreshResumeConfig, DEFAULT_SETTINGS, type ActiveGameSave } from './local';
 import { STRICT_NO_JOKER } from '../engine/rules';
 
 function liveSave(): ActiveGameSave {
   const state = createGame({ numPlayers: 3, config: STANDARD_MAUA, random: () => 0.42 });
+  // Isolate from the shared preset (tests mutate this snapshot's flags).
+  state.config = { ...state.config };
   return {
     state,
     meta: { numBots: 2, difficulty: 'medium', presetName: STANDARD_MAUA.name, superAce: false, savedAt: Date.now() },
@@ -64,6 +66,31 @@ describe('resume guard', () => {  it('accepts a live, well-formed save', () => {
     expect(migrated.unansweredQuestionPickCount).toBe(1);
     expect(migrated.specialAceSuit).toBe('spades');
     expect(migrated.penaltyAccumulates).toBe(false);
+  });
+
+  it('resumed built-in games adopt fixed preset rules, keeping player overlays', () => {
+    const save = liveSave();
+    // Simulate a save from before the 2P J/K fix, with both lobby toggles on.
+    save.state.config.twoPlayerJumpAsQuestion = true;
+    save.state.config.twoPlayerKickbackAsQuestion = true;
+    save.meta.superAce = true;
+    save.state.config.superAceEnabled = true;
+    save.state.config.strictWrongPlay = true;
+    refreshResumeConfig(save);
+    expect(save.state.config.twoPlayerJumpAsQuestion).toBe(false);
+    expect(save.state.config.twoPlayerKickbackAsQuestion).toBe(false);
+    expect(save.state.config.superAceEnabled).toBe(true);
+    expect(save.state.config.strictWrongPlay).toBe(true);
+    expect(save.state.config.name).toBe(STANDARD_MAUA.name);
+    expect(isResumable(save)).toBe(true);
+  });
+
+  it('unknown presets keep the legacy migrateRules path', () => {
+    const save = liveSave();
+    save.meta.presetName = 'Old Estate';
+    refreshResumeConfig(save);
+    expect(save.state.config.name).toBe(STANDARD_MAUA.name);
+    expect(isResumable(save)).toBe(true);
   });
 });
 

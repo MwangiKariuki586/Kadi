@@ -1,5 +1,5 @@
 import { del, get, set } from 'idb-keyval';
-import { migrateRules, type RulesConfig } from '../engine/rules';
+import { migrateRules, PRESETS, type RulesConfig } from '../engine/rules';
 import type { GameState } from '../engine/state';
 
 /** Backend-ready seam: UI only talks to this interface.
@@ -50,6 +50,31 @@ export function isResumable(save: unknown): save is ActiveGameSave {
   if (typeof s.currentPlayer !== 'number' || s.currentPlayer < 0 || s.currentPlayer >= s.hands.length) return false;
   if (!s.config || typeof s.config !== 'object') return false;
   return true;
+}
+
+/**
+ * Bring a resumed table onto current rules. Saves snapshot their RulesConfig,
+ * so a built-in preset would otherwise keep stale flags forever (e.g. the old
+ * 2-player J/K-as-question). Re-apply the live preset and keep only the
+ * player's own overlays (special-ace mode, strict table). Unknown profiles
+ * keep the legacy migrateRules path. Safe mid-match: no question-mode debt
+ * persists in state (bare questions draw immediately), so nothing in flight
+ * contradicts the refreshed flags.
+ */
+export function refreshResumeConfig(save: ActiveGameSave): void {
+  const preset = PRESETS.find((p) => p.name === save.meta.presetName);
+  if (!preset) {
+    save.state.config = migrateRules({ ...save.state.config, name: save.state.config.name });
+    return;
+  }
+  save.state.config = {
+    ...preset,
+    superAceEnabled: save.meta.superAce,
+    strictWrongPlay: save.state.config.strictWrongPlay,
+  };
+  // Fields that did not exist when older saves were written.
+  if (typeof save.state.pendingReverse !== 'number') save.state.pendingReverse = 0;
+  if (typeof save.state.pendingSkip !== 'number') save.state.pendingSkip = 0;
 }
 
 export interface GameStore {
@@ -123,7 +148,7 @@ export class LocalStore implements GameStore {
     }
     if (!isResumable(raw)) return null;
     // Upgrade stored rules without breaking old saves.
-    raw.state.config = migrateRules({ ...raw.state.config, name: raw.state.config.name });
+    refreshResumeConfig(raw);
     return raw;
   }
 

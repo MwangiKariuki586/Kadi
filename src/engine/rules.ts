@@ -26,7 +26,7 @@ export interface RulesConfig {
   kickbackRanks: Rank[];
   kickbackCounterable: boolean;
   questionRanks: Rank[];
-  /** Question must be followed by same-suit answer in the same combo. */
+  /** Stacked questions (Q/8) are closed by a same-suit answer to the last open question. */
   mustAnswerSameSuit: boolean;
   /** Asking a question without an answer is legal but draws this many cards. */
   unansweredQuestionPickCount: number;
@@ -77,8 +77,8 @@ export const STANDARD_MAUA: RulesConfig = {
   mustSayNikoKadi: true,
   cardlessBlocksWin: true,
   starterBlacklist: ['2', '3', 'J', 'Q', '8', 'K', 'A', 'JOKER'],
-  twoPlayerJumpAsQuestion: true,
-  twoPlayerKickbackAsQuestion: true,
+  twoPlayerJumpAsQuestion: false,
+  twoPlayerKickbackAsQuestion: false,
   invalidPlayPickCount: 1,
   strictWrongPlay: false,
   lateCallPickCount: 1,

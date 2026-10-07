@@ -63,6 +63,9 @@ describe('feed', () => {
     playCombo(s2, 1, [s2.hands[1][0]], 'clubs');
     const evts = describePlay(b2, s2, 1, NAMES, [C('A', 'clubs', 'a')]);
     expect(evts.map((e) => e.text).join(' | ')).toMatch(/neutralizes the \+2.*no one picks/);
+    // Pure block preserves hearts — never narrated as a fresh suit call.
+    expect(s2.activeSuit).toBe('hearts');
+    expect(evts.map((e) => e.text).join(' | ')).not.toMatch(/calls/);
   });
 
   it('suit request always names the previous suit', () => {
@@ -81,24 +84,30 @@ describe('feed', () => {
     expect(evts.map((e) => e.text).join(' | ')).toMatch(/asks without an answer — picks 1/);
   });
 
-  it('jump and reverse name the final calculation', () => {
+  it('jump and reversal defer to the victim; refusal keeps the turn', () => {
     const s = table(
-      [C('J', 'hearts', 'jh'), C('J', 'spades', 'js')],
+      [C('J', 'hearts', 'jh'), C('4', 'clubs', 'k')],
       C('10', 'hearts'),
-      [C('4', 'clubs')],
+      [C('J', 'spades', 'js'), C('5', 'diamonds', 'o')],
       3,
     );
-    s.direction = -1;
     const before = snapshotState(s, 0);
-    playCombo(s, 0, s.hands[0].slice(0, 2));
-    const evts = describePlay(before, s, 0, NAMES, [C('J', 'hearts', 'jh'), C('J', 'spades', 'js')]);
-    expect(evts.map((e) => e.text).join(' | ')).toMatch(/goes again/);
+    playCombo(s, 0, [s.hands[0][0]]);
+    expect(s.pendingSkip).toBe(1);
+    expect(describePlay(before, s, 0, NAMES, [C('J', 'hearts', 'jh')]).map((e) => e.text).join(' | '))
+      .toMatch(/hangs over Jabari — refuse with a J or sit out/);
+    const b2 = snapshotState(s, 1);
+    playCombo(s, 1, [s.hands[1][0]]);
+    expect(describePlay(b2, s, 1, NAMES, [C('J', 'spades', 'js')]).map((e) => e.text).join(' | '))
+      .toMatch(/refuses the jump — plays on/);
 
     const s2 = table([C('K', 'hearts', 'kh'), C('4', 'clubs', 'k')], C('9', 'hearts'), [C('5', 'spades')], 3);
-    const b2 = snapshotState(s2, 0);
+    const c2 = snapshotState(s2, 0);
     playCombo(s2, 0, [s2.hands[0][0]]);
-    expect(describePlay(b2, s2, 0, NAMES, [C('K', 'hearts', 'kh')]).map((e) => e.text).join(' | '))
-      .toMatch(/reverses — now anti-clockwise/);
+    expect(s2.pendingReverse).toBe(1);
+    expect(s2.direction).toBe(1);
+    expect(describePlay(c2, s2, 0, NAMES, [C('K', 'hearts', 'kh')]).map((e) => e.text).join(' | '))
+      .toMatch(/hangs over Jabari — refuse with a K or sit out/);
   });
 
   it('lone-ace lift keeps the demanded suit in the narration', () => {
@@ -143,6 +152,7 @@ describe('turnCoach', () => {
     busyThinking: false,
     pendingPenalty: 0,
     pendingSkip: 0,
+    pendingReverse: 0,
     activeSuit: null,
     prevSuit: null,
     request: null,
@@ -160,10 +170,11 @@ describe('turnCoach', () => {
     expect(msg.text).toMatch(/Legal stack/);
   });
 
-  it('debts beat idle hints: penalty, skip, demand', () => {
+  it('debts beat idle hints: penalty, skip, reversal, demand', () => {
     expect(turnCoach({ ...base, pendingPenalty: 3 }).tone).toBe('action');
     expect(turnCoach({ ...base, pendingPenalty: 3 }).text).toMatch(/owe \+3/);
     expect(turnCoach({ ...base, pendingSkip: 1 }).text).toMatch(/jumped/);
+    expect(turnCoach({ ...base, pendingReverse: 1 }).text).toMatch(/reversed/);
     expect(turnCoach({ ...base, request: { rank: '5', suit: 'hearts' } }).text).toMatch(/Bring 5♥/);
   });
 

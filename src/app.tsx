@@ -27,6 +27,7 @@ import {
   CardView,
   CoachBar,
   EventBanner,
+  KadiBuzzer,
   Pill,
   QuitConfirmModal,
   SuitPicker,
@@ -195,6 +196,8 @@ export function App() {
   }, [restoreSave, flash]);
 
   // ---- bot loop: any non-human turn advances after a thinking delay ----
+  // A refusal keeps the turn, so the bot may act several times in a row
+  // (bounded — a kept turn that keeps nothing eventually picks).
   const currentPlayer = state?.currentPlayer ?? 0;
   const gameOver = state?.gameOver ?? false;
   useEffect(() => {
@@ -203,59 +206,79 @@ export function App() {
     const st = stateRef.current;
     if (st.currentPlayer === 0) return;
     setBusy(true);
-    const id = window.setTimeout(
-      () => {
-        const s = stateRef.current;
-        if (!s || s.gameOver) {
-          setBusy(false);
-          return;
-        }
-        const me = s.currentPlayer;
-        const before = snapshotState(s, me);
-        if (difficulty !== "easy" || Math.random() < 0.6) {
-          if (shouldDeclareKadi(s, me)) {
-            declareKadi(s, me);
-            sfx.kadi();
-          }
-        }
-        const move = chooseMove(s, me, difficulty);
-        if (move) {
-          const r = playCombo(
-            s,
-            me,
-            move.cards,
-            move.declaredSuit,
-            move.requestedCard ?? null,
-          );
-          if (r.ok) {
-            pushFeed(
-              ...describePlay(before, s, me, NAMES, move.cards, {
-                won: r.won,
-                cardless: r.becameCardless,
-                fined: r.fined,
-              }),
-            );
-            if (r.won) sfx.win();
-            else sfx.play();
-          } else {
-            // Should never happen (moves are pre-validated) — narrate instead
-            // of silently swallowing so ghosts leave evidence, not confusion.
-            pushFeed({
-              icon: "🐞",
-              text: `${NAMES[me]} stalls — illegal move blocked (${move.cards.map(cardLabel).join(" + ")})`,
-              tone: "info",
-            });
-          }
-        } else {
-          const pr = passOrPick(s, me);
-          pushFeed(...describePick(before, me, NAMES, pr.picked, pr.skipped));
-          sfx.pick();
-        }
+    let actions = 0;
+    let id = 0;
+    const runBot = () => {
+      const s = stateRef.current;
+      if (!s || s.gameOver) {
+        setBusy(false);
+        return;
+      }
+      const me = s.currentPlayer;
+      if (me === 0) {
+        setBusy(false);
+        return;
+      }
+      if (actions >= 4) {
+        // Safety valve: a kept turn that never ends picks and passes on.
+        const stuck = snapshotState(s, me);
+        const pr = passOrPick(s, me);
+        pushFeed(...describePick(stuck, me, NAMES, pr.picked, pr.skipped));
         setBusy(false);
         bump();
-      },
-      650 + Math.random() * 350,
-    );
+        return;
+      }
+      actions += 1;
+      const before = snapshotState(s, me);
+      if (difficulty !== "easy" || Math.random() < 0.6) {
+        if (shouldDeclareKadi(s, me)) {
+          declareKadi(s, me);
+          sfx.kadi();
+        }
+      }
+      const move = chooseMove(s, me, difficulty);
+      let keepGoing = false;
+      if (move) {
+        const r = playCombo(
+          s,
+          me,
+          move.cards,
+          move.declaredSuit,
+          move.requestedCard ?? null,
+        );
+        if (r.ok) {
+          pushFeed(
+            ...describePlay(before, s, me, NAMES, move.cards, {
+              won: r.won,
+              cardless: r.becameCardless,
+              fined: r.fined,
+            }),
+          );
+          if (r.won) sfx.win();
+          else sfx.play();
+          keepGoing = r.keptTurn === true && !r.won;
+        } else {
+          // Should never happen (moves are pre-validated) — narrate instead
+          // of silently swallowing so ghosts leave evidence, not confusion.
+          pushFeed({
+            icon: "🐞",
+            text: `${NAMES[me]} stalls — illegal move blocked (${move.cards.map(cardLabel).join(" + ")})`,
+            tone: "info",
+          });
+        }
+      } else {
+        const pr = passOrPick(s, me);
+        pushFeed(...describePick(before, me, NAMES, pr.picked, pr.skipped));
+        sfx.pick();
+      }
+      if (keepGoing) {
+        id = window.setTimeout(runBot, 500 + Math.random() * 300);
+      } else {
+        setBusy(false);
+        bump();
+      }
+    };
+    id = window.setTimeout(runBot, 650 + Math.random() * 350);
     return () => window.clearTimeout(id);
   }, [screen, currentPlayer, gameOver, difficulty, bump, pushFeed]);
 
@@ -370,7 +393,7 @@ export function App() {
               </p>
               <p class="mt-2">
                 🃏 Match <b>suit or rank</b>. J = Jump (skip) • K = reverse •
-                Q/8 = question — pair a same-suit answer or pick 1 • A blocks
+                Q/8 = question — stack Qs/8s, answer matches the last one or pick 1 • A blocks
                 2/3 (no call) • played freely, A requests a suit • 2/3 = pick
                 2/3 (answer to forward, latest count stands).
               </p>
@@ -413,121 +436,130 @@ export function App() {
 
   if (screen === "lobby") {
     return (
-      <div class="min-h-dvh bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col px-6 py-8 safe-top safe-bottom">
-        <button
-          type="button"
-          onClick={() => setScreen("home")}
-          class="self-start text-white/60 text-sm"
-        >
-          ← Back
-        </button>
-        <h2 class="mt-2 text-3xl font-black text-yellow-300">New Game</h2>
-
-        <p class="mt-6 text-xs font-bold uppercase tracking-widest text-white/50">
-          Opponents (bots)
-        </p>
-        <div class="mt-2 grid grid-cols-3 gap-2">
-          {[1, 2, 3].map((n) => (
+      <div class="h-dvh overflow-hidden bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col safe-top safe-bottom">
+        <div class="mx-auto flex h-full w-full max-w-md flex-col px-6 pb-4 pt-4">
+          <div class="shrink-0">
             <button
-              key={n}
               type="button"
-              onClick={() => setNumBots(n)}
-              class={`rounded-2xl py-3 font-black ${numBots === n ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"}`}
+              aria-label="Back to home"
+              onClick={() => setScreen("home")}
+              class="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-bold text-white shadow-sm transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-300"
             >
-              {n + 1}P
-              <span class="block text-[10px] font-normal">you + {n} 🤖</span>
+              <span aria-hidden="true">←</span> Back
             </button>
-          ))}
-        </div>
+            <h2 class="mt-2 text-3xl font-black text-yellow-300">New Game</h2>
+          </div>
 
-        <p class="mt-6 text-xs font-bold uppercase tracking-widest text-white/50">
-          Bot smarts
-        </p>
-        <div class="mt-2 grid grid-cols-3 gap-2">
-          {(["easy", "medium", "hard"] as Difficulty[]).map((d) => (
+          <div class="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1">
+            <p class="text-xs font-bold uppercase tracking-widest text-white/50">
+              Opponents (bots)
+            </p>
+            <div class="mt-2 grid grid-cols-3 gap-2">
+              {[1, 2, 3].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setNumBots(n)}
+                  class={`rounded-2xl py-3 font-black ${numBots === n ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"}`}
+                >
+                  {n + 1}P
+                  <span class="block text-[10px] font-normal">you + {n} 🤖</span>
+                </button>
+              ))}
+            </div>
+
+            <p class="mt-5 text-xs font-bold uppercase tracking-widest text-white/50">
+              Bot smarts
+            </p>
+            <div class="mt-2 grid grid-cols-3 gap-2">
+              {(["easy", "medium", "hard"] as Difficulty[]).map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => {
+                    setDifficulty(d);
+                    void store.saveSettings({ difficulty: d });
+                  }}
+                  class={`rounded-2xl py-3 font-bold capitalize ${difficulty === d ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"}`}
+                >
+                  {d === "easy" ? "😌" : d === "medium" ? "🧠" : "🔥"} {d}
+                </button>
+              ))}
+            </div>
+
+            <p class="mt-5 text-xs font-bold uppercase tracking-widest text-white/50">
+              House rules
+            </p>
+            <div class="mt-2 flex flex-col gap-2">
+              {PRESETS.map((p) => (
+                <button
+                  key={p.name}
+                  type="button"
+                  onClick={() => {
+                    setPreset(p);
+                    void store.saveSettings({ presetName: p.name });
+                  }}
+                  class={`rounded-2xl border p-3 text-left ${preset.name === p.name ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-white/5"}`}
+                >
+                  <span class="font-bold text-sm">{p.name}</span>
+                  <span class="block text-[11px] text-white/60 mt-0.5">
+                    {p.jokersEnabled
+                      ? "With Jokers (+5, color-matched)"
+                      : "No Jokers in deck"}{" "}
+                    • {p.dealCount} cards each
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <p class="mt-5 text-xs font-bold uppercase tracking-widest text-white/50">
+              Extra spice
+            </p>
             <button
-              key={d}
               type="button"
               onClick={() => {
-                setDifficulty(d);
-                void store.saveSettings({ difficulty: d });
+                const v = !superAceOn;
+                setSuperAceOn(v);
+                void store.saveSettings({ superAce: v });
               }}
-              class={`rounded-2xl py-3 font-bold capitalize ${difficulty === d ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"}`}
+              class={`mt-2 w-full rounded-2xl border p-3 text-left ${superAceOn ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-white/5"}`}
             >
-              {d === "easy" ? "😌" : d === "medium" ? "🧠" : "🔥"} {d}
-            </button>
-          ))}
-        </div>
-
-        <p class="mt-6 text-xs font-bold uppercase tracking-widest text-white/50">
-          House rules
-        </p>
-        <div class="mt-2 flex flex-col gap-2">
-          {PRESETS.map((p) => (
-            <button
-              key={p.name}
-              type="button"
-              onClick={() => {
-                setPreset(p);
-                void store.saveSettings({ presetName: p.name });
-              }}
-              class={`rounded-2xl border p-3 text-left ${preset.name === p.name ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-white/5"}`}
-            >
-              <span class="font-bold text-sm">{p.name}</span>
+              <span class="font-bold text-sm">
+                ⚡ Special Ace {superAceOn ? "(on)" : "(off)"}
+              </span>
               <span class="block text-[11px] text-white/60 mt-0.5">
-                {p.jokersEnabled
-                  ? "With Jokers (+5, color-matched)"
-                  : "No Jokers in deck"}{" "}
-                • {p.dealCount} cards each
+                A♠ alone demands an exact card. Stacked Aces always can — answer
+                it, lift it with a lone Ace (suit stays), or pick.
               </span>
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => {
+                const v = !strictOn;
+                setStrictOn(v);
+                void store.saveSettings({ strict: v });
+              }}
+              class={`mt-2 w-full rounded-2xl border p-3 text-left ${strictOn ? "border-red-400 bg-red-400/10" : "border-white/10 bg-white/5"}`}
+            >
+              <span class="font-bold text-sm">
+                🚨 Strict table {strictOn ? "(on)" : "(off)"}
+              </span>
+              <span class="block text-[11px] text-white/60 mt-0.5">
+                Wrong plays are fined +1 and turn passes. Off: Play blocks them free.
+              </span>
+            </button>
+          </div>
+
+          <div class="shrink-0 border-t border-white/10 pt-3">
+            <button
+              type="button"
+              onClick={startGame}
+              class="w-full rounded-2xl bg-yellow-400 py-4 text-xl font-black text-gray-900 shadow-xl active:scale-95 transition"
+            >
+              Deal me in 🂡
+            </button>
+          </div>
         </div>
-
-        <p class="mt-6 text-xs font-bold uppercase tracking-widest text-white/50">
-          Extra spice
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            const v = !superAceOn;
-            setSuperAceOn(v);
-            void store.saveSettings({ superAce: v });
-          }}
-          class={`mt-2 w-full rounded-2xl border p-3 text-left ${superAceOn ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-white/5"}`}
-        >
-          <span class="font-bold text-sm">
-            ⚡ Special Ace {superAceOn ? "(on)" : "(off)"}
-          </span>
-          <span class="block text-[11px] text-white/60 mt-0.5">
-            A♠ alone demands an exact card. Stacked Aces always can — answer
-            it, lift it with a lone Ace (suit stays), or pick.
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            const v = !strictOn;
-            setStrictOn(v);
-            void store.saveSettings({ strict: v });
-          }}
-          class={`mt-2 w-full rounded-2xl border p-3 text-left ${strictOn ? "border-red-400 bg-red-400/10" : "border-white/10 bg-white/5"}`}
-        >
-          <span class="font-bold text-sm">
-            🚨 Strict table {strictOn ? "(on)" : "(off)"}
-          </span>
-          <span class="block text-[11px] text-white/60 mt-0.5">
-            Wrong plays are fined +1 and turn passes. Off: Play blocks them free.
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={startGame}
-          class="mt-8 w-full rounded-2xl bg-yellow-400 py-4 text-xl font-black text-gray-900 shadow-xl active:scale-95 transition"
-        >
-          Deal me in 🂡
-        </button>
       </div>
     );
   }
@@ -550,6 +582,16 @@ export function App() {
   const top = topCard(state);
   const myHand = state.hands[0];
   const myTurn = state.currentPlayer === 0 && !state.gameOver;
+  // Buzzer states: always rendered, dimmed when unavailable, flashing when live.
+  const kadiOpen = canDeclareKadi(state, 0);
+  const kadiHot = shouldDeclareKadi(state, 0);
+  const kadiTitle = state.kadiCalls[0]
+    ? "KADI already called — go out and finish!"
+    : myHand.length === 0
+      ? "Cardless — nothing to declare with"
+      : kadiHot
+        ? "Niko Kadi! Tap to declare"
+        : "Declare Kadi — call it the turn before you finish";
   const selectedCards = selected.flatMap(
     (id) => myHand.find((c) => c.id === id) ?? [],
   );
@@ -559,7 +601,7 @@ export function App() {
   // An illegal selection disables Play upfront — no tap needed to find out.
   const selectionInvalid = validation != null && !validation.ok;
   const selectionReason = selectionInvalid
-    ? reasonText(validation.reason ?? null)
+    ? reasonText(validation.reason ?? null, state.activeSuit)
     : null;
 
   const toggleSelect = (card: Card) => {
@@ -591,7 +633,7 @@ export function App() {
         setSuitPickerFor(null);
         setSuperPickerFor(null);
       }
-      flash(reasonText(r.reason ?? null));
+      flash(reasonText(r.reason ?? null, state.activeSuit));
       bump();
       return;
     }
@@ -680,7 +722,8 @@ export function App() {
       )}
       {confirmQuit && !state.gameOver && (
         <QuitConfirmModal
-          onKeepPlaying={() => setConfirmQuit(false)}
+          onClose={() => setConfirmQuit(false)}
+          onExit={() => quitToHome(true)}
           onSaveExit={() => quitToHome(false)}
         />
       )}
@@ -764,6 +807,9 @@ export function App() {
             {state.pendingSkip > 0 && (
               <Pill tone="amber">SKIP ×{state.pendingSkip}</Pill>
             )}
+            {(state.pendingReverse ?? 0) > 0 && (
+              <Pill tone="amber">REVERSE ×{state.pendingReverse}</Pill>
+            )}
             {state.activeSuit && (
               <Pill tone="green">Suit: {state.activeSuit}</Pill>
             )}
@@ -799,13 +845,14 @@ export function App() {
             busyThinking: busy && state.currentPlayer !== 0,
             pendingPenalty: state.pendingPenalty,
             pendingSkip: state.pendingSkip,
+            pendingReverse: state.pendingReverse ?? 0,
             activeSuit: state.activeSuit,
             prevSuit: state.lastSuitBeforeRequest ?? null,
             request: state.activeCardRequest,
             topLabel: cardLabel(top),
             selectedCount: selectedCards.length,
             comboValid: validation ? validation.ok : null,
-            invalidReason: validation && !validation.ok ? reasonText(validation.reason ?? null) : null,
+            invalidReason: validation && !validation.ok ? reasonText(validation.reason ?? null, state.activeSuit) : null,
             legalCount: hints.size,
             kadiReady: canDeclareKadi(state, 0) && shouldDeclareKadi(state, 0),
           })}
@@ -821,24 +868,36 @@ export function App() {
       )}
 
       {/* hand */}
-      <div class="flex-1 flex items-end justify-center px-4 pb-2 overflow-x-auto">
-        <div class="flex" style={{ paddingLeft: 8 }}>
-          {myHand.map((c) => (
-            <div key={c.id} class="-ml-4 first:ml-0">
-              <CardView
-                card={c}
-                selected={selected.includes(c.id)}
-                order={selectedOrder.get(c.id) ?? null}
-                hint={hints.has(c.id) && selected.length === 0}
-                onClick={() => toggleSelect(c)}
-              />
-            </div>
-          ))}
-          {myHand.length === 0 && (
-            <p class="text-white/60 text-sm pb-6">
-              Cardless — you'll pick on your turn.
-            </p>
-          )}
+      <div class="flex-1 flex min-h-0 flex-col justify-end px-4 pb-2">
+        {!state.gameOver && (
+          <div class="flex shrink-0 items-center justify-center py-2">
+            <KadiBuzzer
+              urgent={kadiHot}
+              disabled={!kadiOpen}
+              title={kadiTitle}
+              onPress={onKadi}
+            />
+          </div>
+        )}
+        <div class="flex shrink-0 justify-center overflow-x-auto pt-3">
+          <div class="flex" style={{ paddingLeft: 8 }}>
+            {myHand.map((c) => (
+              <div key={c.id} class="-ml-4 first:ml-0">
+                <CardView
+                  card={c}
+                  selected={selected.includes(c.id)}
+                  order={selectedOrder.get(c.id) ?? null}
+                  hint={hints.has(c.id) && selected.length === 0}
+                  onClick={() => toggleSelect(c)}
+                />
+              </div>
+            ))}
+            {myHand.length === 0 && (
+              <p class="text-white/60 text-sm pb-6">
+                Cardless — you'll pick on your turn.
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -859,17 +918,10 @@ export function App() {
             ? `Eat +${state.pendingPenalty}`
             : state.pendingSkip > 0
               ? "Accept skip"
-              : "Pick"}
+              : (state.pendingReverse ?? 0) > 0
+                ? "Accept reverse"
+                : "Pick"}
         </button>
-        {canDeclareKadi(state, 0) && !state.gameOver && (
-          <button
-            type="button"
-            onClick={onKadi}
-            class={`rounded-2xl px-4 py-3.5 text-sm font-black ${shouldDeclareKadi(state, 0) ? "bg-yellow-400 text-gray-900 anim-kadi-glow" : "bg-white/10"}`}
-          >
-            Kadi!
-          </button>
-        )}
         <button
           type="button"
           onClick={onPlayPress}
@@ -924,16 +976,35 @@ export function App() {
   );
 }
 
-function reasonText(reason: string | null): string {
+function reasonText(reason: string | null, activeSuit?: Suit | null): string {
   switch (reason) {
     case "NO_MATCH":
+      if (activeSuit) {
+        const glyph =
+          activeSuit === "hearts"
+            ? "♥"
+            : activeSuit === "diamonds"
+              ? "♦"
+              : activeSuit === "spades"
+                ? "♠"
+                : "♣";
+        const name =
+          activeSuit.charAt(0).toUpperCase() + activeSuit.slice(1);
+        return `Must follow ${name} ${glyph} — Ace called it.`;
+      }
       return "Must match suit or rank of the top card.";
     case "QUESTION_NEEDS_ANSWER":
       return "Q / 8 needs a same-suit answer (4 5 6 7 9 10) in the same move.";
     case "PENALTY_MUST_STACK_OR_BLOCK":
-      return "Only a matching 2 / 3 / Joker, or an Ace, answers a penalty.";
+      return "2 / 3 / Joker only stack with other penalties — never with normal cards. Stack, block with Ace, or eat.";
+    case "ACE_ONLY_STACKS_WITH_ACE":
+      return "An Ace plays solo or with another Ace — never stacked with normal cards.";
+    case "MUST_BE_SAME_RANK":
+      return "Combos share one rank — e.g. 7♥ + 7♠. Questions stack (Q/8) and the answer matches the last question (4 5 6 7 9 10, same suit); J/K stack together.";
     case "SKIP_MUST_COUNTER_OR_ACCEPT":
-      return "Jump! Counter with your own J or accept the skip.";
+      return "Jump! Refuse with any single J to keep your turn, or accept the skip. Stacks can't be refused.";
+    case "REVERSE_MUST_COUNTER_OR_ACCEPT":
+      return "Kickback! Refuse with any single K to keep your turn, or accept the reversal. Stacks can't be refused.";
     case "UNMET_REQUEST":
       return "Super Ace demand: play the exact card, an Ace, or pick.";
     case "NOT_YOUR_TURN":

@@ -110,13 +110,27 @@ describe('question + answer', () => {
     expect(r0.becameCardless).toBe(true);
   });
 
-  it('stacked open questions draw once', () => {
-    const q1 = C('Q', 'hearts', 'q1');
-    const q2 = C('8', 'hearts', 'q2');
-    const s = rigged([q1, q2, C('4', 'clubs', 'k')], C('Q', 'spades'));
-    expect(validateCombo([q1, q2], s, 0).ok).toBe(true);
-    playCombo(s, 0, [q1, q2]);
-    expect(s.hands[0].length).toBe(2); // played 2, drew 1 → 3 - 2 + 1
+  it('questions stack across ranks; the answer must match the last question', () => {
+    const qh = C('Q', 'hearts', 'q1');
+    const qs = C('Q', 'spades', 'q2');
+    const eightH = C('8', 'hearts', 'e1');
+    const nineS = C('9', 'spades', 'a1');
+    const nineH = C('9', 'hearts', 'a2');
+    // Q + matching 8 stacks and stays open (draws once).
+    const sA = rigged([qh, eightH], C('Q', 'spades'), [C('4', 'clubs')]);
+    expect(validateCombo([qh, eightH], sA, 0).ok).toBe(true);
+    // Same-rank Q + Q stays legal and draws once for the open questions.
+    const s = rigged([qh, qs, C('4', 'clubs', 'k')], C('Q', 'spades'));
+    expect(validateCombo([qh, qs], s, 0).ok).toBe(true);
+    const before = s.hands[0].length;
+    playCombo(s, 0, [qh, qs]);
+    expect(s.hands[0].length).toBe(before - 1); // played 2, drew 1
+    // Screenshot repro: Q♥ + Q♠ + 9♠ closes on the last question — legal.
+    const sB = rigged([qh, qs, nineS], C('3', 'hearts'), [C('4', 'clubs')]);
+    expect(validateCombo([qh, qs, nineS], sB, 0).ok).toBe(true);
+    // Answer matching the first question instead of the last stays illegal.
+    const sC = rigged([qh, qs, nineH], C('3', 'hearts'), [C('4', 'clubs')]);
+    expect(validateCombo([qh, qs, nineH], sC, 0)).toMatchObject({ ok: false, reason: 'MUST_BE_SAME_RANK' });
   });
 
   it('custom obligation count is respected', () => {
@@ -167,6 +181,68 @@ describe('penalties', () => {
     expect(s.pendingPenalty).toBe(2);
   });
 
+  it('free play: penalty + normal in one combo is illegal in either order', () => {
+    // Screenshot repro: 2♥ + 6♥ same suit must not stack — eat first, then resume.
+    const two = C('2', 'hearts', 't1');
+    const six = C('6', 'hearts', 'n1');
+    const s = rigged([two, six], C('9', 'hearts'), [C('4', 'clubs')]);
+    expect(validateCombo([two, six], s, 0)).toMatchObject({ ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' });
+    expect(validateCombo([six, two], s, 0)).toMatchObject({ ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' });
+    expect(playCombo(s, 0, [two, six])).toMatchObject({ ok: false });
+  });
+
+  it('free play: Joker + normal is illegal, Joker + Joker is a pure penalty stack', () => {
+    const red: Card = { id: 'JOKER-1', suit: 'none', rank: 'JOKER' };
+    const five = C('5', 'hearts', 'n1');
+    const s = rigged([red, five], C('9', 'hearts'), [C('4', 'clubs')]);
+    expect(validateCombo([red, five], s, 0)).toMatchObject({ ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' });
+    const black: Card = { id: 'JOKER-2', suit: 'none', rank: 'JOKER' };
+    const s2 = rigged([red, black], C('9', 'hearts'), [C('4', 'clubs')]);
+    expect(playCombo(s2, 0, [red, black]).ok).toBe(true);
+    expect(s2.pendingPenalty).toBe(5);
+  });
+
+  it('free play: cross-rank normal chains are illegal (same rank or Q-answer only)', () => {
+    const six = C('6', 'hearts', 'n1');
+    const five = C('5', 'hearts', 'n2');
+    const s = rigged([six, five], C('9', 'hearts'), [C('4', 'clubs')]);
+    expect(validateCombo([six, five], s, 0)).toMatchObject({ ok: false, reason: 'MUST_BE_SAME_RANK' });
+    expect(validateCombo([five, six], s, 0)).toMatchObject({ ok: false, reason: 'MUST_BE_SAME_RANK' });
+    expect(playCombo(s, 0, [six, five])).toMatchObject({ ok: false });
+    // Same-rank stack, any suits — first matches top, rest match rank.
+    const seven = C('7', 'spades', 'n3');
+    const sevenH = C('7', 'hearts', 'n4');
+    const s2 = rigged([seven, sevenH], C('9', 'spades'), [C('4', 'clubs')]);
+    expect(validateCombo([seven, sevenH], s2, 0).ok).toBe(true);
+    // Question + same-suit answer still closes.
+    const q = C('Q', 'hearts', 'q1');
+    const ans = C('5', 'hearts', 'a1');
+    const s3 = rigged([q, ans], C('9', 'hearts'), [C('4', 'clubs')]);
+    expect(validateCombo([q, ans], s3, 0).ok).toBe(true);
+  });
+
+  it('free play: Ace + normal is illegal in either order (screenshot repro A♣ + 10♦)', () => {
+    const ace = C('A', 'clubs', 'a1');
+    const ten = C('10', 'diamonds', 'n1');
+    const s = rigged([ace, ten], C('9', 'hearts'), [C('4', 'clubs')]);
+    expect(validateCombo([ace, ten], s, 0)).toMatchObject({ ok: false, reason: 'ACE_ONLY_STACKS_WITH_ACE' });
+    expect(playCombo(s, 0, [ace, ten])).toMatchObject({ ok: false });
+    // normal-first order chains but still mixes Ace: top 10♥, 10♦ matches rank.
+    const s2 = rigged([ten, ace], C('10', 'hearts'), [C('4', 'clubs')]);
+    expect(validateCombo([ten, ace], s2, 0)).toMatchObject({ ok: false, reason: 'ACE_ONLY_STACKS_WITH_ACE' });
+  });
+
+  it('free play: Ace never answers a question (Q + A illegal), Ace + Ace stays legal', () => {
+    const q = C('Q', 'hearts', 'q1');
+    const ace = C('A', 'hearts', 'a1');
+    const s = rigged([q, ace], C('9', 'hearts'), [C('4', 'clubs')]);
+    expect(validateCombo([q, ace], s, 0)).toMatchObject({ ok: false, reason: 'ACE_ONLY_STACKS_WITH_ACE' });
+    const a2 = C('A', 'diamonds', 'a2');
+    const s2 = rigged([ace, a2], C('9', 'hearts'), [C('4', 'clubs')]);
+    expect(validateCombo([ace, a2], s2, 0).ok).toBe(true);
+    expect(validateCombo([ace], s2, 0).ok).toBe(true);
+  });
+
   it('Ace blocks penalty', () => {
     const two = C('2', 'hearts', 't1');
     const ace = C('A', 'spades', 'a1');
@@ -176,16 +252,48 @@ describe('penalties', () => {
     expect(s.pendingPenalty).toBe(0);
   });
 
-  it('Ace block calls nothing — a passed suit is ignored', () => {
+  it('Ace block calls nothing — a passed suit is ignored, penalty suit preserved', () => {
     const two = C('2', 'hearts', 't1');
-    const ace = C('A', 'hearts', 'a1');
+    const ace = C('A', 'spades', 'a1');
     const s = rigged([two], C('9', 'hearts'), [ace]);
     playCombo(s, 0, [two]);
     playCombo(s, 1, [ace], 'spades');
     expect(s.pendingPenalty).toBe(0);
-    expect(s.activeSuit).toBeNull();
+    // Pure block: no fresh call — the suit in force (hearts) persists,
+    // the Ace's own suit (spades) and the passed 'spades' must NOT take over.
+    expect(s.activeSuit).toBe('hearts');
     expect(s.activeCardRequest).toBeNull();
+    expect(s.lastSuitBeforeRequest).toBeNull();
     expect(s.lastEffect).toMatch(/^Blocked!/);
+    // Effective play follows hearts, not the blocking Ace's spades.
+    s.currentPlayer = 0;
+    s.hands[0] = [C('5', 'hearts', 'h'), C('5', 'spades', 'sp')];
+    expect(validateCombo([s.hands[0][0]], s, 0).ok).toBe(true);
+    expect(validateCombo([s.hands[0][1]], s, 0).ok).toBe(false);
+  });
+
+  it('Ace block preserves a prior suit request, not the penalty or Ace suit', () => {
+    const two = C('2', 'diamonds', 't1');
+    const ace = C('A', 'clubs', 'a1');
+    const s = rigged([two], C('9', 'diamonds'), [ace]);
+    s.activeSuit = 'diamonds';
+    playCombo(s, 0, [two]);
+    playCombo(s, 1, [ace]);
+    expect(s.pendingPenalty).toBe(0);
+    expect(s.activeSuit).toBe('diamonds');
+    expect(s.lastEffect).toMatch(/^Blocked!/);
+  });
+
+  it('Ace block on a Joker recovers the last suited discard', () => {
+    const red: Card = { id: 'JOKER-1', suit: 'none', rank: 'JOKER' };
+    const ace = C('A', 'spades', 'a1');
+    const s = rigged([red], C('9', 'hearts'), [ace]);
+    playCombo(s, 0, [red]);
+    expect(s.pendingPenalty).toBe(5);
+    playCombo(s, 1, [ace]);
+    expect(s.pendingPenalty).toBe(0);
+    // Joker carries no suit — fall back to the 9♥ underneath, not the Ace's spades.
+    expect(s.activeSuit).toBe('hearts');
   });
 
   it('strict differs from standard only by jokers — stacking still allowed', () => {
@@ -224,39 +332,120 @@ describe('penalties', () => {
 });
 
 describe('jump + kickback', () => {
-  it('J skips next player (3P table)', () => {
+  it('fresh J defers to the victim (3P): pending 1, no instant skip', () => {
     const s = createGame({ numPlayers: 3, random: () => 0.5 });
-    const j: Card = C('J', s.discardPile[0].suit === 'hearts' ? 'hearts' : s.discardPile[0].suit, 'j1');
-    // force match: give current player a matching card by suit
-    j.suit = s.discardPile[0].suit;
+    const j: Card = C('J', s.discardPile[0].suit, 'j1');
     s.hands[0] = [j, C('4', 'clubs', 'x1')];
-    const cur = s.currentPlayer;
-    playCombo(s, cur, [j]);
-    expect(s.pendingSkip).toBe(0); // consumed by advanceTurn
-    expect(s.currentPlayer).toBe((cur + 2) % 3); // skipped one
+    const r = playCombo(s, 0, [j]);
+    expect(r.ok).toBe(true);
+    expect(r.keptTurn).toBeFalsy();
+    expect(s.pendingSkip).toBe(1);
+    expect(s.currentPlayer).toBe(1); // victim decides — refuse or sit out
   });
 
-  it('K reverses direction', () => {
+  it('victim refuses a single with any single J and keeps the turn', () => {
+    const j = C('J', 'hearts', 'j1');
+    const s = rigged([j, C('4', 'clubs', 'x1')], C('9', 'hearts'), [C('J', 'spades', 'c1'), C('4', 'diamonds', 'o')], 3);
+    playCombo(s, 0, [j]); // pending 1 over player 1
+    expect(s.currentPlayer).toBe(1);
+    const r = playCombo(s, 1, [s.hands[1][0]]); // J♠ refuses J♥ — any suit
+    expect(r.ok).toBe(true);
+    expect(r.keptTurn).toBe(true);
+    expect(s.pendingSkip).toBe(0);
+    expect(s.currentPlayer).toBe(1); // kept turn — plays on
+  });
+
+  it('victim accepts a skip: sits out, debt consumed', () => {
+    const j = C('J', 'hearts', 'j1');
+    const s = rigged([j, C('4', 'clubs', 'x1')], C('9', 'hearts'), [C('4', 'clubs')], 3);
+    playCombo(s, 0, [j]);
+    const r = passOrPick(s, 1);
+    expect(r).toMatchObject({ picked: 0, skipped: true });
+    expect(s.pendingSkip).toBe(0);
+    expect(s.currentPlayer).toBe(2); // victim sat out
+  });
+
+  it('stacks are unrefusable: no single or multi answer to J×2', () => {
+    const jh = C('J', 'hearts', 'jh');
+    const js = C('J', 'spades', 'js');
+    const s = rigged(
+      [jh, js, C('4', 'clubs', 'x1')], C('10', 'hearts'),
+      [C('J', 'clubs', 'c1'), C('J', 'diamonds', 'c2'), C('4', 'spades', 'o')], 3,
+    );
+    playCombo(s, 0, [jh, js]); // pending 2 over player 1
+    expect(s.pendingSkip).toBe(2);
+    expect(s.currentPlayer).toBe(1);
+    expect(validateCombo([s.hands[1][0]], s, 1)).toMatchObject({ ok: false, reason: 'SKIP_MUST_COUNTER_OR_ACCEPT' });
+    expect(validateCombo([s.hands[1][0], s.hands[1][1]], s, 1)).toMatchObject({ ok: false, reason: 'SKIP_MUST_COUNTER_OR_ACCEPT' });
+    passOrPick(s, 1); // accept: consume the whole stack at once
+    expect(s.pendingSkip).toBe(0);
+    expect(s.currentPlayer).toBe(0); // (1 + 2) % 3 — same math as the old instant skip
+  });
+
+  it('2P: J defers too — accept hands the turn back, refuse steals it', () => {
+    const j = C('J', 'hearts', 'j1');
+    const s = rigged([j, C('4', 'clubs', 'x1')], C('9', 'hearts'), [C('4', 'clubs')], 2, STANDARD_MAUA);
+    playCombo(s, 0, [j]);
+    expect(s.pendingSkip).toBe(1);
+    expect(s.currentPlayer).toBe(1);
+    passOrPick(s, 1);
+    expect(s.pendingSkip).toBe(0);
+    expect(s.currentPlayer).toBe(0);
+  });
+
+  it('fresh K defers without flipping (3P): victim decides', () => {
     const s = createGame({ numPlayers: 3, random: () => 0.5 });
     const top = s.discardPile[0];
     const k: Card = C('K', top.suit, 'k1');
     s.hands[0] = [k, C('4', 'clubs', 'x1')];
-    const dir = s.direction;
-    playCombo(s, 0, [k]);
-    expect(s.direction).toBe((dir * -1) as 1 | -1);
+    const r = playCombo(s, 0, [k]);
+    expect(r.ok).toBe(true);
+    expect(s.pendingReverse).toBe(1);
+    expect(s.direction).toBe(1); // not yet flipped
+    expect(s.currentPlayer).toBe(1);
   });
 
-  it('2P: J acts as question — playable bare (with draw) or answered (free)', () => {
-    const j = C('J', 'hearts', 'j1');
-    const s = rigged([j], C('9', 'hearts'), [C('4', 'clubs')], 2, STANDARD_MAUA);
-    expect(validateCombo([j], s, 0).ok).toBe(true);
-    const ans = C('5', 'hearts', 'a1');
-    s.hands[0].push(ans);
-    expect(validateCombo([j, ans], s, 0).ok).toBe(true);
-    const before = s.hands[0].length;
-    playCombo(s, 0, [j]);
-    expect(s.hands[0].length).toBe(before); // played 1, drew 1
-    expect(s.pendingSkip).toBe(0); // 2P: no skip effect, treated as question
+  it('victim refuses a single with any single K: no flip, keeps the turn', () => {
+    const k = C('K', 'hearts', 'k1');
+    const s = rigged([k, C('4', 'clubs', 'x1')], C('9', 'hearts'), [C('K', 'spades', 'c1'), C('4', 'diamonds', 'o')], 3);
+    playCombo(s, 0, [k]);
+    const r = playCombo(s, 1, [s.hands[1][0]]); // K♠ refuses K♥ — any suit
+    expect(r.ok).toBe(true);
+    expect(r.keptTurn).toBe(true);
+    expect(s.pendingReverse).toBe(0);
+    expect(s.direction).toBe(1);
+    expect(s.currentPlayer).toBe(1);
+  });
+
+  it('victim accepts a reversal: sits out with the flip applied', () => {
+    const k = C('K', 'hearts', 'k1');
+    const s = rigged([k, C('4', 'clubs', 'x1')], C('9', 'hearts'), [C('4', 'clubs')], 3);
+    playCombo(s, 0, [k]);
+    const r = passOrPick(s, 1);
+    expect(r).toMatchObject({ picked: 0, skipped: true });
+    expect(s.pendingReverse).toBe(0);
+    expect(s.direction).toBe(-1);
+    expect(s.currentPlayer).toBe(0); // (1 - 1 + 3) % 3 — attacker plays after the sit-out
+  });
+
+  it('2P: K forces burn-or-lose — refuse keeps the turn, accept hands it back', () => {
+    const s = rigged(
+      [C('K', 'hearts', 'k1'), C('4', 'clubs', 'x1')], C('9', 'hearts'),
+      [C('K', 'spades', 'c1'), C('4', 'diamonds', 'o')], 2, STANDARD_MAUA,
+    );
+    playCombo(s, 0, [s.hands[0][0]]);
+    expect(s.pendingReverse).toBe(1);
+    const r = playCombo(s, 1, [s.hands[1][0]]);
+    expect(r.keptTurn).toBe(true);
+    expect(s.direction).toBe(1);
+    expect(s.currentPlayer).toBe(1);
+    const s2 = rigged(
+      [C('K', 'hearts', 'k2'), C('4', 'clubs', 'x2')], C('9', 'hearts'), [C('4', 'clubs')], 2, STANDARD_MAUA,
+    );
+    playCombo(s2, 0, [s2.hands[0][0]]);
+    passOrPick(s2, 1);
+    expect(s2.direction).toBe(-1);
+    expect(s2.currentPlayer).toBe(0);
   });
 });
 
@@ -358,12 +547,15 @@ describe('canFinishNow (live KADI! threat)', () => {
     expect(canFinishNow(s, 0)).toBe(false);
   });
 
-  it('false while a penalty or skip debt is outstanding', () => {
+  it('false while a penalty, skip or reversal debt is outstanding', () => {
     const s = declared(rigged([C('5', 'hearts', 'f')], C('9', 'hearts'), [C('4', 'clubs')]), 0);
     s.pendingPenalty = 2;
     expect(canFinishNow(s, 0)).toBe(false);
     s.pendingPenalty = 0;
     s.pendingSkip = 1;
+    expect(canFinishNow(s, 0)).toBe(false);
+    s.pendingSkip = 0;
+    s.pendingReverse = 1;
     expect(canFinishNow(s, 0)).toBe(false);
   });
 
@@ -427,7 +619,7 @@ describe('tap-order K/J stacks', () => {
     expect(validateCombo([kd, ks], s, 0).ok).toBe(true);
   });
 
-  it('J+J final calculation: skip 2 in 3P anti-clockwise returns to self', () => {
+  it('J+J defers an unrefusable stack: accept consumes all at once', () => {
     const js = C('J', 'spades', 'js');
     const jh = C('J', 'hearts', 'jh');
     const s = rigged([jh, js], C('10', 'hearts'), [C('4', 'clubs')], 3);
@@ -435,8 +627,12 @@ describe('tap-order K/J stacks', () => {
     s.currentPlayer = 0;
     const r = playCombo(s, 0, [jh, js]);
     expect(r.ok).toBe(true);
-    expect(s.currentPlayer).toBe(0); // skipped both rivals
-    expect(s.lastEffect).toMatch(/Jump/);
+    expect(s.pendingSkip).toBe(2);
+    expect(s.currentPlayer).toBe(2); // anti-clockwise victim must accept the stack
+    expect(s.lastEffect).toMatch(/Unrefusable/);
+    passOrPick(s, 2); // accept: consume all, advance 2 from the victim
+    expect(s.pendingSkip).toBe(0);
+    expect(s.currentPlayer).toBe(0); // (2 - 2 + 3) % 3 — same math as the old instant skip
   });
 
   it('K+K final calculation: double reverse restores direction, turn passes on', () => {
@@ -643,7 +839,7 @@ describe('super ace', () => {
     expect(s.discardPile[s.discardPile.length - 1]).toMatchObject({ rank: '8', suit: 'clubs' });
   });
 
-  it('super ace blocking a penalty is a pure block — no demand', () => {
+  it('super ace blocking a penalty is a pure block — no demand, suit preserved', () => {
     const two = C('2', 'hearts', 't');
     const ace = C('A', 'spades', 'as');
     const s = rigged([two], C('9', 'hearts'), [ace, C('5', 'hearts', 'e')], 2, SUPER);
@@ -651,10 +847,10 @@ describe('super ace', () => {
     playCombo(s, 1, [ace], null, { rank: '5', suit: 'hearts' });
     expect(s.pendingPenalty).toBe(0);
     expect(s.activeCardRequest).toBeNull();
-    expect(s.activeSuit).toBeNull();
+    expect(s.activeSuit).toBe('hearts');
   });
 
-  it('stacked aces blocking a penalty call nothing', () => {
+  it('stacked aces blocking a penalty call nothing, suit preserved', () => {
     const two = C('2', 'hearts', 't');
     const a1 = C('A', 'spades', 'a1');
     const a2 = C('A', 'hearts', 'a2');
@@ -663,6 +859,6 @@ describe('super ace', () => {
     expect(playCombo(s, 1, [a1, a2], null, { rank: '5', suit: 'clubs' }).ok).toBe(true);
     expect(s.pendingPenalty).toBe(0);
     expect(s.activeCardRequest).toBeNull();
-    expect(s.activeSuit).toBeNull();
+    expect(s.activeSuit).toBe('hearts');
   });
 });
