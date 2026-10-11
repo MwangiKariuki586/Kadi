@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { STANDARD_MAUA } from '../engine/rules';
 import { createGame } from '../engine/state';
 import { playCombo } from '../engine/validator';
-import { bestSuit, chooseMove, chooseRequestCard, shouldDeclareKadi } from './bot';
+import { bestSuit, chooseMove, chooseRequestCard, isDeclaredThreat, shouldDeclareKadi } from './bot';
 
 describe('bots', () => {
   it('always returns a legal move or null (all difficulties)', () => {
@@ -158,5 +158,52 @@ describe('bots', () => {
     ]);
     expect(req.suit).toBe('spades');
     expect(['5', '6']).toContain(req.rank);
+  });
+
+  it('declared KADI paints a target: threat detected and attacks preferred', () => {
+    const s = createGame({ numPlayers: 3, random: () => 0.1 });
+    s.discardPile = [{ id: '10-hearts-top', suit: 'hearts', rank: '10' }];
+    s.hands[0] = [
+      { id: '5-hearts', suit: 'hearts', rank: '5' },
+      { id: '6-hearts', suit: 'hearts', rank: '6' },
+      { id: '7-hearts', suit: 'hearts', rank: '7' },
+    ];
+    s.hands[1] = [
+      { id: '2-hearts', suit: 'hearts', rank: '2' },
+      { id: '10-spades', suit: 'spades', rank: '10' },
+      { id: '4-clubs', suit: 'clubs', rank: '4' },
+    ];
+    s.hands[2] = [
+      { id: '4-spades', suit: 'spades', rank: '4' },
+      { id: '5-clubs', suit: 'clubs', rank: '5' },
+      { id: '6-diamonds', suit: 'diamonds', rank: '6' },
+      { id: '7-clubs', suit: 'clubs', rank: '7' },
+    ];
+    s.kadiCalls[0] = true;
+    s.currentPlayer = 1;
+    expect(isDeclaredThreat(s, 0)).toBe(true);
+    expect(isDeclaredThreat(s, 1)).toBe(false);
+    // Direction -1 from seat 1 routes to seat 0 (the declarer) next.
+    s.direction = -1;
+    const move = chooseMove(s, 1, 'hard', () => 0.0);
+    expect(move?.cards[0]).toMatchObject({ rank: '2', suit: 'hearts' });
+  });
+
+  it('ace answering a question carries no suit declaration (suit follows the Ace)', () => {
+    const s = createGame({ numPlayers: 2, random: () => 0.1 });
+    s.discardPile = [{ id: '9-spades-top', suit: 'spades', rank: '9' }];
+    s.hands[0] = [
+      { id: 'q-spades', suit: 'spades', rank: 'Q' },
+      { id: 'a-diamonds', suit: 'diamonds', rank: 'A' },
+    ];
+    s.hands[1] = [
+      { id: 'o1', suit: 'clubs', rank: '4' },
+      { id: 'o2', suit: 'hearts', rank: '5' },
+    ];
+    s.currentPlayer = 0;
+    const move = chooseMove(s, 0, 'hard', () => 0.0);
+    expect(move?.cards.map((c) => c.id).sort()).toEqual(['a-diamonds', 'q-spades']);
+    expect(move?.declaredSuit ?? null).toBeNull();
+    expect(move?.requestedCard ?? null).toBeNull();
   });
 });

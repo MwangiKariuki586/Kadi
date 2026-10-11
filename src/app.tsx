@@ -14,11 +14,14 @@ import {
   canDeclareKadi,
   canFinishNow,
   declareKadi,
+  fineKadiDelay,
+  isAceAnswerCombo,
   isSuperAceCombo,
   legalSingles,
   passOrPick,
   playCombo,
   resolveWrongPlay,
+  tryDeclareKadi,
   validateCombo,
 } from "./engine/validator";
 import { store, type ActiveGameSave, type Stats } from "./store/local";
@@ -35,6 +38,8 @@ import {
 } from "./ui/components";
 import {
   describeDeal,
+  describeDelayKadi,
+  describeFalseKadi,
   describeKadi,
   describePick,
   describePlay,
@@ -51,6 +56,13 @@ type Screen = "home" | "lobby" | "game";
 
 const BOT_NAMES = ["Jabari", "Amani", "Zawadi", "Neema"];
 const NAMES = ["You", ...BOT_NAMES];
+
+/**
+ * Call-window: when your turn starts with a clean, winnable hand and no
+ * declaration yet, you have this long to shout KADI before delays are fined.
+ * Keep in sync with the `.anim-kadi-window` drain animation in index.css.
+ */
+const KADI_WINDOW_MS = 2000;
 
 export function App() {
   const [screen, setScreen] = useState<Screen>("home");
@@ -87,6 +99,16 @@ export function App() {
   const stateRef = useRef<GameState | null>(null);
   const recordedRef = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
+  const [kadiWindow, setKadiWindow] = useState(false);
+  const kadiWindowRef = useRef<{
+    turn: number;
+    status: "idle" | "open" | "done";
+    deadline: number;
+    armed: boolean;
+    /** True once this turn's window expired unpressed: a late press still declares, but pays the delay fine. */
+    missed: boolean;
+  }>({ turn: -1, status: "idle", deadline: 0, armed: false, missed: false });
+  const kadiTimerRef = useRef<number>(0);
   const state = stateRef.current;
 
   const flash = useCallback((msg: string) => {
@@ -98,6 +120,44 @@ export function App() {
   const bump = useCallback(() => setTick((t) => t + 1), []);
   void tick;
 
+  /** Close the KADI call-window quietly (pressed, acted, or turn moved on). */
+  const closeKadiWindow = useCallback(() => {
+    window.clearTimeout(kadiTimerRef.current);
+    kadiTimerRef.current = 0;
+    kadiWindowRef.current.armed = false;
+    if (kadiWindowRef.current.status === "open") {
+      kadiWindowRef.current.status = "done";
+    }
+    setKadiWindow(false);
+  }, []);
+
+  /**
+   * Expire a call-window: mark the turn as missed and hide the bar.
+   * Sitting out is free — the delay fine lands only if the player presses
+   * late afterwards. Idempotent per turn.
+   */
+  const expireKadiWindow = useCallback(() => {
+    const w = kadiWindowRef.current;
+    if (w.status !== "open") return;
+    w.status = "done";
+    w.armed = false;
+    w.missed = true;
+    window.clearTimeout(kadiTimerRef.current);
+    kadiTimerRef.current = 0;
+    setKadiWindow(false);
+  }, []);
+
+  /** Arm the expiry timer for the window's remaining time (re-arms after HMR). */
+  const armKadiWindow = useCallback(() => {
+    const w = kadiWindowRef.current;
+    window.clearTimeout(kadiTimerRef.current);
+    kadiTimerRef.current = window.setTimeout(() => {
+      kadiWindowRef.current.armed = false;
+      expireKadiWindow();
+    }, Math.max(0, w.deadline - Date.now()));
+    w.armed = true;
+  }, [expireKadiWindow]);
+
   /** Restore a saved match into the live table (transient UI reset). */
   const restoreSave = useCallback(
     (save: ActiveGameSave) => {
@@ -107,9 +167,9 @@ export function App() {
       setDifficulty(save.meta.difficulty);
       const p = PRESETS.find((x) => x.name === save.meta.presetName);
       if (p) setPreset(p);
-    setSuperAceOn(save.meta.superAce);
-    setStrictOn(save.state.config.strictWrongPlay);
-    setSelected([]);
+      setSuperAceOn(save.meta.superAce);
+      setStrictOn(save.state.config.strictWrongPlay);
+      setSelected([]);
       setSuitPickerFor(null);
       setSuperPickerFor(null);
       setBusy(false);
@@ -282,6 +342,66 @@ export function App() {
     return () => window.clearTimeout(id);
   }, [screen, currentPlayer, gameOver, difficulty, bump, pushFeed]);
 
+  // ---- KADI call-window: shout within 2s of a clean, winnable turn start ----
+  // Opens once per human turn (undeclared + winnable shape + no debts/demands
+  // to answer). Acting, pressing, or the turn moving on closes it quietly;
+  // expiry only marks the turn missed — sitting out is free. A late press
+  // afterwards still declares, but pays the delay fine.
+  useEffect(() => {
+    const s = stateRef.current;
+    const turn = s?.turnNumber ?? -1;
+    if (kadiWindowRef.current.turn !== turn) {
+      closeKadiWindow();
+      kadiWindowRef.current = {
+        turn,
+        status: "idle",
+        deadline: 0,
+        armed: false,
+        missed: false,
+      };
+    }
+    const win = kadiWindowRef.current;
+    const cleanTurn =
+      screen === "game" &&
+      s &&
+      !s.gameOver &&
+      s.currentPlayer === 0 &&
+      !s.kadiCalls[0] &&
+      shouldDeclareKadi(s, 0) &&
+      s.pendingPenalty === 0 &&
+      s.pendingSkip === 0 &&
+      (s.pendingReverse ?? 0) === 0 &&
+      !s.activeCardRequest;
+    if (!cleanTurn) {
+      if (win.status === "open") closeKadiWindow();
+      return;
+    }
+    if (win.status === "idle") {
+      win.status = "open";
+      win.deadline = Date.now() + KADI_WINDOW_MS;
+      setKadiWindow(true);
+      armKadiWindow();
+    } else if (win.status === "open") {
+      if (Date.now() >= win.deadline) expireKadiWindow();
+      else if (!win.armed) armKadiWindow();
+    }
+    return () => {
+      window.clearTimeout(kadiTimerRef.current);
+      kadiWindowRef.current.armed = false;
+    };
+  }, [
+    screen,
+    currentPlayer,
+    tick,
+    gameOver,
+    bump,
+    pushFeed,
+    flash,
+    expireKadiWindow,
+    closeKadiWindow,
+    armKadiWindow,
+  ]);
+
   // ---- record result once (finished games are never resumed) ----
   useEffect(() => {
     if (screen === "game" && state?.gameOver && !recordedRef.current) {
@@ -389,17 +509,24 @@ export function App() {
               </p>
               <p class="mt-2">
                 📢 Say <b class="text-yellow-300">Niko Kadi</b> the turn{" "}
-                <i>before</i> you finish — or the win doesn't count.
+                <i>before</i> you finish — or the win doesn't count. Calling
+                early with no winnable hand is fined +1 on the spot. When
+                your hand is ready, a 2s window opens each turn — ignoring
+                it is free, but shouting after it expires still declares
+                and fines +1 for the delay.
               </p>
               <p class="mt-2">
                 🃏 Match <b>suit or rank</b>. J = Jump (skip) • K = reverse •
-                Q/8 = question — stack Qs/8s, answer matches the last one or pick 1 • A blocks
-                2/3 (no call) • played freely, A requests a suit • 2/3 = pick
-                2/3 (answer to forward, latest count stands).
+                Q/8 = question — answer same-suit or any Ace (suit follows the
+                Ace, no pick) or pick 1 • A blocks 2/3 (no call) • played
+                freely, A requests a suit • 2/3 = pick 2/3 (answer to forward,
+                latest count stands).
               </p>
               <p class="mt-2">
-                🚫 Can't finish on J Q 8 K A 2 3. Can't win while anyone is
-                cardless. Go out without the call: fined +1, no win.
+                🚫 Can't finish on J K 2 3, lone Q/8, or lone A. Q/8 + Ace wins
+                ending on the Ace. Can't win while anyone is cardless. Go out
+                without the call: fined +1, no win. Picking up cards voids your
+                KADI — say it again when truly finishing.
               </p>
             </div>
           )}
@@ -463,7 +590,9 @@ export function App() {
                   class={`rounded-2xl py-3 font-black ${numBots === n ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"}`}
                 >
                   {n + 1}P
-                  <span class="block text-[10px] font-normal">you + {n} 🤖</span>
+                  <span class="block text-[10px] font-normal">
+                    you + {n} 🤖
+                  </span>
                 </button>
               ))}
             </div>
@@ -545,7 +674,8 @@ export function App() {
                 🚨 Strict table {strictOn ? "(on)" : "(off)"}
               </span>
               <span class="block text-[11px] text-white/60 mt-0.5">
-                Wrong plays are fined +1 and turn passes. Off: Play blocks them free.
+                Wrong plays are fined +1 and turn passes. Off: Play blocks them
+                free.
               </span>
             </button>
           </div>
@@ -582,16 +712,27 @@ export function App() {
   const top = topCard(state);
   const myHand = state.hands[0];
   const myTurn = state.currentPlayer === 0 && !state.gameOver;
-  // Buzzer states: always rendered, dimmed when unavailable, flashing when live.
-  const kadiOpen = canDeclareKadi(state, 0);
+  // Buzzer is always live and clickable while the game runs — even with an
+  // unwinnable hand or on a bot's turn. Shouting early is the player's risk:
+  // a press without a legally winnable hand is fined immediately (no flag
+  // set, so the win stays impossible until a proper declaration).
   const kadiHot = shouldDeclareKadi(state, 0);
+  // Late cue: this turn's window expired unpressed, but the hand is still
+  // ready — shouting now still declares, at the delay fine.
+  const kadiLate =
+    !state.kadiCalls[0] &&
+    myHand.length > 0 &&
+    kadiWindowRef.current.turn === state.turnNumber &&
+    kadiWindowRef.current.missed;
   const kadiTitle = state.kadiCalls[0]
     ? "KADI already called — go out and finish!"
     : myHand.length === 0
       ? "Cardless — nothing to declare with"
-      : kadiHot
-        ? "Niko Kadi! Tap to declare"
-        : "Declare Kadi — call it the turn before you finish";
+      : kadiHot && kadiLate
+        ? `Late KADI — still counts, but fined +${state.config.kadiDelayPickCount ?? 1}`
+        : kadiHot
+          ? "Niko Kadi! Tap to declare"
+          : `Say KADI anytime — a wrong call is fined +${state.config.falseKadiPickCount} on the spot`;
   const selectedCards = selected.flatMap(
     (id) => myHand.find((c) => c.id === id) ?? [],
   );
@@ -620,6 +761,7 @@ export function App() {
     declared: Suit | null,
     requested?: { rank: Rank; suit: Suit } | null,
   ) => {
+    closeKadiWindow();
     const before = snapshotState(state, 0);
     const r = playCombo(state, 0, cards, declared, requested ?? null);
     if (!r.ok) {
@@ -672,8 +814,11 @@ export function App() {
       setSuperPickerFor(selectedCards);
       return;
     }
+    // An Ace answering a question never declares: suit auto-follows the Ace.
+    const aceAnswers = isAceAnswerCombo(selectedCards, state);
     const needsSuit =
       selectedCards.some((c) => c.rank === "A") &&
+      !aceAnswers &&
       state.config.aceCallsSuit &&
       state.pendingPenalty === 0 &&
       state.activeCardRequest == null;
@@ -686,6 +831,7 @@ export function App() {
 
   const onPickPress = () => {
     if (!myTurn || busy) return;
+    closeKadiWindow();
     const before = snapshotState(state, 0);
     const r = passOrPick(state, 0);
     pushFeed(...describePick(before, 0, NAMES, r.picked, r.skipped));
@@ -696,10 +842,58 @@ export function App() {
   };
 
   const onKadi = () => {
-    if (declareKadi(state, 0)) {
+    if (state.gameOver) return;
+    if (state.kadiCalls[0]) {
+      flash("KADI already called — go out and finish!");
+      return;
+    }
+    if (myHand.length === 0) {
+      flash("Cardless — nothing to declare with.");
+      return;
+    }
+    const latePress =
+      kadiWindowRef.current.turn === state.turnNumber &&
+      kadiWindowRef.current.missed &&
+      !state.kadiCalls[0];
+    closeKadiWindow();
+    // Late shout after a missed window: fine the delay FIRST (no flag set,
+    // so the shared pickup rule cannot void anything), then declare. A late
+    // press with no winnable hand falls through to the false-call path —
+    // one fine only, never stacked.
+    if (latePress && shouldDeclareKadi(state, 0)) {
+      const fined = fineKadiDelay(state, 0);
+      declareKadi(state, 0);
+      pushFeed(describeDelayKadi("You", fined));
+      pushFeed(describeKadi("You"));
+      sfx.penalty();
+      haptics.penalty();
+      flash(
+        fined > 0
+          ? `Late KADI — fined +${fined}, but it counts. Go finish!`
+          : "Late KADI — it counts. Go finish!",
+      );
+      bump();
+      return;
+    }
+    const r = tryDeclareKadi(state, 0);
+    if (r.ok) {
       sfx.kadi();
       haptics.play();
       pushFeed(describeKadi("You"));
+      bump();
+    } else if (r.falseCall && r.fined) {
+      sfx.penalty();
+      haptics.penalty();
+      pushFeed(describeFalseKadi("You", r.fined));
+      flash(
+        `False KADI — no winnable hand, fined +${r.fined}. Need 4 5 6 7 9 10, Q/8 + same-suit answer, or Q/8 + Ace.`,
+      );
+      bump();
+    } else if (r.falseCall) {
+      sfx.error();
+      flash(
+        "False KADI — no winnable hand. Lone A/J/K/2/3/Joker can't finish; Ace only wins answering Q/8.",
+      );
       bump();
     }
   };
@@ -838,10 +1032,15 @@ export function App() {
                 ? null
                 : state.winnerIndex === 0
                   ? "You"
-                  : BOT_NAMES[(state.winnerIndex - 1 + BOT_NAMES.length) % BOT_NAMES.length],
+                  : BOT_NAMES[
+                      (state.winnerIndex - 1 + BOT_NAMES.length) %
+                        BOT_NAMES.length
+                    ],
             myTurn,
             waitingOn:
-              BOT_NAMES[(state.currentPlayer - 1 + BOT_NAMES.length) % BOT_NAMES.length],
+              BOT_NAMES[
+                (state.currentPlayer - 1 + BOT_NAMES.length) % BOT_NAMES.length
+              ],
             busyThinking: busy && state.currentPlayer !== 0,
             pendingPenalty: state.pendingPenalty,
             pendingSkip: state.pendingSkip,
@@ -852,7 +1051,10 @@ export function App() {
             topLabel: cardLabel(top),
             selectedCount: selectedCards.length,
             comboValid: validation ? validation.ok : null,
-            invalidReason: validation && !validation.ok ? reasonText(validation.reason ?? null, state.activeSuit) : null,
+            invalidReason:
+              validation && !validation.ok
+                ? reasonText(validation.reason ?? null, state.activeSuit)
+                : null,
             legalCount: hints.size,
             kadiReady: canDeclareKadi(state, 0) && shouldDeclareKadi(state, 0),
           })}
@@ -870,13 +1072,23 @@ export function App() {
       {/* hand */}
       <div class="flex-1 flex min-h-0 flex-col justify-end px-4 pb-2">
         {!state.gameOver && (
-          <div class="flex shrink-0 items-center justify-center py-2">
-            <KadiBuzzer
-              urgent={kadiHot}
-              disabled={!kadiOpen}
-              title={kadiTitle}
-              onPress={onKadi}
-            />
+          <div class="flex shrink-0 flex-col items-center justify-center py-2">
+            {kadiWindow && (
+              <div
+                class="mb-1 flex w-40 flex-col items-center gap-1"
+                key={state.turnNumber}
+              >
+                <div class="h-1.5 w-full overflow-hidden rounded-full bg-white/15">
+                  <div class="anim-kadi-window h-full w-full rounded-full bg-gradient-to-r from-yellow-300 to-red-500" />
+                </div>
+              </div>
+            )}
+            {kadiLate && kadiHot && (
+              <p class="mb-1 text-[11px] font-bold uppercase tracking-widest text-amber-300">
+                Late shout costs +1 — but it counts
+              </p>
+            )}
+            <KadiBuzzer urgent={kadiHot} title={kadiTitle} onPress={onKadi} />
           </div>
         )}
         <div class="flex shrink-0 justify-center overflow-x-auto pt-3">
@@ -893,9 +1105,7 @@ export function App() {
               </div>
             ))}
             {myHand.length === 0 && (
-              <p class="text-white/60 text-sm pb-6">
-                Cardless — you'll pick on your turn.
-              </p>
+              <p class="text-white/60 text-sm pb-6">Cardless</p>
             )}
           </div>
         </div>
@@ -926,7 +1136,9 @@ export function App() {
           type="button"
           onClick={onPlayPress}
           disabled={
-            !myTurn || selectedCards.length === 0 || (selectionInvalid && !strictOn)
+            !myTurn ||
+            selectedCards.length === 0 ||
+            (selectionInvalid && !strictOn)
           }
           class={`flex-1 rounded-2xl py-3.5 font-black text-sm active:scale-95 transition disabled:opacity-40 ${
             selectionInvalid
@@ -947,7 +1159,7 @@ export function App() {
             <div class="text-5xl">{state.winnerIndex === 0 ? "🏆" : "😅"}</div>
             <h3 class="mt-2 text-2xl font-black text-yellow-300">
               {state.winnerIndex === 0
-                ? "You win! Niko Kadi!"
+                ? "You win 🎉"
                 : `${BOT_NAMES[(state.winnerIndex ?? 1) - 1]} wins`}
             </h3>
             <div class="mt-3 flex justify-center gap-2">
@@ -988,8 +1200,7 @@ function reasonText(reason: string | null, activeSuit?: Suit | null): string {
               : activeSuit === "spades"
                 ? "♠"
                 : "♣";
-        const name =
-          activeSuit.charAt(0).toUpperCase() + activeSuit.slice(1);
+        const name = activeSuit.charAt(0).toUpperCase() + activeSuit.slice(1);
         return `Must follow ${name} ${glyph} — Ace called it.`;
       }
       return "Must match suit or rank of the top card.";
@@ -998,9 +1209,9 @@ function reasonText(reason: string | null, activeSuit?: Suit | null): string {
     case "PENALTY_MUST_STACK_OR_BLOCK":
       return "2 / 3 / Joker only stack with other penalties — never with normal cards. Stack, block with Ace, or eat.";
     case "ACE_ONLY_STACKS_WITH_ACE":
-      return "An Ace plays solo or with another Ace — never stacked with normal cards.";
+      return "An Ace plays solo, with another Ace, or as the answer to Q / 8 (any suit) — never with other normal cards.";
     case "MUST_BE_SAME_RANK":
-      return "Combos share one rank — e.g. 7♥ + 7♠. Questions stack (Q/8) and the answer matches the last question (4 5 6 7 9 10, same suit); J/K stack together.";
+      return "Combos share one rank — e.g. 7♥ + 7♠. Questions stack (Q/8) and the answer matches the last question (4 5 6 7 9 10 same suit, or Ace any suit); J/K stack together.";
     case "SKIP_MUST_COUNTER_OR_ACCEPT":
       return "Jump! Refuse with any single J to keep your turn, or accept the skip. Stacks can't be refused.";
     case "REVERSE_MUST_COUNTER_OR_ACCEPT":

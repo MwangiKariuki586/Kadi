@@ -1,6 +1,6 @@
 import { cardLabel, type Card, type Suit } from '../engine/cards';
 import { isJumpRank, isKickbackRank, isPenaltyRank } from '../engine/rules';
-import { isSuperAceCombo } from '../engine/validator';
+import { isAceAnswerCombo, isSuperAceCombo } from '../engine/validator';
 import type { GameState } from '../engine/state';
 
 export type FeedTone =
@@ -89,7 +89,7 @@ export function describePlay(
 
   // Kadi declaration landed with this turn (bots declare inside their move).
   if (after.kadiCalls[me] && !before.kadi[me]) {
-    evts.push({ icon: '📢', text: `${actor} is KADI! One clean move to win`, tone: 'kadi' });
+    evts.push({ icon: '📢', text: `${actor} is KADI! One clean move to win — stop them!`, tone: 'kadi' });
   }
 
   // Penalty consequence: fresh, stacked, or neutralised. The debt always
@@ -126,7 +126,23 @@ export function describePlay(
   // Suit request (new or changed) on free play. Demand resolutions (lift /
   // counter) narrate themselves below — the responder never calls a fresh suit.
   // A penalty block preserves the suit in force — never narrate it as a call.
-  if (!reqBefore && after.activeSuit && after.activeSuit !== before.activeSuit && before.pendingPenalty === 0) {
+  // An Ace answering a question never declares either: the suit auto-follows
+  // the Ace, narrated as an answer instead of a call.
+  const aceAnswerFollow =
+    !reqBefore &&
+    after.activeSuit &&
+    before.pendingPenalty === 0 &&
+    isAceAnswerCombo(played, after) &&
+    !isSuperAceCombo(played, after) &&
+    played.some((c) => c.rank === 'A' && c.suit === after.activeSuit);
+  if (aceAnswerFollow && after.activeSuit) {
+    const ace = [...played].reverse().find((c) => c.rank === 'A');
+    evts.push({
+      icon: '🎯',
+      text: `${actor} answers with ${ace ? cardLabel(ace) : 'an Ace'} — follow ${suitName(after.activeSuit)}`,
+      tone: 'suit',
+    });
+  } else if (!reqBefore && after.activeSuit && after.activeSuit !== before.activeSuit && before.pendingPenalty === 0) {
     const prev = before.activeSuit ?? before.topSuit;
     evts.push({
       icon: '🎯',
@@ -245,7 +261,23 @@ export function describeWrongPlay(actor: string, played: Card[], fined: number):
 }
 
 export function describeKadi(name: string): FeedEvent {
-  return { icon: '📢', text: `${name} is KADI! One clean move to win`, tone: 'kadi' };
+  return { icon: '📢', text: `${name} is KADI! One clean move to win — stop them!`, tone: 'kadi' };
+}
+
+export function describeFalseKadi(name: string, fined: number): FeedEvent {
+  return {
+    icon: '⛔',
+    text: `${name} calls KADI too early — no winnable hand, fined +${fined}`,
+    tone: 'penalty',
+  };
+}
+
+export function describeDelayKadi(name: string, fined: number): FeedEvent {
+  return {
+    icon: '⏱',
+    text: `${name} slept on KADI — shouted too late, fined +${fined}`,
+    tone: 'penalty',
+  };
 }
 
 export function describeDeal(top: Card): FeedEvent {

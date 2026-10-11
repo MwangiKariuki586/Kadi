@@ -26,8 +26,10 @@ export interface RulesConfig {
   kickbackRanks: Rank[];
   kickbackCounterable: boolean;
   questionRanks: Rank[];
-  /** Stacked questions (Q/8) are closed by a same-suit answer to the last open question. */
+  /** Stacked questions (Q/8) are closed by a same-suit winning answer — or by any Ace. */
   mustAnswerSameSuit: boolean;
+  /** An Ace answers any open question regardless of suit (Q♠ + A♦ is legal). Future custom mode may turn this off. */
+  aceAnswersQuestion: boolean;
   /** Asking a question without an answer is legal but draws this many cards. */
   unansweredQuestionPickCount: number;
   /** Ranks that alone can finish a game. */
@@ -46,6 +48,10 @@ export interface RulesConfig {
   strictWrongPlay: boolean;
   /** Going out clean without a valid prior Kadi call: win denied, draw this many. */
   lateCallPickCount: number;
+  /** Calling Kadi without a legally winnable hand: call rejected, draw this many. */
+  falseKadiPickCount: number;
+  /** Letting the 2s KADI call-window expire: draw this many. */
+  kadiDelayPickCount: number;
   /** Super-ace mode (lobby toggle): the special ace ALONE can demand an exact card. */
   superAceEnabled: boolean;
   /** The inherently "special" ace when superAceEnabled (usually spades). */
@@ -72,6 +78,7 @@ export const STANDARD_MAUA: RulesConfig = {
   kickbackCounterable: true,
   questionRanks: ['Q', '8'],
   mustAnswerSameSuit: true,
+  aceAnswersQuestion: true,
   unansweredQuestionPickCount: 1,
   winningRanks: ['4', '5', '6', '7', '9', '10'],
   mustSayNikoKadi: true,
@@ -82,6 +89,8 @@ export const STANDARD_MAUA: RulesConfig = {
   invalidPlayPickCount: 1,
   strictWrongPlay: false,
   lateCallPickCount: 1,
+  falseKadiPickCount: 1,
+  kadiDelayPickCount: 1,
   superAceEnabled: false,
   specialAceSuit: 'spades',
   superAceMinAces: 2,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { STANDARD_MAUA, STRICT_NO_JOKER } from './rules';
 import { createGame, type GameState } from './state';
-import { canFinishNow, declareKadi, isSuperAceCombo, legalSingles, passOrPick, playCombo, resolveWrongPlay, validateCombo } from './validator';
+import { canFinishNow, declareKadi, fineKadiDelay, isSuperAceCombo, isWinnableShape, legalSingles, passOrPick, playCombo, resolveWrongPlay, tryDeclareKadi, validateCombo } from './validator';
 import type { Card } from './cards';
 
 const C = (rank: Card['rank'], suit: Card['suit'] = 'hearts', id?: string): Card => ({
@@ -232,15 +232,28 @@ describe('penalties', () => {
     expect(validateCombo([ten, ace], s2, 0)).toMatchObject({ ok: false, reason: 'ACE_ONLY_STACKS_WITH_ACE' });
   });
 
-  it('free play: Ace never answers a question (Q + A illegal), Ace + Ace stays legal', () => {
-    const q = C('Q', 'hearts', 'q1');
-    const ace = C('A', 'hearts', 'a1');
-    const s = rigged([q, ace], C('9', 'hearts'), [C('4', 'clubs')]);
-    expect(validateCombo([q, ace], s, 0)).toMatchObject({ ok: false, reason: 'ACE_ONLY_STACKS_WITH_ACE' });
+  it('free play: Ace answers any question (Q + A legal any suit), Ace + Ace stays legal', () => {
+    const q = C('Q', 'spades', 'q1');
+    const ace = C('A', 'diamonds', 'a1');
+    const keeper = C('4', 'clubs', 'k1');
+    const s = rigged([q, ace, keeper], C('9', 'spades'), [C('4', 'spades')]);
+    expect(validateCombo([q, ace], s, 0).ok).toBe(true);
+    // Answered — no forced draw (keeper stays so no win-check fine interferes).
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'clubs', `d${i}`));
+    playCombo(s, 0, [q, ace], 'diamonds');
+    expect(s.hands[0].length).toBe(1);
+    expect(s.hands[0][0].id).toBe('k1');
+    expect(s.lastEffect).not.toMatch(/No answer/);
     const a2 = C('A', 'diamonds', 'a2');
     const s2 = rigged([ace, a2], C('9', 'hearts'), [C('4', 'clubs')]);
     expect(validateCombo([ace, a2], s2, 0).ok).toBe(true);
     expect(validateCombo([ace], s2, 0).ok).toBe(true);
+    // Ace leading into a question stays illegal; Ace + plain stays illegal.
+    const s3 = rigged([ace, q], C('9', 'diamonds'), [C('4', 'clubs')]);
+    expect(validateCombo([ace, q], s3, 0).ok).toBe(false);
+    const ten = C('10', 'diamonds', 'n1');
+    const s4 = rigged([ace, ten], C('9', 'diamonds'), [C('4', 'clubs')]);
+    expect(validateCombo([ace, ten], s4, 0).ok).toBe(false);
   });
 
   it('Ace blocks penalty', () => {
@@ -600,6 +613,13 @@ describe('canFinishNow (live KADI! threat)', () => {
     aceOnly.activeCardRequest = { rank: '5', suit: 'hearts' };
     expect(canFinishNow(aceOnly, 0)).toBe(false);
   });
+
+  it('true for Q + Ace (any suit) declared earlier; false for lone Ace', () => {
+    const qa = declared(rigged([C('Q', 'spades', 'q'), C('A', 'diamonds', 'a')], C('9', 'spades'), [C('4', 'clubs')]), 0);
+    expect(canFinishNow(qa, 0)).toBe(true);
+    const lone = declared(rigged([C('A', 'clubs', 'a')], C('9', 'clubs'), [C('4', 'clubs')]), 0);
+    expect(canFinishNow(lone, 0)).toBe(false);
+  });
 });
 
 describe('tap-order K/J stacks', () => {
@@ -860,5 +880,206 @@ describe('super ace', () => {
     expect(s.pendingPenalty).toBe(0);
     expect(s.activeCardRequest).toBeNull();
     expect(s.activeSuit).toBe('hearts');
+  });
+});
+
+describe('kadi declaration consequences', () => {
+  it('winnable shape: plain winners, same-suit Q/8 answers, and Ace answers', () => {
+    expect(isWinnableShape([C('5', 'hearts', 'a')], STANDARD_MAUA)).toBe(true);
+    expect(isWinnableShape([C('5', 'hearts', 'a'), C('6', 'spades', 'b')], STANDARD_MAUA)).toBe(true);
+    expect(
+      isWinnableShape([C('Q', 'hearts', 'q'), C('5', 'hearts', 'a')], STANDARD_MAUA),
+    ).toBe(true);
+    // An Ace answers any question regardless of suit — and wins ending on it.
+    expect(isWinnableShape([C('Q', 'spades', 'q'), C('A', 'diamonds', 'a')], STANDARD_MAUA)).toBe(true);
+    // Lone question, lone Ace, oversized hand, and non-closers are not declarable.
+    expect(isWinnableShape([C('Q', 'hearts', 'q')], STANDARD_MAUA)).toBe(false);
+    expect(
+      isWinnableShape(
+        [C('5', 'hearts', 'a'), C('6', 'spades', 'b'), C('7', 'clubs', 'c'), C('9', 'diamonds', 'd')],
+        STANDARD_MAUA,
+      ),
+    ).toBe(false);
+    expect(isWinnableShape([C('J', 'hearts', 'j')], STANDARD_MAUA)).toBe(false);
+    expect(isWinnableShape([C('K', 'hearts', 'k')], STANDARD_MAUA)).toBe(false);
+    expect(isWinnableShape([C('A', 'spades', 'a')], STANDARD_MAUA)).toBe(false);
+    expect(isWinnableShape([C('2', 'hearts', 't')], STANDARD_MAUA)).toBe(false);
+    expect(isWinnableShape([C('A', 'clubs', 'a'), C('10', 'diamonds', 'n')], STANDARD_MAUA)).toBe(false);
+  });
+
+  it('wrong-suit plain answers stay unwinnable; Ace answers ignore suit', () => {
+    expect(
+      isWinnableShape([C('Q', 'spades', 'q'), C('5', 'diamonds', 'a')], STANDARD_MAUA),
+    ).toBe(false);
+    expect(isWinnableShape([C('Q', 'spades', 'q'), C('A', 'diamonds', 'a')], STANDARD_MAUA)).toBe(true);
+  });
+
+  it('Q + Ace wins the round when declared earlier (suit auto-follows the Ace, no declaration)', () => {
+    const q = C('Q', 'spades', 'q1');
+    const ace = C('A', 'diamonds', 'a1');
+    const s = rigged([q, ace], C('9', 'spades'), [C('4', 'clubs'), C('6', 'spades')]);
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'clubs', `d${i}`));
+    declareKadi(s, 0);
+    s.turnNumber += 1;
+    s.currentPlayer = 0;
+    const r = playCombo(s, 0, [q, ace], null);
+    expect(r.won).toBe(true);
+    expect(s.gameOver).toBe(true);
+    expect(s.activeSuit).toBe('diamonds');
+  });
+
+  it('a passed suit is ignored for an Ace answer — A♠ means spades', () => {
+    const q = C('Q', 'spades', 'q1');
+    const ace = C('A', 'spades', 'a1');
+    const keeper = C('4', 'clubs', 'k1');
+    const s = rigged([q, ace, keeper], C('9', 'spades'), [C('4', 'spades')]);
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'clubs', `d${i}`));
+    const r = playCombo(s, 0, [q, ace], 'hearts');
+    expect(r.ok).toBe(true);
+    expect(s.activeSuit).toBe('spades');
+    expect(s.hands[0].length).toBe(1);
+  });
+
+  it('lone Ace closing alone never wins — it goes cardless', () => {
+    const ace = C('A', 'clubs', 'a1');
+    const s = rigged([ace], C('9', 'clubs'), [C('4', 'spades'), C('6', 'spades')]);
+    declareKadi(s, 0);
+    s.turnNumber += 1;
+    s.currentPlayer = 0;
+    const r = playCombo(s, 0, [ace], 'clubs');
+    expect(r.won).toBeFalsy();
+    expect(r.becameCardless).toBe(true);
+  });
+
+  it('true call sets the flag with no fine; turn does not advance', () => {
+    const s = rigged([C('5', 'hearts', 'a'), C('6', 'spades', 'b')], C('9', 'hearts'), [C('4', 'clubs')]);
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    const turn = s.turnNumber;
+    const current = s.currentPlayer;
+    const r = tryDeclareKadi(s, 0);
+    expect(r.ok).toBe(true);
+    expect(r.fined).toBeFalsy();
+    expect(s.kadiCalls[0]).toBe(true);
+    expect(s.hands[0].length).toBe(2);
+    expect(s.turnNumber).toBe(turn);
+    expect(s.currentPlayer).toBe(current);
+  });
+
+  it('false call is fined immediately, sets no flag, keeps the turn', () => {
+    const s = rigged(
+      [C('5', 'hearts', 'a'), C('J', 'spades', 'j'), C('4', 'clubs', 'k'), C('6', 'diamonds', 'o')],
+      C('9', 'hearts'),
+      [C('4', 'spades')],
+    );
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    const turn = s.turnNumber;
+    const r = tryDeclareKadi(s, 0);
+    expect(r.ok).toBe(false);
+    expect(r.falseCall).toBe(true);
+    expect(r.fined).toBe(1);
+    expect(s.kadiCalls[0]).toBe(false);
+    expect(s.hands[0].length).toBe(5);
+    expect(s.turnNumber).toBe(turn);
+    expect(s.currentPlayer).toBe(0);
+  });
+
+  it('picking up cards voids the KADI claim — stale calls cannot win later', () => {
+    // Declare with a winnable hand, then eat a penalty: the call is void.
+    const s = rigged(
+      [C('5', 'hearts', 'a'), C('6', 'spades', 'b')],
+      C('9', 'hearts'),
+      [C('2', 'hearts', 't'), C('4', 'clubs', 'keeper')],
+    );
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    expect(tryDeclareKadi(s, 0).ok).toBe(true);
+    expect(s.kadiCalls[0]).toBe(true);
+    s.currentPlayer = 1;
+    playCombo(s, 1, [s.hands[1][0]]);
+    expect(s.pendingPenalty).toBe(2);
+    passOrPick(s, 0);
+    expect(s.kadiCalls[0]).toBe(false);
+    expect(s.kadiCallTurn[0]).toBe(-1);
+    // Shedding back down without re-declaring: win denied, fined instead.
+    s.turnNumber += 1;
+    s.currentPlayer = 0;
+    s.hands[0] = [C('5', 'hearts', 'f')];
+    const r = playCombo(s, 0, [s.hands[0][0]]);
+    expect(r.won).toBeFalsy();
+    expect(r.fined).toBe(1);
+  });
+
+  it('playing without drawing keeps the claim; bare questions void it', () => {
+    const s = rigged(
+      [C('5', 'hearts', 'a'), C('6', 'spades', 'b'), C('4', 'clubs', 'k')],
+      C('9', 'hearts'),
+      [C('4', 'spades')],
+    );
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    expect(tryDeclareKadi(s, 0).ok).toBe(true);
+    // Shed one card, draw nothing: claim survives.
+    s.hands[0] = [C('5', 'hearts', 'a'), C('6', 'spades', 'b'), C('4', 'clubs', 'k')];
+    s.discardPile = [C('5', 'clubs', 'top')];
+    playCombo(s, 0, [s.hands[0].find((c) => c.id === 'k')!]);
+    expect(s.kadiCalls[0]).toBe(true);
+    // Ask bare and draw the obligation: claim void.
+    s.currentPlayer = 0;
+    s.hands[0] = [C('Q', 'hearts', 'q'), C('5', 'hearts', 'w')];
+    s.discardPile = [C('9', 'hearts', 'top2')];
+    playCombo(s, 0, [s.hands[0][0]]);
+    expect(s.kadiCalls[0]).toBe(false);
+  });
+
+  it('delay fine draws the configured count, falls back, honors zero', () => {
+    const s = rigged([C('5', 'hearts', 'a'), C('6', 'spades', 'b')], C('9', 'hearts'), [C('4', 'clubs')]);
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    expect(fineKadiDelay(s, 0)).toBe(1);
+    expect(s.hands[0].length).toBe(3);
+    expect(s.currentPlayer).toBe(0);
+
+    const cfg = { ...STANDARD_MAUA, kadiDelayPickCount: 2 };
+    const s2 = rigged([C('5', 'hearts', 'a')], C('9', 'hearts'), [C('4', 'clubs')], 2, cfg);
+    s2.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    expect(fineKadiDelay(s2, 0)).toBe(2);
+
+    // Old saves missing the field fall back to the false-call fine.
+    const legacy = { ...STANDARD_MAUA, kadiDelayPickCount: undefined, falseKadiPickCount: 3 } as unknown as typeof STANDARD_MAUA;
+    const s3 = rigged([C('5', 'hearts', 'a')], C('9', 'hearts'), [C('4', 'clubs')], 2, legacy);
+    s3.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    expect(fineKadiDelay(s3, 0)).toBe(3);
+
+    const cfg0 = { ...STANDARD_MAUA, kadiDelayPickCount: 0 };
+    const s4 = rigged([C('5', 'hearts', 'a')], C('9', 'hearts'), [C('4', 'clubs')], 2, cfg0);
+    s4.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    expect(fineKadiDelay(s4, 0)).toBe(0);
+    expect(s4.hands[0].length).toBe(1);
+  });
+
+  it('late-press order (fine first, then declare) keeps the flag', () => {
+    // The UI fines a late shout before declaring: with no flag set yet the
+    // shared pickup rule cannot void anything, so the declaration sticks.
+    const s = rigged([C('5', 'hearts', 'a'), C('6', 'spades', 'b')], C('9', 'hearts'), [C('4', 'clubs')]);
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    expect(fineKadiDelay(s, 0)).toBe(1);
+    expect(s.kadiCalls[0]).toBe(false);
+    expect(declareKadi(s, 0)).toBe(true);
+    expect(s.kadiCalls[0]).toBe(true);
+    expect(s.hands[0].length).toBe(3);
+    expect(s.currentPlayer).toBe(0);
+  });
+
+  it('custom false-call fine respected; zero means no draw but still rejected', () => {
+    const cfg = { ...STANDARD_MAUA, falseKadiPickCount: 3 };
+    const s = rigged([C('J', 'hearts', 'j'), C('4', 'clubs', 'k')], C('9', 'hearts'), [C('4', 'spades')], 2, cfg);
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    const r = tryDeclareKadi(s, 0);
+    expect(r.fined).toBe(3);
+    expect(s.kadiCalls[0]).toBe(false);
+
+    const cfg0 = { ...STANDARD_MAUA, falseKadiPickCount: 0 };
+    const s0 = rigged([C('J', 'hearts', 'j0'), C('4', 'clubs', 'k0')], C('9', 'hearts'), [C('4', 'spades')], 2, cfg0);
+    const r0 = tryDeclareKadi(s0, 0);
+    expect(r0.ok).toBe(false);
+    expect(r0.fined).toBeFalsy();
+    expect(s0.kadiCalls[0]).toBe(false);
   });
 });

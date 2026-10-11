@@ -113,5 +113,13 @@ export function drawCards(state: GameState, playerIndex: number, count: number):
     state.hands[playerIndex].push(c);
     drawn.push(c);
   }
+  // Picking up cards voids a stale KADI claim: you said you would finish,
+  // then your hand grew — declare again when truly finishing. The late-call
+  // fine path and false-call fine path draw with no flag set (no-op).
+  if (drawn.length > 0 && state.kadiCalls[playerIndex]) {
+    state.kadiCalls[playerIndex] = false;
+    state.kadiCallTurn[playerIndex] = -1;
+    state.lastEffect = (state.lastEffect ? state.lastEffect + ' • ' : '') + 'KADI void — picked cards';
+  }
   return drawn;
 }

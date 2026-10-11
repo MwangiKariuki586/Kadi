@@ -4,7 +4,7 @@ import { STANDARD_MAUA } from '../engine/rules';
 import { createGame, type GameState } from '../engine/state';
 import { passOrPick, playCombo } from '../engine/validator';
 import {
-  describeDeal, describePick, describePlay, describeWrongPlay, snapshotState, turnCoach,
+  describeDeal, describeDelayKadi, describeFalseKadi, describeKadi, describePick, describePlay, describeWrongPlay, snapshotState, turnCoach,
   type CoachInput,
 } from './feed';
 
@@ -140,6 +140,23 @@ describe('feed', () => {
     const s = createGame({ numPlayers: 2, random: () => 0.5 });
     const top = s.discardPile[0];
     expect(describeDeal(top).text).toContain('opens the pile');
+  });
+
+  it('kadi call warns the table; false call names the fine', () => {
+    expect(describeKadi('You').text).toMatch(/stop them/);
+    expect(describeFalseKadi('You', 1).text).toBe('You calls KADI too early — no winnable hand, fined +1');
+    expect(describeDelayKadi('You', 1).text).toBe('You slept on KADI — shouted too late, fined +1');
+  });
+
+  it('ace answering a question narrates the follow, never a call', () => {
+    const q = C('Q', 'spades', 'q');
+    const ace = C('A', 'spades', 'a');
+    const s = table([q, ace, C('4', 'clubs', 'k')], C('9', 'spades'), [C('5', 'hearts')]);
+    const before = snapshotState(s, 0);
+    playCombo(s, 0, [q, ace], null);
+    const text = describePlay(before, s, 0, NAMES, [q, ace]).map((e) => e.text).join(' | ');
+    expect(text).toMatch(/answers with A♠ — follow Spades/);
+    expect(text).not.toMatch(/calls/);
   });
 });
 

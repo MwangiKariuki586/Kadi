@@ -106,9 +106,51 @@ function mixesPenaltyWithNormal(cards: Card[], config: RulesConfig): boolean {
   );
 }
 
-/** An Ace plays solo or stacks only with other Aces — never with normal cards. */
-function mixesAceWithNonAce(cards: Card[]): boolean {
-  return cards.some((c) => c.rank === 'A') && !cards.every((c) => c.rank === 'A');
+/** An Ace answers any open question regardless of suit (Q♠ + A♦ is legal). Missing flag defaults to true. */
+export function isAceAnswer(card: Card, config: RulesConfig): boolean {
+  return card.rank === 'A' && config.aceAnswersQuestion !== false;
+}
+
+/**
+ * True when the combo uses an Ace to answer a question (Q/8 or 2P J/K):
+ * it holds a question and an Ace, and every Ace closes an open question.
+ * All-Ace stacks (super demands) never count — answering never affects
+ * the 2-ace combination rules.
+ */
+export function isAceAnswerCombo(cards: Card[], state: GameState): boolean {
+  if (state.config.aceAnswersQuestion === false) return false;
+  if (!cards.some((c) => c.rank === 'A')) return false;
+  if (!cards.some((c) => rankNeedsAnswer(c.rank, state))) return false;
+  return !mixesAceWithNonAce(cards, state);
+}
+
+/**
+ * An Ace plays solo or stacks only with other Aces — except as a
+ * question answer: every Ace must close an open question (Q/8 or 2P J/K).
+ * Q + A (any suit) is legal; A + 10 and lone-A-after-answer mixes stay illegal.
+ */
+function mixesAceWithNonAce(cards: Card[], state: GameState): boolean {
+  if (!cards.some((c) => c.rank === 'A')) return false;
+  if (cards.every((c) => c.rank === 'A')) return false;
+  if (state.config.aceAnswersQuestion === false) return true;
+  let open = false;
+  for (const c of cards) {
+    if (rankNeedsAnswer(c.rank, state)) {
+      open = true;
+      continue;
+    }
+    if (c.rank === 'A') {
+      if (!open) return true;
+      open = false;
+      continue;
+    }
+    if (isWinningRank(c.rank, state.config)) {
+      if (open) open = false;
+      continue;
+    }
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -116,7 +158,8 @@ function mixesAceWithNonAce(cards: Card[]): boolean {
  * rest match rank, any suit) — except J/K family stacks together, and a
  * question opens a Q/8 chain: questions may stack on questions, winning
  * answers (4 5 6 7 9 10) close the currently open question and must match
- * its suit. Returns a rejection, or null when the shape is acceptable
+ * its suit, while an Ace closes any open question regardless of suit.
+ * Returns a rejection, or null when the shape is acceptable
  * (suit/rank chaining and question closure are validated separately).
  */
 function checkComboShape(cards: Card[], state: GameState): ComboCheck | null {
@@ -134,6 +177,10 @@ function checkComboShape(cards: Card[], state: GameState): ComboCheck | null {
     for (const c of cards.slice(1)) {
       if (rankNeedsAnswer(c.rank, state)) {
         open = c;
+        continue;
+      }
+      if (isAceAnswer(c, config)) {
+        open = null;
         continue;
       }
       if (!isWinningRank(c.rank, config)) return { ok: false, reason: 'MUST_BE_SAME_RANK' };
@@ -165,6 +212,11 @@ function findOpenQuestion(cards: Card[], state: GameState): Card | null {
   let openQuestion: Card | null = null;
   for (const c of cards) {
     if (openQuestion) {
+      // An Ace closes any open question regardless of suit.
+      if (isAceAnswer(c, config)) {
+        openQuestion = null;
+        continue;
+      }
       const isAnswer = isWinningRank(c.rank, config);
       if (!isAnswer) {
         // stacking another question is fine — still open
@@ -267,7 +319,7 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
     const isExact = first.rank === req.rank && first.suit === req.suit;
     const isAce = first.rank === 'A';
     if (!isExact && !isAce) return { ok: false, reason: 'UNMET_REQUEST' };
-    if (mixesAceWithNonAce(cards)) {
+    if (mixesAceWithNonAce(cards, state)) {
       return { ok: false, reason: 'ACE_ONLY_STACKS_WITH_ACE' };
     }
     if (mixesPenaltyWithNormal(cards, config)) {
@@ -284,8 +336,9 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
   // Normal: first card matches top.
   if (!singleMatchesTop(cards[0], state)) return { ok: false, reason: 'NO_MATCH' };
 
-  // An Ace plays solo or with Aces only — A + 10 is never a combo, even suited.
-  if (mixesAceWithNonAce(cards)) {
+  // An Ace plays solo or with Aces only — except as a question answer
+  // (Q + A any suit is legal). A + 10 is never a combo, even suited.
+  if (mixesAceWithNonAce(cards, state)) {
     return { ok: false, reason: 'ACE_ONLY_STACKS_WITH_ACE' };
   }
   // A penalty card only stacks with other penalties — never with normal cards,
@@ -293,7 +346,7 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
   if (mixesPenaltyWithNormal(cards, config)) {
     return { ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' };
   }
-  // Same-rank stacks (J/K family together; questions take same-suit answers).
+  // Same-rank stacks (J/K family together; questions take same-suit answers or any Ace).
   const shape = checkComboShape(cards, state);
   if (shape) return shape;
   const links = validateChainLinks(cards);
@@ -310,13 +363,17 @@ export function legalSingles(state: GameState, playerIndex: number): Card[] {
 }
 
 function comboIsWinningOnly(cards: Card[], state: GameState): boolean {
-  // Final dump must end "clean": only winning ranks, or questions closed by winning answer.
-  // J/K/A/penalties can never be the closer.
+  // Final dump must end "clean": a winning rank, or an Ace answering a
+  // question (Q + A any suit). Lone Aces, J/K and penalties can never close.
   const last = cards[cards.length - 1];
-  if (!isWinningRank(last.rank, state.config)) return false;
-  // Reuse combo chaining rules: if it chains legally and ends on answer, it's a winning combo.
-  // (Questions inside are fine as long as each was answered — validated by caller.)
-  return true;
+  if (isWinningRank(last.rank, state.config)) return true;
+  if (isAceAnswer(last, state.config)) {
+    // Ace wins only as a question answer: the combo must hold a question
+    // and leave nothing open (validated by caller for legality).
+    if (!cards.some((c) => rankNeedsAnswer(c.rank, state))) return false;
+    return comboLeavesQuestionOpen(cards, state) === false;
+  }
+  return false;
 }
 
 /** Heap's algorithm; visit returns true to stop early. */
@@ -363,14 +420,15 @@ export function canFinishNow(state: GameState, playerIndex: number): boolean {
   // Must have said Kadi on a strictly earlier turn (same rule as the win itself).
   if (!state.kadiCalls[playerIndex] || !(state.kadiCallTurn[playerIndex] < state.turnNumber)) return false;
   if (config.cardlessBlocksWin && state.hands.some((h, i) => i !== playerIndex && h.length === 0)) return false;
-  // The closer must be a winning rank.
-  if (!hand.some((c) => isWinningRank(c.rank, config))) return false;
+  // The closer must be a winning rank or an Ace-answering-question.
+  if (!hand.some((c) => isWinningRank(c.rank, config) || isAceAnswer(c, config))) return false;
 
   let capable = false;
   eachPermutation(hand, (perm) => {
     const last = perm[perm.length - 1];
-    if (!isWinningRank(last.rank, config)) return false;
-    if (validateVsTable(perm, state).ok) {
+    const closerOk = isWinningRank(last.rank, config) || isAceAnswer(last, config);
+    if (!closerOk) return false;
+    if (validateVsTable(perm, state).ok && comboIsWinningOnly(perm, state)) {
       capable = true;
       return true;
     }
@@ -384,12 +442,97 @@ export function canDeclareKadi(state: GameState, playerIndex: number): boolean {
   return !state.kadiCalls[playerIndex];
 }
 
+/**
+ * Winnable-shape check for a Kadi call (table-independent).
+ * True only when the hand could legally dump in one winning move on a
+ * future turn: 1-3 cards, every card a winning rank (4/5/6/7/9/10), a
+ * question (Q/8) with an answer present, or an Ace answering a question.
+ *
+ * An Ace answers any open question regardless of suit (Q♠ + A♦ is winnable
+ * and wins ending on the Ace). A lone Ace, J/K, 2/3/Joker, or lone Q/8
+ * without its answer is NOT declarable. Disable via
+ * `aceAnswersQuestion: false` in a future custom mode.
+ */
+export function isWinnableShape(hand: Card[], config: RulesConfig): boolean {
+  if (hand.length === 0 || hand.length > 3) return false;
+  const aceAllowed = config.aceAnswersQuestion !== false;
+  const hasQuestion = hand.some((c) => isQuestionRank(c.rank, config));
+  const answerable = (q: Card): boolean =>
+    hand.some(
+      (a) =>
+        a.id !== q.id &&
+        (isAceAnswer(a, config) ||
+          (isWinningRank(a.rank, config) && a.suit === q.suit)),
+    );
+  return hand.every((c) => {
+    if (isWinningRank(c.rank, config)) return true;
+    if (isQuestionRank(c.rank, config)) return answerable(c);
+    if (aceAllowed && c.rank === 'A') return hasQuestion;
+    return false;
+  });
+}
+
 export function declareKadi(state: GameState, playerIndex: number): boolean {
   if (!canDeclareKadi(state, playerIndex)) return false;
   state.kadiCalls[playerIndex] = true;
   state.kadiCallTurn[playerIndex] = state.turnNumber;
-  state.lastEffect = `${playerIndex === 0 ? 'You are' : `Player ${playerIndex + 1} is`} KADI!`;
+  state.lastEffect = `${playerIndex === 0 ? 'You are' : `Player ${playerIndex + 1} is`} KADI! Stop them!`;
   return true;
+}
+
+export interface DeclareResult {
+  ok: boolean;
+  /** Cards drawn on a false call (0 when the call was legal or rejected free). */
+  fined?: number;
+  /** True when the press was a mistimed call with no winnable hand. */
+  falseCall?: boolean;
+}
+
+/**
+ * Checked Kadi declaration for UI use (bots keep using
+ * shouldDeclareKadi + declareKadi, which is already shape-checked).
+ * The buzzer stays pressable anytime, but a press without a legally
+ * winnable hand is a false call: no flag is set (so the win stays
+ * impossible until a proper declaration), the player is fined
+ * `falseKadiPickCount` immediately, and the turn does NOT advance
+ * (calling is a speech act, not a move).
+ */
+export function tryDeclareKadi(state: GameState, playerIndex: number): DeclareResult {
+  if (!canDeclareKadi(state, playerIndex)) return { ok: false };
+  const hand = state.hands[playerIndex];
+  if (isWinnableShape(hand, state.config)) {
+    declareKadi(state, playerIndex);
+    return { ok: true };
+  }
+  const owed = state.config.falseKadiPickCount ?? state.config.lateCallPickCount ?? 1;
+  if (owed > 0) {
+    const drawn = drawCards(state, playerIndex, owed);
+    state.lastEffect =
+      (state.lastEffect ? state.lastEffect + ' • ' : '') + `False KADI — fined +${drawn.length}`;
+    return { ok: false, fined: drawn.length, falseCall: true };
+  }
+  return { ok: false, falseCall: true };
+}
+
+/**
+ * Fine for letting the KADI call-window expire without shouting: draws
+ * `kadiDelayPickCount` (falling back to the other call fines). The UI only
+ * fires this while undeclared, so a late press afterwards still declares.
+ * The turn does NOT advance (the fine is not a move). Like any pickup, the
+ * draw itself voids a stale claim via the shared pickup rule.
+ */
+export function fineKadiDelay(state: GameState, playerIndex: number): number {
+  const owed = state.config.kadiDelayPickCount
+    ?? state.config.falseKadiPickCount
+    ?? state.config.lateCallPickCount
+    ?? 1;
+  if (owed <= 0 || state.gameOver) return 0;
+  const drawn = drawCards(state, playerIndex, owed);
+  if (drawn.length > 0) {
+    state.lastEffect =
+      (state.lastEffect ? state.lastEffect + ' • ' : '') + `Slow KADI — fined +${drawn.length}`;
+  }
+  return drawn.length;
 }
 
 function winsBlockedByCardless(state: GameState, playerIndex: number): boolean {
@@ -441,8 +584,28 @@ export function playCombo(
   // aces-only here) — a pure block that calls nothing further.
   const answersPenalty = state.pendingPenalty > 0;
 
+  // Which Aces answer an open question in this combo (Q + A any suit).
+  // Answering Aces never declare: the suit in force auto-follows the Ace's
+  // own suit, like a penalty block calls nothing. All-Ace stacks (super
+  // demands) never count here, so the 2-ace rules are untouched.
+  const aceAnswerIdx = new Set<number>();
+  if (config.aceAnswersQuestion !== false && !answersPenalty) {
+    let openQ = false;
+    cards.forEach((card, i) => {
+      if (rankNeedsAnswer(card.rank, state)) openQ = true;
+      else if (card.rank === 'A') {
+        if (openQ) {
+          aceAnswerIdx.add(i);
+          openQ = false;
+        }
+      } else if (isWinningRank(card.rank, config)) {
+        if (openQ) openQ = false;
+      }
+    });
+  }
+
   // Resolve effects in play order.
-  for (const c of cards) {
+  for (const [ci, c] of cards.entries()) {
     if (isPenaltyRank(c.rank, config) && !(state.pendingPenalty > 0 && c.rank === 'A')) {
       const picks = config.penaltyPicks[c.rank as '2' | '3' | 'JOKER'] ?? 0;
       // No accumulation: the latest penalty replaces the debt (top takes over).
@@ -491,17 +654,22 @@ export function playCombo(
         state.lastSuitBeforeRequest = null;
         effect = `Rank lifted — follow ${liveDemand.suit} ${suitGlyph(liveDemand.suit)}`;
       } else {
-        // Normal ace on free play or against a suit request: declares.
+        // Normal ace on free play or against a suit request: declares —
+        // unless it answers a question, in which case it never declares:
+        // the suit auto-follows the Ace's own suit (e.g. A♠ → spades).
         // (Exact demands are lifted above; last-declares-wins holds here.)
         state.activeCardRequest = null;
-        if (config.aceCallsSuit && declaredSuit) {
+        const autoFollow = aceAnswerIdx.has(ci);
+        if (config.aceCallsSuit && declaredSuit && !autoFollow) {
           state.lastSuitBeforeRequest = state.activeSuit ?? suitOrNull(prevTop.suit);
           state.activeSuit = declaredSuit;
           effect = `Request ${declaredSuit}`;
-        } else if (config.aceCallsSuit && !declaredSuit) {
+        } else if (config.aceCallsSuit && (!declaredSuit || autoFollow)) {
           state.lastSuitBeforeRequest = state.activeSuit ?? suitOrNull(prevTop.suit);
           state.activeSuit = (c.suit === 'none' ? null : (c.suit as Suit));
-          effect = state.activeSuit ? `Request ${state.activeSuit}` : null;
+          effect = autoFollow && state.activeSuit
+            ? `Answer — follow ${state.activeSuit}`
+            : state.activeSuit ? `Request ${state.activeSuit}` : null;
         }
         // Silent variant (aceCallsSuit=false): Ace only blocks, suit follows top.
       }
