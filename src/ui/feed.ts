@@ -182,7 +182,7 @@ export function describePlay(
   }
 
   // Jump: refusal keeps the turn; a fresh single-family debt hangs over the
-  // next player (stacks must be sat out); mixed K+J still resolves instantly.
+  // next player (stacks must be sat out).
   const jumps = played.filter((c) => countsAsJump(c, after)).length;
   if (before.pendingSkip > 0 && jumps > 0) {
     evts.push({ icon: '⏭', text: `${actor} refuses the jump — plays on`, tone: 'skip' });
@@ -194,7 +194,7 @@ export function describePlay(
   }
 
   // Reversal: refusal keeps the turn; a fresh odd debt hangs over the next
-  // player; even counts (or mixed K+J) resolve immediately as before.
+  // player; even counts resolve immediately.
   const flips = played.filter((c) => countsAsReverse(c, after)).length;
   if (before.pendingReverse > 0 && flips > 0) {
     evts.push({ icon: '↺', text: `${actor} refuses the reversal — plays on`, tone: 'reverse' });

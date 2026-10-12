@@ -666,16 +666,17 @@ describe('tap-order K/J stacks', () => {
     expect(s.currentPlayer).toBe(1);
   });
 
-  it('mixed K+J stack: reverse applies and one player is skipped', () => {
+  it('mixed K+J stacks are illegal: J only stacks with J, K only with K', () => {
     const kh = C('K', 'hearts', 'kh');
     const jh = C('J', 'hearts', 'jh');
     const s = rigged([kh, jh, C('4', 'clubs', 'k')], C('10', 'hearts'), [C('4', 'spades')], 3);
     s.direction = 1;
     s.currentPlayer = 0;
-    expect(playCombo(s, 0, [kh, jh]).ok).toBe(true);
-    expect(s.direction).toBe(-1);
-    // 1 + 1 skip, reversed: (0 - 2) mod 3 = 1
-    expect(s.currentPlayer).toBe(1);
+    expect(validateCombo([kh, jh], s, 0)).toMatchObject({ ok: false, reason: 'MUST_BE_SAME_RANK' });
+    expect(validateCombo([jh, kh], s, 0)).toMatchObject({ ok: false, reason: 'MUST_BE_SAME_RANK' });
+    expect(playCombo(s, 0, [kh, jh]).ok).toBe(false);
+    expect(s.direction).toBe(1);
+    expect(s.currentPlayer).toBe(0);
   });
 });
 

@@ -155,7 +155,7 @@ function mixesAceWithNonAce(cards: Card[], state: GameState): boolean {
 
 /**
  * Free-play combo shape: every card shares one rank (first matches the top,
- * rest match rank, any suit) — except J/K family stacks together, and a
+ * rest match rank, any suit) — J stacks only with J, K only with K, and a
  * question opens a Q/8 chain: questions may stack on questions, winning
  * answers (4 5 6 7 9 10) close the currently open question and must match
  * its suit, while an Ace closes any open question regardless of suit.
@@ -165,14 +165,16 @@ function mixesAceWithNonAce(cards: Card[], state: GameState): boolean {
 function checkComboShape(cards: Card[], state: GameState): ComboCheck | null {
   const { config } = state;
   const allSameRank = cards.every((c) => c.rank === cards[0].rank);
-  const allJumpKickback = cards.every(
-    (c) => isJumpRank(c.rank, config) || isKickbackRank(c.rank, config),
-  );
-  const questionLed = rankNeedsAnswer(cards[0].rank, state);
-  if (!allSameRank && !allJumpKickback && !questionLed) {
+  const hasJump = cards.some((c) => isJumpRank(c.rank, config));
+  const hasKick = cards.some((c) => isKickbackRank(c.rank, config));
+  if (hasJump && hasKick) {
     return { ok: false, reason: 'MUST_BE_SAME_RANK' };
   }
-  if (questionLed && !allSameRank && !allJumpKickback) {
+  const questionLed = rankNeedsAnswer(cards[0].rank, state);
+  if (!allSameRank && !questionLed) {
+    return { ok: false, reason: 'MUST_BE_SAME_RANK' };
+  }
+  if (questionLed && !allSameRank) {
     let open: Card | null = cards[0];
     for (const c of cards.slice(1)) {
       if (rankNeedsAnswer(c.rank, state)) {
@@ -346,7 +348,7 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
   if (mixesPenaltyWithNormal(cards, config)) {
     return { ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' };
   }
-  // Same-rank stacks (J/K family together; questions take same-suit answers or any Ace).
+  // Same-rank stacks (questions take same-suit answers or any Ace).
   const shape = checkComboShape(cards, state);
   if (shape) return shape;
   const links = validateChainLinks(cards);
@@ -687,31 +689,29 @@ export function playCombo(
   }
 
   // Jump/kickback response model. A pure single-family combo defers to the
-  // victim (refuse-with-one keeps the turn; stacks must be accepted); mixed
-  // J+K resolves instantly exactly as before.
+  // victim (refuse-with-one keeps the turn; stacks must be accepted).
   const skipBefore = state.pendingSkip;
   const revBefore = state.pendingReverse ?? 0;
   const jumps = cards.filter((c) => isJumpRank(c.rank, config) && !jumpActsAsQuestion(state));
   const kicks = cards.filter((c) => isKickbackRank(c.rank, config) && !kickbackActsAsQuestion(state));
-  const mixedJK = jumps.length > 0 && kicks.length > 0;
   // Refusal (validator guarantees exactly one card): clear the live debt and
   // keep the turn — the victim plays on.
   let keptTurn = false;
-  if (!mixedJK && skipBefore > 0 && jumps.length === 1 && kicks.length === 0) {
+  if (skipBefore > 0 && jumps.length === 1 && kicks.length === 0) {
     state.pendingSkip = 0;
     effect = 'Jump refused! Play on';
     keptTurn = true;
-  } else if (!mixedJK && revBefore > 0 && kicks.length === 1 && jumps.length === 0) {
+  } else if (revBefore > 0 && kicks.length === 1 && jumps.length === 0) {
     state.pendingReverse = 0;
     effect = 'Reversal refused! Play on';
     keptTurn = true;
   } else {
     if (jumps.length > 0) {
       state.pendingSkip += jumps.length;
-      effect = !mixedJK && jumps.length > 1 ? `Jump ×${jumps.length}! Unrefusable` : 'Jump! Skipped';
+      effect = jumps.length > 1 ? `Jump ×${jumps.length}! Unrefusable` : 'Jump! Skipped';
     }
-    if (kicks.length > 0 && (mixedJK || kicks.length % 2 === 0)) {
-      // Instant path (mixed, or even counts cancelling out): flip per card now.
+    if (kicks.length > 0 && kicks.length % 2 === 0) {
+      // Even counts cancelling out: flip per card now.
       for (let i = 0; i < kicks.length; i++) {
         state.direction = (state.direction * -1) as 1 | -1;
       }
@@ -729,8 +729,7 @@ export function playCombo(
   // on every exit — even when the hand empties below. Refusal already kept
   // the turn above, so no advance at all in that case.
   const freshDebt =
-    !mixedJK &&
-    (state.pendingSkip > skipBefore || (state.pendingReverse ?? 0) > revBefore);
+    state.pendingSkip > skipBefore || (state.pendingReverse ?? 0) > revBefore;
 
   // Asked without an answer: the obligation is to draw — never a blocked move.
   // Drawn before the win check so an emptied hand refills and play continues.
