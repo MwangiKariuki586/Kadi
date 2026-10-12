@@ -151,10 +151,13 @@ export function App() {
   const armKadiWindow = useCallback(() => {
     const w = kadiWindowRef.current;
     window.clearTimeout(kadiTimerRef.current);
-    kadiTimerRef.current = window.setTimeout(() => {
-      kadiWindowRef.current.armed = false;
-      expireKadiWindow();
-    }, Math.max(0, w.deadline - Date.now()));
+    kadiTimerRef.current = window.setTimeout(
+      () => {
+        kadiWindowRef.current.armed = false;
+        expireKadiWindow();
+      },
+      Math.max(0, w.deadline - Date.now()),
+    );
     w.armed = true;
   }, [expireKadiWindow]);
 
@@ -510,10 +513,10 @@ export function App() {
               <p class="mt-2">
                 📢 Say <b class="text-yellow-300">Niko Kadi</b> the turn{" "}
                 <i>before</i> you finish — or the win doesn't count. Calling
-                early with no winnable hand is fined +1 on the spot. When
-                your hand is ready, a 2s window opens each turn — ignoring
-                it is free, but shouting after it expires still declares
-                and fines +1 for the delay.
+                early with no winnable hand is fined +1 on the spot. When your
+                hand is ready, a 2s window opens each turn — ignoring it is
+                free, but shouting after it expires still declares and fines +1
+                for the delay.
               </p>
               <p class="mt-2">
                 🃏 Match <b>suit or rank</b>. J = Jump (skip) • K = reverse •
@@ -654,10 +657,10 @@ export function App() {
               class={`mt-2 w-full rounded-2xl border p-3 text-left ${superAceOn ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-white/5"}`}
             >
               <span class="font-bold text-sm">
-                ⚡ Special Ace {superAceOn ? "(on)" : "(off)"}
+                ⚡ Babu {superAceOn ? "(on)" : "(off)"}
               </span>
               <span class="block text-[11px] text-white/60 mt-0.5">
-                A♠ alone demands an exact card. Stacked Aces always can — answer
+                A♠ alone demands an exact card. Stacked Aces always can answer
                 it, lift it with a lone Ace (suit stays), or pick.
               </span>
             </button>
