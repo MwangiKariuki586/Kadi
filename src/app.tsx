@@ -37,6 +37,8 @@ import {
   Toast,
 } from "./ui/components";
 import { SettingsScreen } from "./ui/settings";
+import { HowToScreen } from "./ui/howto";
+import { reasonText } from "./ui/reasons";
 import {
   describeDeal,
   describeDelayKadi,
@@ -54,7 +56,7 @@ import { haptics, isHapticsEnabled, setHapticsEnabled } from "./ui/haptics";
 import { isMuted, setMuted, sfx } from "./ui/sounds";
 import { applyMotionPreference } from "./ui/motion";
 
-type Screen = "home" | "lobby" | "game" | "settings";
+type Screen = "home" | "lobby" | "game" | "settings" | "howto";
 
 const BOT_NAMES = ["Jabari", "Amani", "Zawadi", "Neema"];
 const NAMES = ["You", ...BOT_NAMES];
@@ -72,7 +74,6 @@ export function App() {
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [preset, setPreset] = useState<RulesConfig>(STANDARD_MAUA);
   const [superAceOn, setSuperAceOn] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
   const [muted, setMutedState] = useState(isMuted());
   const [stats, setStats] = useState<Stats>({
     games: 0,
@@ -552,30 +553,11 @@ export function App() {
           )}
           <button
             type="button"
-            onClick={() => setShowHelp((v) => !v)}
+            onClick={() => setScreen("howto")}
             class="mt-3 w-full max-w-xs rounded-2xl bg-white/10 py-3 text-sm font-bold text-white active:scale-95 transition"
           >
-            {showHelp ? "Hide rules" : "How to play"}
+            🃏 How to play
           </button>
-          {showHelp && (
-            <div class="mt-3 w-full max-w-xs rounded-2xl bg-black/40 border border-white/10 p-4 text-left text-xs leading-relaxed text-white/85 anim-fly-in">
-              <p>
-                🎯 <b>Goal:</b> finish all your cards in <b>one move</b>. Last
-                card must be <b>4 5 6 7 9 10</b>.
-              </p>
-              <p class="mt-2">
-                📢 Say <b class="text-yellow-300">Niko Kadi</b> the turn{" "}
-                <i>before</i> you finish, or it doesn&apos;t count. Shouting
-                early or late makes you kula +1.
-              </p>
-              <p class="mt-2">
-                🃏 Match <b>suit or rank</b>. J rukas (skip) • K reverses • Q/8
-                asks — answer same suit or any Ace • Ace fungas 2/3 • a free
-                Ace picks the next suit • 2/3 make the next player kula. No
-                finishing on J K 2 3, Q/8 or Ace alone.
-              </p>
-            </div>
-          )}
         </div>
       </div>
     );
@@ -742,6 +724,11 @@ export function App() {
         />
       </div>
     );
+  }
+
+  // ---- how to play (pre-game guide, no match state touched) ----
+  if (screen === "howto") {
+    return <HowToScreen onBack={() => setScreen("home")} />;
   }
 
   // ---- game screen ----
@@ -1246,41 +1233,4 @@ export function App() {
       )}
     </div>
   );
-}
-
-function reasonText(reason: string | null, activeSuit?: Suit | null): string {
-  switch (reason) {
-    case "NO_MATCH":
-      if (activeSuit) {
-        const glyph =
-          activeSuit === "hearts"
-            ? "♥"
-            : activeSuit === "diamonds"
-              ? "♦"
-              : activeSuit === "spades"
-                ? "♠"
-                : "♣";
-        const name = activeSuit.charAt(0).toUpperCase() + activeSuit.slice(1);
-        return `Must follow ${name} ${glyph} — Ace called it.`;
-      }
-      return "Must match suit or rank of the top card.";
-    case "QUESTION_NEEDS_ANSWER":
-      return "Q / 8 needs a same-suit answer (4 5 6 7 9 10) in the same move.";
-    case "PENALTY_MUST_STACK_OR_BLOCK":
-      return "2 / 3 / Joker only stack with other penalties — never with normal cards. Stack, block with Ace, or eat.";
-    case "ACE_ONLY_STACKS_WITH_ACE":
-      return "An Ace plays solo, with another Ace, or as the answer to Q / 8 (any suit) — never with other normal cards.";
-    case "MUST_BE_SAME_RANK":
-      return "Combos share one rank — e.g. 7♥ + 7♠. Questions stack (Q/8) and the answer matches the last question (4 5 6 7 9 10 same suit, or Ace any suit); J/K stack together.";
-    case "SKIP_MUST_COUNTER_OR_ACCEPT":
-      return "Jump! Refuse with any single J to keep your turn, or accept the skip. Stacks can't be refused.";
-    case "REVERSE_MUST_COUNTER_OR_ACCEPT":
-      return "Kickback! Refuse with any single K to keep your turn, or accept the reversal. Stacks can't be refused.";
-    case "UNMET_REQUEST":
-      return "Super Ace demand: play the exact card, an Ace, or pick.";
-    case "NOT_YOUR_TURN":
-      return "Wait for your turn…";
-    default:
-      return "That move is not legal.";
-  }
 }
