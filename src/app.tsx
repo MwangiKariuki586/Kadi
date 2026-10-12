@@ -24,7 +24,7 @@ import {
   tryDeclareKadi,
   validateCombo,
 } from "./engine/validator";
-import { store, type ActiveGameSave, type Stats } from "./store/local";
+import { store, type ActiveGameSave, type Settings, type Stats } from "./store/local";
 import {
   CardRequestPicker,
   CardView,
@@ -36,6 +36,7 @@ import {
   SuitPicker,
   Toast,
 } from "./ui/components";
+import { SettingsScreen } from "./ui/settings";
 import {
   describeDeal,
   describeDelayKadi,
@@ -49,10 +50,11 @@ import {
   turnCoach,
   type FeedEvent,
 } from "./ui/feed";
-import { haptics } from "./ui/haptics";
+import { haptics, isHapticsEnabled, setHapticsEnabled } from "./ui/haptics";
 import { isMuted, setMuted, sfx } from "./ui/sounds";
+import { applyMotionPreference } from "./ui/motion";
 
-type Screen = "home" | "lobby" | "game";
+type Screen = "home" | "lobby" | "game" | "settings";
 
 const BOT_NAMES = ["Jabari", "Amani", "Zawadi", "Neema"];
 const NAMES = ["You", ...BOT_NAMES];
@@ -91,6 +93,9 @@ export function App() {
   const [feed, setFeed] = useState<FeedEvent[]>([]);
   const [coachOn, setCoachOn] = useState(false);
   const [strictOn, setStrictOn] = useState(false);
+  const [hapticsOn, setHapticsOn] = useState(isHapticsEnabled());
+  const [animationsOn, setAnimationsOn] = useState(true);
+  const [settingsOrigin, setSettingsOrigin] = useState<"home" | "game">("home");
 
   const pushFeed = useCallback((...evts: FeedEvent[]) => {
     setFeed((f) => [...f, ...evts].slice(-15));
@@ -235,6 +240,40 @@ export function App() {
     bump();
   }, [numBots, preset, superAceOn, strictOn, bump]);
 
+  /** Single write-through for all Settings page + quick toggles. */
+  const savePatch = useCallback((patch: Partial<Settings>) => {
+    if (patch.difficulty !== undefined) setDifficulty(patch.difficulty);
+    if (patch.presetName !== undefined) {
+      const p = PRESETS.find((x) => x.name === patch.presetName);
+      if (p) setPreset(p);
+    }
+    if (patch.superAce !== undefined) setSuperAceOn(patch.superAce);
+    if (patch.coach !== undefined) setCoachOn(patch.coach);
+    if (patch.strict !== undefined) setStrictOn(patch.strict);
+    if (patch.sound !== undefined) {
+      setMutedState(!patch.sound);
+      setMuted(!patch.sound);
+    }
+    if (patch.haptics !== undefined) {
+      setHapticsOn(patch.haptics);
+      setHapticsEnabled(patch.haptics);
+    }
+    if (patch.animations !== undefined) {
+      setAnimationsOn(patch.animations);
+      applyMotionPreference(patch.animations);
+    }
+    void store.saveSettings(patch);
+  }, []);
+
+  const openSettings = useCallback(
+    (from: "home" | "game") => {
+      setSettingsOrigin(from);
+      setScreen("settings");
+      haptics.tap();
+    },
+    [],
+  );
+
   // ---- boot: settings, stats, then auto-resume a live match (no taps) ----
   useEffect(() => {
     void store.getStats().then(setStats);
@@ -247,6 +286,10 @@ export function App() {
       setStrictOn(s.strict);
       setMutedState(!s.sound);
       setMuted(!s.sound);
+      setHapticsOn(s.haptics);
+      setHapticsEnabled(s.haptics);
+      setAnimationsOn(s.animations);
+      applyMotionPreference(s.animations);
     });
     void store.loadActiveGame().then((save) => {
       if (save) {
@@ -466,25 +509,35 @@ export function App() {
     return (
       <div class="min-h-dvh bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col safe-top safe-bottom">
         <Toast message={toast} />
-        <div class="flex-1 flex flex-col items-center justify-center px-6 text-center">
+        <div class="flex justify-end px-4 pt-3">
+          <button
+            type="button"
+            aria-label="Open settings"
+            onClick={() => openSettings("home")}
+            class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-white/15 bg-white/10 px-3 py-2 text-lg shadow-sm transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-300"
+          >
+            <span aria-hidden="true">⚙️</span>
+          </button>
+        </div>
+        <div class="flex-1 flex flex-col items-center justify-center px-6 pb-6 text-center">
           <div class="text-6xl mb-2">🂡</div>
           <h1 class="text-5xl font-black tracking-tight text-yellow-300">
             KADI
           </h1>
           <p class="mt-1 text-white/70 text-sm">
-            Kenyan card game • lightweight • offline
+            Kenyan card game • plays offline
           </p>
           <div class="mt-4 flex gap-2">
             <Pill>{stats.games} games</Pill>
             <Pill tone="amber">{stats.wins} wins</Pill>
-            <Pill tone="green">🔥 {stats.bestStreak} best</Pill>
+            <Pill tone="green">🔥 Best {stats.bestStreak}</Pill>
           </div>
           <button
             type="button"
             onClick={() => setScreen("lobby")}
             class="mt-8 w-full max-w-xs rounded-2xl bg-yellow-400 py-4 text-xl font-black text-gray-900 shadow-xl active:scale-95 transition"
           >
-            ▶ &nbsp;Play vs Bots
+            ▶ &nbsp;Play
           </button>
           {resumable && (
             <button
@@ -492,9 +545,9 @@ export function App() {
               onClick={() => restoreSave(resumable)}
               class="mt-3 w-full max-w-xs rounded-2xl border border-yellow-400/60 bg-yellow-400/10 py-3 text-sm font-black text-yellow-200 active:scale-95 transition"
             >
-              ⏸ Continue — {resumable.state.hands.length}P •{" "}
+              ⏸ Continue • {resumable.state.hands.length} players •{" "}
               {resumable.state.currentPlayer === 0 ? "your turn" : "bot turn"} •
-              you hold {resumable.state.hands[0].length}
+              {" "}{resumable.state.hands[0].length} cards
             </button>
           )}
           <button
@@ -507,58 +560,22 @@ export function App() {
           {showHelp && (
             <div class="mt-3 w-full max-w-xs rounded-2xl bg-black/40 border border-white/10 p-4 text-left text-xs leading-relaxed text-white/85 anim-fly-in">
               <p>
-                🎯 <b>Goal:</b> finish all your cards in <b>one move</b>, ending
-                on <b>4 5 6 7 9 10</b>.
+                🎯 <b>Goal:</b> finish all your cards in <b>one move</b>. Last
+                card must be <b>4 5 6 7 9 10</b>.
               </p>
               <p class="mt-2">
                 📢 Say <b class="text-yellow-300">Niko Kadi</b> the turn{" "}
-                <i>before</i> you finish — or the win doesn't count. Calling
-                early with no winnable hand is fined +1 on the spot. When your
-                hand is ready, a 2s window opens each turn — ignoring it is
-                free, but shouting after it expires still declares and fines +1
-                for the delay.
+                <i>before</i> you finish, or it doesn&apos;t count. Shouting
+                early or late makes you kula +1.
               </p>
               <p class="mt-2">
-                🃏 Match <b>suit or rank</b>. J = Jump (skip) • K = reverse •
-                Q/8 = question — answer same-suit or any Ace (suit follows the
-                Ace, no pick) or pick 1 • A blocks 2/3 (no call) • played
-                freely, A requests a suit • 2/3 = pick 2/3 (answer to forward,
-                latest count stands).
-              </p>
-              <p class="mt-2">
-                🚫 Can't finish on J K 2 3, lone Q/8, or lone A. Q/8 + Ace wins
-                ending on the Ace. Can't win while anyone is cardless. Go out
-                without the call: fined +1, no win. Picking up cards voids your
-                KADI — say it again when truly finishing.
+                🃏 Match <b>suit or rank</b>. J rukas (skip) • K reverses • Q/8
+                asks — answer same suit or any Ace • Ace fungas 2/3 • a free
+                Ace picks the next suit • 2/3 make the next player kula. No
+                finishing on J K 2 3, Q/8 or Ace alone.
               </p>
             </div>
           )}
-        </div>
-        <div class="pb-6 flex justify-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              const m = !muted;
-              setMuted(m);
-              setMutedState(m);
-              void store.saveSettings({ sound: !m });
-            }}
-            class="rounded-full bg-white/10 px-4 py-2 text-xs text-white/80"
-          >
-            {muted ? "🔇 Sound off" : "🔊 Sound on"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              const v = !coachOn;
-              setCoachOn(v);
-              void store.saveSettings({ coach: v });
-            }}
-            class="rounded-full bg-white/10 px-4 py-2 text-xs text-white/80"
-            title="Beginner turn hints"
-          >
-            {coachOn ? "💡 Hints on" : "💡 Hints off"}
-          </button>
         </div>
       </div>
     );
@@ -569,20 +586,30 @@ export function App() {
       <div class="h-dvh overflow-hidden bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col safe-top safe-bottom">
         <div class="mx-auto flex h-full w-full max-w-md flex-col px-6 pb-4 pt-4">
           <div class="shrink-0">
-            <button
-              type="button"
-              aria-label="Back to home"
-              onClick={() => setScreen("home")}
-              class="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-bold text-white shadow-sm transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-300"
-            >
-              <span aria-hidden="true">←</span> Back
-            </button>
+            <div class="flex items-center justify-between">
+              <button
+                type="button"
+                aria-label="Back to home"
+                onClick={() => setScreen("home")}
+                class="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-bold text-white shadow-sm transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-300"
+              >
+                <span aria-hidden="true">←</span> Back
+              </button>
+              <button
+                type="button"
+                aria-label="Open settings"
+                onClick={() => openSettings("home")}
+                class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-white/15 bg-white/10 px-3 py-2 text-lg transition active:scale-95"
+              >
+                <span aria-hidden="true">⚙️</span>
+              </button>
+            </div>
             <h2 class="mt-2 text-3xl font-black text-yellow-300">New Game</h2>
           </div>
 
           <div class="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1">
             <p class="text-xs font-bold uppercase tracking-widest text-white/50">
-              Opponents (bots)
+              Players
             </p>
             <div class="mt-2 grid grid-cols-3 gap-2">
               {[1, 2, 3].map((n) => (
@@ -601,84 +628,63 @@ export function App() {
             </div>
 
             <p class="mt-5 text-xs font-bold uppercase tracking-widest text-white/50">
-              Bot smarts
+              Bots
             </p>
             <div class="mt-2 grid grid-cols-3 gap-2">
               {(["easy", "medium", "hard"] as Difficulty[]).map((d) => (
                 <button
                   key={d}
                   type="button"
-                  onClick={() => {
-                    setDifficulty(d);
-                    void store.saveSettings({ difficulty: d });
-                  }}
+                  onClick={() => savePatch({ difficulty: d })}
                   class={`rounded-2xl py-3 font-bold capitalize ${difficulty === d ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"}`}
                 >
-                  {d === "easy" ? "😌" : d === "medium" ? "🧠" : "🔥"} {d}
+                  {d === "easy" ? "😌 Easy" : d === "medium" ? "🧠 Normal" : "🔥 Hard"}
                 </button>
               ))}
             </div>
 
             <p class="mt-5 text-xs font-bold uppercase tracking-widest text-white/50">
-              House rules
+              Cards
             </p>
             <div class="mt-2 flex flex-col gap-2">
               {PRESETS.map((p) => (
                 <button
                   key={p.name}
                   type="button"
-                  onClick={() => {
-                    setPreset(p);
-                    void store.saveSettings({ presetName: p.name });
-                  }}
+                  onClick={() => savePatch({ presetName: p.name })}
                   class={`rounded-2xl border p-3 text-left ${preset.name === p.name ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-white/5"}`}
                 >
                   <span class="font-bold text-sm">{p.name}</span>
                   <span class="block text-[11px] text-white/60 mt-0.5">
-                    {p.jokersEnabled
-                      ? "With Jokers (+5, color-matched)"
-                      : "No Jokers in deck"}{" "}
-                    • {p.dealCount} cards each
+                    {p.jokersEnabled ? "With Jokers" : "No Jokers"} •{" "}
+                    {p.dealCount} cards each
                   </span>
                 </button>
               ))}
             </div>
 
-            <p class="mt-5 text-xs font-bold uppercase tracking-widest text-white/50">
-              Extra spice
-            </p>
             <button
               type="button"
-              onClick={() => {
-                const v = !superAceOn;
-                setSuperAceOn(v);
-                void store.saveSettings({ superAce: v });
-              }}
-              class={`mt-2 w-full rounded-2xl border p-3 text-left ${superAceOn ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-white/5"}`}
+              onClick={() => savePatch({ superAce: !superAceOn })}
+              class={`mt-5 w-full rounded-2xl border p-3 text-left ${superAceOn ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-white/5"}`}
             >
               <span class="font-bold text-sm">
                 ⚡ Babu {superAceOn ? "(on)" : "(off)"}
               </span>
               <span class="block text-[11px] text-white/60 mt-0.5">
-                A♠ alone demands an exact card. Stacked Aces always can answer
-                it, lift it with a lone Ace (suit stays), or pick.
+                A♠ asks for any card you name.
               </span>
             </button>
             <button
               type="button"
-              onClick={() => {
-                const v = !strictOn;
-                setStrictOn(v);
-                void store.saveSettings({ strict: v });
-              }}
+              onClick={() => savePatch({ strict: !strictOn })}
               class={`mt-2 w-full rounded-2xl border p-3 text-left ${strictOn ? "border-red-400 bg-red-400/10" : "border-white/10 bg-white/5"}`}
             >
               <span class="font-bold text-sm">
                 🚨 Strict table {strictOn ? "(on)" : "(off)"}
               </span>
               <span class="block text-[11px] text-white/60 mt-0.5">
-                Wrong plays are fined +1 and turn passes. Off: Play blocks them
-                free.
+                Wrong moves kula +1.
               </span>
             </button>
           </div>
@@ -693,6 +699,47 @@ export function App() {
             </button>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // ---- settings screen (pause-safe: bots idle while open) ----
+  if (screen === "settings") {
+    return (
+      <div>
+        <Toast message={toast} />
+        <SettingsScreen
+          origin={settingsOrigin}
+          settings={{
+            sound: !muted,
+            difficulty,
+            presetName: preset.name,
+            superAce: superAceOn,
+            coach: coachOn,
+            strict: strictOn,
+            haptics: hapticsOn,
+            animations: animationsOn,
+          }}
+          stats={stats}
+          hasSave={settingsOrigin === "home" && resumable !== null}
+          onBack={() => setScreen(settingsOrigin)}
+          onSave={(patch) => {
+            savePatch(patch);
+            haptics.tap();
+          }}
+          onResetStats={() => {
+            void store.resetStats().then((s) => {
+              setStats(s);
+              flash("Stats cleared 🧹");
+            });
+          }}
+          onClearSave={() => {
+            void store.clearActiveGame().then(() => {
+              setResumable(null);
+              flash("Saved match forfeited ⏸");
+            });
+          }}
+        />
       </div>
     );
   }
@@ -927,13 +974,23 @@ export function App() {
 
       {/* top bar */}
       <div class="flex items-center justify-between px-4 pt-3">
-        <button
-          type="button"
-          onClick={() => setConfirmQuit(true)}
-          class="text-white/60 text-sm"
-        >
-          ← Quit
-        </button>
+        <div class="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setConfirmQuit(true)}
+            class="text-white/60 text-sm"
+          >
+            ← Quit
+          </button>
+          <button
+            type="button"
+            aria-label="Open settings"
+            onClick={() => openSettings("game")}
+            class="text-white/60 text-lg leading-none"
+          >
+            <span aria-hidden="true">⚙️</span>
+          </button>
+        </div>
         <div class="flex items-center gap-2">
           <Pill>
             {state.direction === 1 ? "↻ clockwise" : "↺ anti-clockwise"}

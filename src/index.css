@@ -152,6 +152,21 @@ html, body {
   }
 }
 
+/* Manual calm mode from Settings (overrides system when animations are off) */
+[data-motion="reduced"] .anim-fly-in,
+[data-motion="reduced"] .anim-kadi-glow,
+[data-motion="reduced"] .anim-shake,
+[data-motion="reduced"] .anim-fanfare,
+[data-motion="reduced"] .anim-kadi-window,
+[data-motion="reduced"] .kadi-buzzer-urgent .kadi-buzzer-base,
+[data-motion="reduced"] .kadi-buzzer-urgent .kadi-buzzer-dome {
+  animation: none;
+}
+[data-motion="reduced"] .card-btn,
+[data-motion="reduced"] .kadi-buzzer {
+  transition: none;
+}
+
 /* Short viewports: compact the buzzer so it never crowds the hand's tap zone */
 @media (max-height: 700px) {
   .kadi-buzzer { width: 60px; height: 60px; }

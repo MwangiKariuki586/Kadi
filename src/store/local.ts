@@ -21,6 +21,10 @@ export interface Settings {
   coach: boolean;
   /** Strict tables: wrong plays are fined + turn passes. Off by default. */
   strict: boolean;
+  /** Vibration on taps/penalties/wins. On by default. */
+  haptics: boolean;
+  /** Full card/buzzer animations. Off forces calm mode. On by default. */
+  animations: boolean;
 }
 
 export interface ActiveGameMeta {
@@ -80,6 +84,7 @@ export function refreshResumeConfig(save: ActiveGameSave): void {
 export interface GameStore {
   getStats(): Promise<Stats>;
   recordResult(won: boolean): Promise<Stats>;
+  resetStats(): Promise<Stats>;
   getSettings(): Promise<Settings>;
   saveSettings(s: Partial<Settings>): Promise<Settings>;
   getCustomRules(): Promise<RulesConfig[]>;
@@ -90,7 +95,7 @@ export interface GameStore {
 }
 
 const DEFAULT_STATS: Stats = { games: 0, wins: 0, bestStreak: 0, streak: 0 };
-export const DEFAULT_SETTINGS: Settings = { sound: true, difficulty: 'medium', presetName: 'Standard Maua', superAce: false, coach: false, strict: false };
+export const DEFAULT_SETTINGS: Settings = { sound: true, difficulty: 'medium', presetName: 'Standard Maua', superAce: false, coach: false, strict: false, haptics: true, animations: true };
 
 export class LocalStore implements GameStore {
   async getStats(): Promise<Stats> {
@@ -109,6 +114,12 @@ export class LocalStore implements GameStore {
     }
     await set('kadi-stats', s);
     return s;
+  }
+
+  async resetStats(): Promise<Stats> {
+    const fresh = { ...DEFAULT_STATS };
+    await set('kadi-stats', fresh);
+    return fresh;
   }
 
   async getSettings(): Promise<Settings> {
