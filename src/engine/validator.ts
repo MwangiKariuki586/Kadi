@@ -1,4 +1,4 @@
-import { colorFamilyOf, type Card, type Suit } from './cards';
+import type { Card, Suit } from './cards';
 import {
   isJumpRank, isKickbackRank, isPenaltyRank, isQuestionRank, isWinningRank,
   type RulesConfig,
@@ -19,18 +19,18 @@ export interface ComboCheck {
 /**
  * Single card matches top? Handles Ace-declared suit.
  * A Joker is never a free play — only a pending 2/3 (or Joker) takes it
- * (see validateVsTable). A Joker on top with no live debt (legacy saves
- * only) still lets anything through to avoid deadlock.
+ * (see validateVsTable). A Joker on top with no live debt and no active
+ * suit (legacy saves only) still lets anything through to avoid deadlock.
  */
 export function singleMatchesTop(card: Card, state: GameState): boolean {
   const top = topCard(state);
-  // After a Joker, anything goes (prevents deadlock).
-  if (top.rank === 'JOKER') return true;
-  // Ace declared a suit: follow it (or re-Ace).
+  // Ace / Joker-eat declared a suit: follow it (or re-Ace) — even under a Joker top.
   if (state.activeSuit) {
     if (card.rank === 'A') return true;
     return card.suit === state.activeSuit;
   }
+  // After a Joker with no suit to follow, anything goes (prevents deadlock).
+  if (top.rank === 'JOKER') return true;
   // Ace is wild (request) — always playable.
   if (card.rank === 'A') return true;
   return card.suit === top.suit || card.rank === top.rank;
@@ -85,27 +85,25 @@ export function isSuperAceCombo(cards: Card[], state: GameState): boolean {
  * Penalty-family answer check. Only penalty cards (2/3/Joker) or an Ace
  * may answer a pending penalty:
  * - a Joker answers any 2/3, unrestricted by suit or color;
- * - a Joker on top is answered by the suit played before it
- *   (rememberedSuit — e.g. 2♦, Joker, then a ♦ penalty), another Joker,
- *   or an Ace. Off-suit rank matches (2♠ on a Joker that followed 2♥)
- *   are illegal;
+ * - a Joker on top is relaxed only by another Joker or an Ace. Even a
+ *   same-suit 2/3 is illegal — eat or block;
  * - 2/3 on 2/3: same rank any suit, or same suit any penalty rank.
- * rememberedSuit is null only for pre-memory saves, which keep the legacy
- * color-family rule so old matches stay resumable.
+ * rememberedSuit is kept for post-eat suit continuation (eat a Joker and
+ * play follows the suit before it), not for answering. It is null only
+ * for pre-memory saves, which stay free-play after the eat.
  */
 export function penaltyAnswerOk(
   card: Card,
   table: Card,
   config: RulesConfig,
-  rememberedSuit: Suit | null = null,
+  _rememberedSuit: Suit | null = null,
 ): boolean {
   if (card.rank === 'A') return config.aceBlocksPenalty;
   if (!isPenaltyRank(card.rank, config)) return false;
   if (!config.allowPenaltyStacking) return false;
   if (card.rank === 'JOKER') return true;
   if (table.rank === 'JOKER') {
-    if (rememberedSuit) return card.suit === rememberedSuit;
-    return colorFamilyOf(card) === colorFamilyOf(table);
+    return false;
   }
   return card.rank === table.rank || card.suit === table.suit;
 }
@@ -584,8 +582,10 @@ export function playCombo(
   // Top card BEFORE this combo lands — remembers the suit an Ace overrides.
   const prevTop = topCard(state);
 
-  // A Joker takes the suit played before it: the card ahead of the first
-  // Joker in this combo, else the previous top (Joker chains keep memory).
+  // A Joker takes the suit played before it for post-eat continuation:
+  // the card ahead of the first Joker in this combo, else the previous
+  // top (Joker chains keep memory). The suit no longer gates answers —
+  // only Joker/Ace relax a Joker — but eating still follows it.
   const firstJoker = cards.findIndex((c) => c.rank === 'JOKER');
   if (firstJoker !== -1) {
     const before = firstJoker > 0 ? cards[firstJoker - 1].suit : prevTop.suit;
@@ -824,11 +824,20 @@ export function passOrPick(state: GameState, playerIndex: number): { picked: num
   // Eat penalty
   if (state.pendingPenalty > 0) {
     const n = state.pendingPenalty;
+    const wasJokerTop = topCard(state).rank === 'JOKER';
+    const remembered = state.pendingPenaltySuit;
     state.pendingPenalty = 0;
     state.pendingPenaltyRank = null;
     state.pendingPenaltySuit = null;
     const drawn = drawCards(state, playerIndex, n);
-    state.lastEffect = `Picked ${drawn.length}`;
+    // Eating a Joker continues with the suit before it — the next player
+    // must follow it. Legacy saves with no memory stay free-play.
+    if (wasJokerTop && remembered) {
+      state.activeSuit = remembered;
+      state.lastEffect = `Picked ${drawn.length} — follow ${remembered}`;
+    } else {
+      state.lastEffect = `Picked ${drawn.length}`;
+    }
     advanceTurn(state);
     return { picked: drawn.length, skipped: false };
   }

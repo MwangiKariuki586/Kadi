@@ -87,7 +87,7 @@ export function TryBoard({ board }: { board: PlayBoard }) {
       sfx.error();
       setResult({
         tone: "bad",
-        text: `⛔ ${reasonText(v.reason ?? null, s.activeSuit)}`,
+        text: `⛔ ${reasonText(v.reason ?? null, s.activeSuit, s.pendingPenalty > 0 && s.discardPile[s.discardPile.length - 1]?.rank === 'JOKER', cards.some((c) => c.rank === 'JOKER'))}`,
       });
       return;
     }
@@ -434,7 +434,7 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
                 { id: "hx-2d", rank: "2", suit: "diamonds" },
                 { id: "JOKER-1", rank: "JOKER", suit: "none" },
               ]}
-              caption="2♦, then Joker (+5). Next plays ♦, another Joker, or an Ace."
+              caption="2♦, then Joker (+5). Only another Joker or an Ace relaxes it — eat and follow ♦."
             />
             <CardExample
               cards={[

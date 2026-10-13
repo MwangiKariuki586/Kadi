@@ -758,7 +758,12 @@ export function App() {
   // An illegal selection disables Play upfront — no tap needed to find out.
   const selectionInvalid = validation != null && !validation.ok;
   const selectionReason = selectionInvalid
-    ? reasonText(validation.reason ?? null, state.activeSuit)
+    ? reasonText(
+        validation.reason ?? null,
+        state.activeSuit,
+        state.pendingPenalty > 0 && topCard(state).rank === 'JOKER',
+        selectedCards.some((c) => c.rank === 'JOKER'),
+      )
     : null;
 
   const toggleSelect = (card: Card) => {
@@ -791,7 +796,14 @@ export function App() {
         setSuitPickerFor(null);
         setSuperPickerFor(null);
       }
-      flash(reasonText(r.reason ?? null, state.activeSuit));
+      flash(
+        reasonText(
+          r.reason ?? null,
+          state.activeSuit,
+          before.pendingPenalty > 0 && before.topSuit === 'none',
+          cards.some((c) => c.rank === 'JOKER'),
+        ),
+      );
       bump();
       return;
     }
@@ -1076,7 +1088,12 @@ export function App() {
             comboValid: validation ? validation.ok : null,
             invalidReason:
               validation && !validation.ok
-                ? reasonText(validation.reason ?? null, state.activeSuit)
+                ? reasonText(
+                    validation.reason ?? null,
+                    state.activeSuit,
+                    state.pendingPenalty > 0 && topCard(state).rank === 'JOKER',
+                    selectedCards.some((c) => c.rank === 'JOKER'),
+                  )
                 : null,
             legalCount: hints.size,
             kadiReady: canDeclareKadi(state, 0) && shouldDeclareKadi(state, 0),

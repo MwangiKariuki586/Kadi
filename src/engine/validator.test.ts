@@ -162,17 +162,17 @@ describe('penalties', () => {
     expect(s.pendingPenalty).toBe(2);
   });
 
-  it('joker answered by a same-suit 2 drops the debt to 2 (latest takes over)', () => {
+  it('joker debt is relaxed only by another joker or ace — same-suit 2 is illegal', () => {
     const red: Card = { id: 'JOKER-1', suit: 'none', rank: 'JOKER' };
     const s = rigged([C('2', 'clubs', 't1'), C('3', 'clubs', 't2')], C('9', 'clubs'), [red]);
     expect(playCombo(s, 0, [s.hands[0][0]]).ok).toBe(true);
     expect(s.pendingPenalty).toBe(2);
-    // Any Joker answers any 2/3 — then the remembered suit (clubs) rules.
+    // Any Joker answers any 2/3 — memory is kept for post-eat continuation.
     expect(playCombo(s, 1, [red]).ok).toBe(true);
     expect(s.pendingPenalty).toBe(5);
     expect(s.pendingPenaltySuit).toBe('clubs');
-    expect(playCombo(s, 0, [s.hands[0][0]]).ok).toBe(true);
-    expect(s.pendingPenalty).toBe(3);
+    expect(playCombo(s, 0, [s.hands[0][0]])).toMatchObject({ ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' });
+    expect(s.pendingPenalty).toBe(5);
   });
 
   it('joker is not a free play — clean tops reject it', () => {
@@ -717,7 +717,7 @@ describe('joker remembered suit', () => {
     expect(validateCombo([JOKER_BLACK], { ...s, hands: [[], [JOKER_BLACK]] }, 1).ok).toBe(true);
   });
 
-  it('Joker table is answered by the remembered suit, Joker, or Ace — not off-suit rank', () => {
+  it('Joker table is relaxed only by Joker or Ace — 2/3 never answers a Joker', () => {
     const table = (ans: Card): boolean => {
       const s = rigged([C('2', 'diamonds', 't')], C('2', 'clubs'), [JOKER_RED], 2);
       playCombo(s, 0, [s.hands[0][0]]);
@@ -729,11 +729,29 @@ describe('joker remembered suit', () => {
       const hand = { ...s, hands: [[ans], []] };
       return validateCombo([ans], hand, 0).ok;
     };
-    expect(table(C('3', 'diamonds', 'a'))).toBe(true);
-    expect(table(C('2', 'diamonds', 'b'))).toBe(true);
+    expect(table(C('3', 'diamonds', 'a'))).toBe(false);
+    expect(table(C('2', 'diamonds', 'b'))).toBe(false);
     expect(table({ ...JOKER_BLACK, id: 'JOKER-2b' })).toBe(true);
     expect(table(C('2', 'spades', 'c'))).toBe(false);
     expect(table(C('A', 'clubs', 'd'))).toBe(true);
+  });
+
+  it('eating a Joker continues with the suit before it', () => {
+    const s = rigged([C('2', 'diamonds', 't')], C('9', 'diamonds'), [{ id: 'JOKER-1', suit: 'none', rank: 'JOKER' }], 2);
+    s.drawPile = Array.from({ length: 20 }, (_, i) => C('7', 'clubs', `d${i}`));
+    playCombo(s, 0, [s.hands[0][0]]);
+    playCombo(s, 1, [s.hands[1][0]]);
+    expect(s.pendingPenalty).toBe(5);
+    expect(s.pendingPenaltySuit).toBe('diamonds');
+    expect(s.currentPlayer).toBe(0);
+    const r = passOrPick(s, 0);
+    expect(r.picked).toBe(5);
+    expect(s.pendingPenalty).toBe(0);
+    expect(s.activeSuit).toBe('diamonds');
+    expect(s.currentPlayer).toBe(1);
+    s.hands[1] = [C('6', 'diamonds', 'follow'), C('6', 'spades', 'off')];
+    expect(validateCombo([s.hands[1][0]], s, 1).ok).toBe(true);
+    expect(validateCombo([s.hands[1][1]], s, 1)).toMatchObject({ ok: false, reason: 'NO_MATCH' });
   });
 });
 
