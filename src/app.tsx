@@ -556,7 +556,7 @@ export function App() {
             onClick={() => setScreen("howto")}
             class="mt-3 w-full max-w-xs rounded-2xl bg-white/10 py-3 text-sm font-bold text-white active:scale-95 transition"
           >
-            🃏 How to play
+            How to play
           </button>
         </div>
       </div>
