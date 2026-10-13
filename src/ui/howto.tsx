@@ -369,7 +369,7 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
           <Section
             id="powers"
             title="⚡ Power cards"
-            line="J ruka (next player sits out), K reverses, Q and 8 ask, Ace funga or picks a suit."
+            line="J ruka (next player sits out), K reverses, Q and 8 ask (any Ace can answer), Ace funga or picks a suit."
           >
             <TryBoard board={playBoard("answer-question")} />
             <TryBoard board={playBoard("jump-refuse")} />
@@ -419,6 +419,7 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
             line="Dump everything in one move, ending clean, with Niko Kadi said a turn earlier."
           >
             <TryBoard board={playBoard("win-clean")} />
+            <TryBoard board={playBoard("win-ace-answer")} />
             <TryBoard board={playBoard("win-bad-ending")} />
             <TryBoard board={playBoard("win-no-call")} />
           </Section>

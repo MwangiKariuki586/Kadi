@@ -221,6 +221,21 @@ export const PLAY_BOARDS: PlayBoard[] = [
     expect: "fined",
     wrongs: [],
   },
+  {
+    kind: "play",
+    id: "win-ace-answer",
+    prompt: "An Ace alone can't finish — but answering a question, it wins. Dump Q♠ + A♦.",
+    setup: {
+      top: cs("9", "spades"),
+      hand: [cs("Q", "spades"), cs("A", "diamonds")],
+      kadiDeclared: true,
+    },
+    solutions: [["Q-spades", "A-diamonds"]],
+    winText: "🏆 Q + Ace wins ending on the Ace — the only way an Ace closes a game.",
+    almostText: "Legal — but a lone Ace can't finish, and a bare Q makes you kula. Play Q♠ + A♦ together.",
+    expect: "win",
+    wrongs: [],
+  },
 ];
 
 export const CHOICE_BOARDS: ChoiceBoard[] = [
