@@ -87,7 +87,7 @@ export function TryBoard({ board }: { board: PlayBoard }) {
       sfx.error();
       setResult({
         tone: "bad",
-        text: `⛔ ${reasonText(v.reason ?? null, s.activeSuit)}`,
+        text: `⛔ ${reasonText(v.reason ?? null, s.activeSuit, s.pendingPenalty > 0 && s.discardPile[s.discardPile.length - 1]?.rank === 'JOKER')}`,
       });
       return;
     }

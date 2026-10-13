@@ -4,6 +4,7 @@ import type { Suit } from "../engine/cards";
 export function reasonText(
   reason: string | null,
   activeSuit?: Suit | null,
+  jokerDebt?: boolean,
 ): string {
   switch (reason) {
     case "NO_MATCH":
@@ -23,7 +24,10 @@ export function reasonText(
     case "QUESTION_NEEDS_ANSWER":
       return "Q / 8 needs a same-suit answer (4 5 6 7 9 10) in the same move.";
     case "PENALTY_MUST_STACK_OR_BLOCK":
-      return "2 / 3 / Joker only stack with other penalties — never with normal cards. Stack, block with Ace, or eat.";
+      if (jokerDebt) {
+        return "Joker +5: only another Joker or Ace relaxes it — 2 / 3 can't answer a Joker. Eat or block.";
+      }
+      return "Penalty: answer 2 / 3 with same rank or same suit — any Joker takes any 2 / 3. Block with Ace, or eat.";
     case "ACE_ONLY_STACKS_WITH_ACE":
       return "An Ace plays solo, with another Ace, or as the answer to Q / 8 (any suit) — never with other normal cards.";
     case "MUST_BE_SAME_RANK":
