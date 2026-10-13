@@ -762,6 +762,7 @@ export function App() {
         validation.reason ?? null,
         state.activeSuit,
         state.pendingPenalty > 0 && topCard(state).rank === 'JOKER',
+        selectedCards.some((c) => c.rank === 'JOKER'),
       )
     : null;
 
@@ -800,6 +801,7 @@ export function App() {
           r.reason ?? null,
           state.activeSuit,
           before.pendingPenalty > 0 && before.topSuit === 'none',
+          cards.some((c) => c.rank === 'JOKER'),
         ),
       );
       bump();
@@ -1090,6 +1092,7 @@ export function App() {
                     validation.reason ?? null,
                     state.activeSuit,
                     state.pendingPenalty > 0 && topCard(state).rank === 'JOKER',
+                    selectedCards.some((c) => c.rank === 'JOKER'),
                   )
                 : null,
             legalCount: hints.size,

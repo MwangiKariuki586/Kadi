@@ -5,9 +5,13 @@ export function reasonText(
   reason: string | null,
   activeSuit?: Suit | null,
   jokerDebt?: boolean,
+  triedJoker?: boolean,
 ): string {
   switch (reason) {
     case "NO_MATCH":
+      if (triedJoker) {
+        return "Joker plays only on a 2 / 3 penalty — never as free play.";
+      }
       if (activeSuit) {
         const glyph =
           activeSuit === "hearts"
