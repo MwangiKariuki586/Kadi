@@ -52,6 +52,7 @@ import {
   describePick,
   describePlay,
   describeResume,
+  describeStall,
   describeWrongPlay,
   snapshotState,
   turnCoach,
@@ -188,7 +189,7 @@ export function App() {
       setSuperPickerFor(null);
       setBusy(false);
       setScreen("game");
-      setFeed([describeResume(save.state.currentPlayer, NAMES)]);
+      setFeed([describeResume(save.state.currentPlayer, NAMES, save.state.turnNumber)]);
       bump();
     },
     [bump],
@@ -240,7 +241,7 @@ export function App() {
     setSuperPickerFor(null);
     setConfirmQuit(false);
     setScreen("game");
-    setFeed([describeDeal(topCard(st))]);
+    setFeed([describeDeal(topCard(st), st.turnNumber)]);
     sfx.shuffle();
     haptics.tap();
     bump();
@@ -369,11 +370,7 @@ export function App() {
         } else {
           // Should never happen (moves are pre-validated) — narrate instead
           // of silently swallowing so ghosts leave evidence, not confusion.
-          pushFeed({
-            icon: "🐞",
-            text: `${NAMES[me]} stalls — illegal move blocked (${move.cards.map(cardLabel).join(" + ")})`,
-            tone: "info",
-          });
+          pushFeed(describeStall(NAMES[me], move.cards.map(cardLabel).join(" + "), s.turnNumber));
         }
       } else {
         const pr = passOrPick(s, me);
@@ -789,7 +786,7 @@ export function App() {
       // Strict tables fine the attempt (draw + turn passes); casual rejects free.
       const fined = resolveWrongPlay(state, 0);
       if (fined > 0) {
-        pushFeed(describeWrongPlay("You", cards, fined));
+        pushFeed(describeWrongPlay("You", cards, fined, state.turnNumber));
         setSelected([]);
         setSuitPickerFor(null);
         setSuperPickerFor(null);
@@ -882,8 +879,8 @@ export function App() {
     if (latePress && shouldDeclareKadi(state, 0)) {
       const fined = fineKadiDelay(state, 0);
       declareKadi(state, 0);
-      pushFeed(describeDelayKadi("You", fined));
-      pushFeed(describeKadi("You"));
+      pushFeed(describeDelayKadi("You", fined, state.turnNumber));
+      pushFeed(describeKadi("You", state.turnNumber));
       sfx.penalty();
       haptics.penalty();
       flash(
@@ -898,12 +895,12 @@ export function App() {
     if (r.ok) {
       sfx.kadi();
       haptics.play();
-      pushFeed(describeKadi("You"));
+      pushFeed(describeKadi("You", state.turnNumber));
       bump();
     } else if (r.falseCall && r.fined) {
       sfx.penalty();
       haptics.penalty();
-      pushFeed(describeFalseKadi("You", r.fined));
+      pushFeed(describeFalseKadi("You", r.fined, state.turnNumber));
       flash(
         `False KADI — no winnable hand, fined +${r.fined}. Need 4 5 6 7 9 10, Q/8 + same-suit answer, or Q/8 + Ace.`,
       );

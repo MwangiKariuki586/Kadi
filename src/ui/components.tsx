@@ -1,7 +1,7 @@
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { jokerColor, type Card, type Rank, type Suit } from "../engine/cards";
-import type { FeedEvent, FeedTone, CoachMsg, CoachTone } from "./feed";
+import { groupFeed, type FeedEvent, type FeedTone, type CoachMsg, type CoachTone } from "./feed";
 
 const GLYPH: Record<Suit, string> = {
   hearts: "♥",
@@ -279,42 +279,97 @@ const TONE_BAR: Record<FeedTone, string> = {
   info: "border-white/15",
 };
 
-/** Latest game events as a banner (last two always visible); tap for full history. */
+const TONE_DOT: Record<FeedTone, string> = {
+  play: "bg-white/40",
+  penalty: "bg-red-400",
+  block: "bg-green-400",
+  suit: "bg-green-400",
+  demand: "bg-yellow-400",
+  skip: "bg-yellow-300",
+  reverse: "bg-yellow-300",
+  draw: "bg-white/30",
+  kadi: "bg-yellow-400",
+  win: "bg-yellow-400",
+  info: "bg-white/30",
+};
+
+function rowClass(e: FeedEvent): string {
+  const involvesYou = e.actor === "You" || e.text.includes("You") || e.text.includes(" you ");
+  if (e.actor === "You") return "text-yellow-100 font-semibold";
+  if (involvesYou) return "text-amber-100 font-semibold";
+  if (e.actor === "Table") return "text-white/55";
+  return "text-white/80";
+}
+
+/** Grouped turn-log: one-line latest summary; tap to expand newest-turn-first groups. */
 export function EventBanner({ events }: { events: FeedEvent[] }) {
   const [open, setOpen] = useState(false);
-  if (events.length === 0) return null;
-  const latest = events[events.length - 1];
-  const previous = events.length > 1 ? events[events.length - 2] : null;
-  const history = events.slice(-8).reverse();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const visible = events.slice(-15);
+  const groups = groupFeed(visible);
+  const groupsDesc = [...groups].reverse();
+  const latest = visible[visible.length - 1];
+
+  useEffect(() => {
+    if (open && scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
+  }, [events.length, open]);
+
+  if (!latest) {
+    return (
+      <div class="px-4 -mt-1 mb-1">
+        <div class="w-full rounded-xl bg-black/40 border border-white/15 px-3 py-1.5 text-center text-xs text-white/40">
+          New match — shuffling…
+        </div>
+      </div>
+    );
+  }
+  const latestGroup = groups[groups.length - 1];
+  const summary = latestGroup && latestGroup.events.length > 0
+    ? latestGroup.events[latestGroup.events.length - 1]
+    : latest;
   return (
     <div class="px-4 -mt-1 mb-1">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        class={`w-full rounded-xl bg-black/40 border ${TONE_BAR[latest.tone]} px-3 py-1.5 text-center active:scale-[0.99] transition`}
+        aria-expanded={open}
+        aria-label={open ? "Collapse recent turns" : "Expand recent turns"}
+        class={`w-full rounded-xl bg-black/40 border ${TONE_BAR[summary.tone]} px-3 py-1.5 text-center active:scale-[0.99] transition`}
       >
-        {previous && (
-          <span class="block truncate text-[11px] text-white/55">
-            {previous.icon} {previous.text}
-          </span>
-        )}
         <span
-          key={events.length}
+          key={summary.id}
           class="anim-fly-in flex items-center justify-center gap-1.5 text-xs text-white/90"
         >
-          <span>{latest.icon}</span>
-          <span class="flex-1 text-center">{latest.text}</span>
+          <span aria-hidden="true">{summary.icon}</span>
+          <span class="flex-1 text-center break-words">{summary.text}</span>
           <span class="text-white/40 text-[10px]">
-            {open ? "▲" : `📜 ${events.length}`}
+            {open ? "▲" : `📜 ${visible.length}`}
           </span>
         </span>
       </button>
       {open && (
-        <div class="mt-1 max-h-32 overflow-y-auto no-scrollbar rounded-xl bg-black/50 border border-white/10 px-3 py-2 flex flex-col gap-1">
-          {history.map((e, i) => (
-            <p key={`${events.length}-${i}`} class="text-[11px] text-white/75">
-              {e.icon} {e.text}
-            </p>
+        <div
+          ref={scrollRef}
+          aria-live="polite"
+          class="mt-1 max-h-44 overflow-y-auto no-scrollbar rounded-xl bg-black/50 border border-white/10 px-3 py-2 flex flex-col gap-2"
+        >
+          {groupsDesc.map((g) => (
+            <div key={`${g.turn}-${g.actor}-${g.events[0]?.id ?? "empty"}`}>
+              <p class="text-[10px] font-bold uppercase tracking-widest text-white/40">
+                {g.actor === "Table" ? "Table" : `Turn ${g.turn} · ${g.actor}`}
+              </p>
+              <div class="mt-0.5 flex flex-col gap-1">
+                {g.events.map((e) => (
+                  <p key={e.id} class={`flex items-start gap-1.5 text-[11px] leading-snug break-words ${rowClass(e)}`}>
+                    <span aria-hidden="true" class={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${TONE_DOT[e.tone]}`} />
+                    <span aria-hidden="true">{e.icon}</span>
+                    <span>{e.text}</span>
+                  </p>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}
