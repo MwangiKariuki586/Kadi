@@ -17,7 +17,10 @@ export interface ComboCheck {
 }
 
 /**
- * Single card matches top? Handles Ace-declared suit + Joker-top wildness.
+ * Single card matches top? Handles Ace-declared suit.
+ * A Joker is never a free play — only a pending 2/3 (or Joker) takes it
+ * (see validateVsTable). A Joker on top with no live debt (legacy saves
+ * only) still lets anything through to avoid deadlock.
  */
 export function singleMatchesTop(card: Card, state: GameState): boolean {
   const top = topCard(state);
@@ -28,8 +31,6 @@ export function singleMatchesTop(card: Card, state: GameState): boolean {
     if (card.rank === 'A') return true;
     return card.suit === state.activeSuit;
   }
-  // Joker is wild — always playable.
-  if (card.rank === 'JOKER') return true;
   // Ace is wild (request) — always playable.
   if (card.rank === 'A') return true;
   return card.suit === top.suit || card.rank === top.rank;
@@ -83,16 +84,27 @@ export function isSuperAceCombo(cards: Card[], state: GameState): boolean {
 /**
  * Penalty-family answer check. Only penalty cards (2/3/Joker) or an Ace
  * may answer a pending penalty:
- * - same rank, any suit (2♣ on 2♥)
- * - same suit, any penalty rank (3♥ on 2♥)
- * - Joker involved on either side: color families must match
- *   (red Joker on 2♥; 2♥/2♦/red-Joker on a red Joker)
+ * - a Joker answers any 2/3, unrestricted by suit or color;
+ * - a Joker on top is answered by the suit played before it
+ *   (rememberedSuit — e.g. 2♦, Joker, then a ♦ penalty), another Joker,
+ *   or an Ace. Off-suit rank matches (2♠ on a Joker that followed 2♥)
+ *   are illegal;
+ * - 2/3 on 2/3: same rank any suit, or same suit any penalty rank.
+ * rememberedSuit is null only for pre-memory saves, which keep the legacy
+ * color-family rule so old matches stay resumable.
  */
-export function penaltyAnswerOk(card: Card, table: Card, config: RulesConfig): boolean {
+export function penaltyAnswerOk(
+  card: Card,
+  table: Card,
+  config: RulesConfig,
+  rememberedSuit: Suit | null = null,
+): boolean {
   if (card.rank === 'A') return config.aceBlocksPenalty;
   if (!isPenaltyRank(card.rank, config)) return false;
   if (!config.allowPenaltyStacking) return false;
-  if (table.rank === 'JOKER' || card.rank === 'JOKER') {
+  if (card.rank === 'JOKER') return true;
+  if (table.rank === 'JOKER') {
+    if (rememberedSuit) return card.suit === rememberedSuit;
     return colorFamilyOf(card) === colorFamilyOf(table);
   }
   return card.rank === table.rank || card.suit === table.suit;
@@ -302,7 +314,7 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
       return { ok: true };
     }
     if (cards.length === 0) return { ok: false, reason: 'CARD_NOT_IN_HAND' };
-    if (!isPenaltyRank(cards[0].rank, config) || !penaltyAnswerOk(cards[0], table, config)) {
+    if (!isPenaltyRank(cards[0].rank, config) || !penaltyAnswerOk(cards[0], table, config, state.pendingPenaltySuit)) {
       return { ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' };
     }
     const links = validateChainLinks(cards);
@@ -572,6 +584,14 @@ export function playCombo(
   // Top card BEFORE this combo lands — remembers the suit an Ace overrides.
   const prevTop = topCard(state);
 
+  // A Joker takes the suit played before it: the card ahead of the first
+  // Joker in this combo, else the previous top (Joker chains keep memory).
+  const firstJoker = cards.findIndex((c) => c.rank === 'JOKER');
+  if (firstJoker !== -1) {
+    const before = firstJoker > 0 ? cards[firstJoker - 1].suit : prevTop.suit;
+    if (before !== 'none') state.pendingPenaltySuit = before;
+  }
+
   // Remove from hand, push to discard in order.
   const hand = state.hands[playerIndex];
   for (const c of cards) {
@@ -639,6 +659,7 @@ export function playCombo(
         }
         state.pendingPenalty = 0;
         state.pendingPenaltyRank = null;
+        state.pendingPenaltySuit = null;
         state.activeCardRequest = null;
         state.activeSuit = preserved;
         effect = 'Blocked!';
@@ -805,6 +826,7 @@ export function passOrPick(state: GameState, playerIndex: number): { picked: num
     const n = state.pendingPenalty;
     state.pendingPenalty = 0;
     state.pendingPenaltyRank = null;
+    state.pendingPenaltySuit = null;
     const drawn = drawCards(state, playerIndex, n);
     state.lastEffect = `Picked ${drawn.length}`;
     advanceTurn(state);

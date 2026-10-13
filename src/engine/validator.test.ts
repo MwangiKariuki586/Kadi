@@ -162,13 +162,25 @@ describe('penalties', () => {
     expect(s.pendingPenalty).toBe(2);
   });
 
-  it('joker answered by a 2 drops the debt to 2 (latest takes over)', () => {
+  it('joker answered by a same-suit 2 drops the debt to 2 (latest takes over)', () => {
     const red: Card = { id: 'JOKER-1', suit: 'none', rank: 'JOKER' };
-    const s = rigged([red], C('9', 'hearts'), [C('2', 'hearts', 't2')]);
-    expect(playCombo(s, 0, [red]).ok).toBe(true);
-    expect(s.pendingPenalty).toBe(5);
-    expect(playCombo(s, 1, [s.hands[1][0]]).ok).toBe(true);
+    const s = rigged([C('2', 'clubs', 't1'), C('3', 'clubs', 't2')], C('9', 'clubs'), [red]);
+    expect(playCombo(s, 0, [s.hands[0][0]]).ok).toBe(true);
     expect(s.pendingPenalty).toBe(2);
+    // Any Joker answers any 2/3 — then the remembered suit (clubs) rules.
+    expect(playCombo(s, 1, [red]).ok).toBe(true);
+    expect(s.pendingPenalty).toBe(5);
+    expect(s.pendingPenaltySuit).toBe('clubs');
+    expect(playCombo(s, 0, [s.hands[0][0]]).ok).toBe(true);
+    expect(s.pendingPenalty).toBe(3);
+  });
+
+  it('joker is not a free play — clean tops reject it', () => {
+    const red: Card = { id: 'JOKER-1', suit: 'none', rank: 'JOKER' };
+    const s = rigged([red], C('9', 'hearts'), [C('4', 'clubs')]);
+    expect(validateCombo([red], s, 0)).toMatchObject({ ok: false, reason: 'NO_MATCH' });
+    expect(playCombo(s, 0, [red]).ok).toBe(false);
+    expect(s.pendingPenalty).toBe(0);
   });
 
   it('two penalties dropped together count once (latest wins)', () => {
@@ -191,14 +203,16 @@ describe('penalties', () => {
     expect(playCombo(s, 0, [two, six])).toMatchObject({ ok: false });
   });
 
-  it('free play: Joker + normal is illegal, Joker + Joker is a pure penalty stack', () => {
+  it('penalty answer: Joker + Joker stacks, Joker + normal is illegal', () => {
     const red: Card = { id: 'JOKER-1', suit: 'none', rank: 'JOKER' };
     const five = C('5', 'hearts', 'n1');
-    const s = rigged([red, five], C('9', 'hearts'), [C('4', 'clubs')]);
-    expect(validateCombo([red, five], s, 0)).toMatchObject({ ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' });
+    const s = rigged([C('2', 'hearts', 't')], C('9', 'hearts'), [red, five]);
+    expect(playCombo(s, 0, [s.hands[0][0]]).ok).toBe(true);
+    expect(validateCombo([red, five], s, 1)).toMatchObject({ ok: false, reason: 'NO_MATCH' });
     const black: Card = { id: 'JOKER-2', suit: 'none', rank: 'JOKER' };
-    const s2 = rigged([red, black], C('9', 'hearts'), [C('4', 'clubs')]);
-    expect(playCombo(s2, 0, [red, black]).ok).toBe(true);
+    const s2 = rigged([C('2', 'hearts', 't')], C('9', 'hearts'), [red, black]);
+    expect(playCombo(s2, 0, [s2.hands[0][0]]).ok).toBe(true);
+    expect(playCombo(s2, 1, [red, black]).ok).toBe(true);
     expect(s2.pendingPenalty).toBe(5);
   });
 
@@ -297,16 +311,18 @@ describe('penalties', () => {
     expect(s.lastEffect).toMatch(/^Blocked!/);
   });
 
-  it('Ace block on a Joker recovers the last suited discard', () => {
+  it('Ace block on a Joker recovers the suit played before it', () => {
     const red: Card = { id: 'JOKER-1', suit: 'none', rank: 'JOKER' };
     const ace = C('A', 'spades', 'a1');
-    const s = rigged([red], C('9', 'hearts'), [ace]);
-    playCombo(s, 0, [red]);
+    const s = rigged([C('2', 'diamonds', 't'), ace], C('2', 'spades'), [red]);
+    expect(playCombo(s, 0, [s.hands[0][0]]).ok).toBe(true);
+    expect(playCombo(s, 1, [red]).ok).toBe(true);
     expect(s.pendingPenalty).toBe(5);
-    playCombo(s, 1, [ace]);
+    expect(s.pendingPenaltySuit).toBe('diamonds');
+    expect(playCombo(s, 0, [ace]).ok).toBe(true);
     expect(s.pendingPenalty).toBe(0);
-    // Joker carries no suit — fall back to the 9♥ underneath, not the Ace's spades.
-    expect(s.activeSuit).toBe('hearts');
+    // Joker carries no suit — the diamonds underneath rule, not the Ace's spades.
+    expect(s.activeSuit).toBe('diamonds');
   });
 
   it('strict differs from standard only by jokers — stacking still allowed', () => {
@@ -680,37 +696,42 @@ describe('tap-order K/J stacks', () => {
   });
 });
 
-describe('penalty color family', () => {
+describe('joker remembered suit', () => {
   const JOKER_RED: Card = { id: 'JOKER-1', suit: 'none', rank: 'JOKER' };
   const JOKER_BLACK: Card = { id: 'JOKER-2', suit: 'none', rank: 'JOKER' };
 
-  it('2♥ answered by 2♠ (rank), 3♥ (suit), red Joker (color)', () => {
-    for (const answer of [C('2', 'spades', 'a'), C('3', 'hearts', 'a'), JOKER_RED]) {
-      const s = rigged([C('2', 'hearts', 't')], C('9', 'hearts'), [answer], 2);
+  it('any Joker answers any 2/3, unrestricted by suit or color', () => {
+    for (const joker of [JOKER_RED, JOKER_BLACK]) {
+      const s = rigged([C('2', 'hearts', 't')], C('9', 'hearts'), [{ ...joker }], 2);
       playCombo(s, 0, [s.hands[0][0]]);
-      expect(playCombo(s, 1, [answer]).ok, answer.id).toBe(true);
+      expect(playCombo(s, 1, [{ ...joker }]).ok, joker.id).toBe(true);
+      expect(s.pendingPenaltySuit).toBe('hearts');
     }
   });
 
-  it('rejects non-penalty answers and wrong-color Joker', () => {
+  it('rejects non-penalty answers; Joker answers need no color match', () => {
     const s = rigged([C('2', 'hearts', 't')], C('9', 'hearts'), [C('5', 'hearts', 'x')], 2);
     playCombo(s, 0, [s.hands[0][0]]);
     expect(validateCombo([s.hands[1][0]], s, 1)).toMatchObject({ ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' });
-    expect(validateCombo([JOKER_BLACK], { ...s, hands: [[], [JOKER_BLACK]] }, 1).reason).toBeDefined();
+    // Black Joker on a red 2 is legal now — color is irrelevant.
+    expect(validateCombo([JOKER_BLACK], { ...s, hands: [[], [JOKER_BLACK]] }, 1).ok).toBe(true);
   });
 
-  it('red Joker table answered by red-family penalties or Ace — not black 2♠', () => {
+  it('Joker table is answered by the remembered suit, Joker, or Ace — not off-suit rank', () => {
     const table = (ans: Card): boolean => {
-      const s = rigged([JOKER_RED], C('9', 'clubs'), [ans], 2);
-      s.discardPile = [JOKER_RED];
+      const s = rigged([C('2', 'diamonds', 't')], C('2', 'clubs'), [JOKER_RED], 2);
+      playCombo(s, 0, [s.hands[0][0]]);
+      playCombo(s, 1, [JOKER_RED]);
       s.hands[0] = [];
-      s.currentPlayer = 1;
-      s.pendingPenalty = 5;
-      return validateCombo([ans], s, 1).ok;
+      s.currentPlayer = 0;
+      expect(s.pendingPenalty).toBe(5);
+      expect(s.pendingPenaltySuit).toBe('diamonds');
+      const hand = { ...s, hands: [[ans], []] };
+      return validateCombo([ans], hand, 0).ok;
     };
-    expect(table(C('2', 'hearts', 'a'))).toBe(true);
-    expect(table(C('3', 'diamonds', 'b'))).toBe(true);
-    expect(table({ ...JOKER_RED, id: 'JOKER-1b' })).toBe(true);
+    expect(table(C('3', 'diamonds', 'a'))).toBe(true);
+    expect(table(C('2', 'diamonds', 'b'))).toBe(true);
+    expect(table({ ...JOKER_BLACK, id: 'JOKER-2b' })).toBe(true);
     expect(table(C('2', 'spades', 'c'))).toBe(false);
     expect(table(C('A', 'clubs', 'd'))).toBe(true);
   });

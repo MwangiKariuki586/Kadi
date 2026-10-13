@@ -186,3 +186,13 @@ html, body {
 .safe-top {
   padding-top: env(safe-area-inset-top, 0px);
 }
+
+/* App-like panes scroll by swipe — the OS scrollbar only adds noise
+   (cut-off chips and cards already hint there's more). */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

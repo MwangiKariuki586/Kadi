@@ -589,7 +589,7 @@ export function App() {
             <h2 class="mt-2 text-3xl font-black text-yellow-300">New Game</h2>
           </div>
 
-          <div class="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1">
+          <div class="mt-4 min-h-0 flex-1 overflow-y-auto no-scrollbar overscroll-contain pb-1">
             <p class="text-xs font-bold uppercase tracking-widest text-white/50">
               Players
             </p>
@@ -1138,7 +1138,7 @@ export function App() {
             <KadiBuzzer urgent={kadiHot} title={kadiTitle} onPress={onKadi} />
           </div>
         )}
-        <div class="flex shrink-0 justify-center overflow-x-auto pt-3">
+        <div class="flex shrink-0 justify-center overflow-x-auto no-scrollbar pt-3">
           <div class="flex" style={{ paddingLeft: 8 }}>
             {myHand.map((c) => (
               <div key={c.id} class="-ml-4 first:ml-0">

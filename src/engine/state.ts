@@ -11,6 +11,8 @@ export interface GameState {
   /** Accumulated picks the current player owes (0 = none). */
   pendingPenalty: number;
   pendingPenaltyRank: string | null;
+  /** Suit played before a live Joker (null = none). Answers to a Joker must follow it. */
+  pendingPenaltySuit: Suit | null;
   /** Declared suit after an Ace (null = follow top card normally). */
   activeSuit: Suit | null;
   /** Suit in force right before the latest Ace request (memory aid, null if none). */
@@ -69,6 +71,7 @@ export function createGame({ numPlayers, config = STANDARD_MAUA, random = Math.r
     direction: 1,
     pendingPenalty: 0,
     pendingPenaltyRank: null,
+    pendingPenaltySuit: null,
     activeSuit: null,
     lastSuitBeforeRequest: null,
     activeCardRequest: null,

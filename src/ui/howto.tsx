@@ -16,7 +16,13 @@ import {
 } from "./howtoContent";
 
 function suitGlyph(suit: Suit): string {
-  return suit === "hearts" ? "♥" : suit === "diamonds" ? "♦" : suit === "spades" ? "♠" : "♣";
+  return suit === "hearts"
+    ? "♥"
+    : suit === "diamonds"
+      ? "♦"
+      : suit === "spades"
+        ? "♠"
+        : "♣";
 }
 
 function playBoard(id: string): PlayBoard {
@@ -79,10 +85,15 @@ export function TryBoard({ board }: { board: PlayBoard }) {
     const v = validateCombo(cards, s, 0);
     if (!v.ok) {
       sfx.error();
-      setResult({ tone: "bad", text: `⛔ ${reasonText(v.reason ?? null, s.activeSuit)}` });
+      setResult({
+        tone: "bad",
+        text: `⛔ ${reasonText(v.reason ?? null, s.activeSuit)}`,
+      });
       return;
     }
-    const solved = board.solutions.some((sol) => sol.join("|") === selected.join("|"));
+    const solved = board.solutions.some(
+      (sol) => sol.join("|") === selected.join("|"),
+    );
     if (board.expect) {
       const clone = JSON.parse(JSON.stringify(s));
       const r = playCombo(clone, 0, cards, null, null);
@@ -100,7 +111,9 @@ export function TryBoard({ board }: { board: PlayBoard }) {
       } else {
         setResult({
           tone: "almost",
-          text: board.almostText ?? "Legal move — but not the lesson. Reset and try again.",
+          text:
+            board.almostText ??
+            "Legal move but not the lesson. Reset and try again.",
         });
       }
       return;
@@ -113,7 +126,9 @@ export function TryBoard({ board }: { board: PlayBoard }) {
     } else {
       setResult({
         tone: "almost",
-        text: board.almostText ?? "Legal move — but not the lesson. Reset and try again.",
+        text:
+          board.almostText ??
+          "Legal move but not the lesson. Reset and try again.",
       });
     }
   };
@@ -135,8 +150,12 @@ export function TryBoard({ board }: { board: PlayBoard }) {
         <div class="flex flex-col items-center gap-1">
           <CardView card={top} large />
           <div class="flex h-6 gap-1">
-            {table.pendingPenalty > 0 && <Pill tone="red">Pick {table.pendingPenalty}</Pill>}
-            {table.pendingSkip > 0 && <Pill tone="amber">SKIP ×{table.pendingSkip}</Pill>}
+            {table.pendingPenalty > 0 && (
+              <Pill tone="red">Pick {table.pendingPenalty}</Pill>
+            )}
+            {table.pendingSkip > 0 && (
+              <Pill tone="amber">SKIP ×{table.pendingSkip}</Pill>
+            )}
             {table.activeCardRequest && (
               <Pill tone="amber">
                 Need: {table.activeCardRequest.rank}
@@ -161,7 +180,9 @@ export function TryBoard({ board }: { board: PlayBoard }) {
         </div>
       </div>
       {result && (
-        <p class={`anim-fly-in mt-2 rounded-xl border px-3 py-2 text-center text-xs font-bold ${RESULT_STYLE[result.tone]}`}>
+        <p
+          class={`anim-fly-in mt-2 rounded-xl border px-3 py-2 text-center text-xs font-bold ${RESULT_STYLE[result.tone]}`}
+        >
           {result.text}
         </p>
       )}
@@ -243,7 +264,9 @@ export function ChoiceBoardView({ board }: { board: ChoiceBoard }) {
         ))}
       </div>
       {picked != null && (
-        <p class={`anim-fly-in mt-2 rounded-xl border px-3 py-2 text-center text-xs font-bold ${correct ? RESULT_STYLE.good : RESULT_STYLE.bad}`}>
+        <p
+          class={`anim-fly-in mt-2 rounded-xl border px-3 py-2 text-center text-xs font-bold ${correct ? RESULT_STYLE.good : RESULT_STYLE.bad}`}
+        >
           {correct ? "✅ " : "⛔ "}
           {board.options[picked].feedback}
         </p>
@@ -253,7 +276,13 @@ export function ChoiceBoardView({ board }: { board: ChoiceBoard }) {
 }
 
 /** Non-interactive row: a few cards plus the takeaway line. */
-export function CardExample({ cards, caption }: { cards: Card[]; caption: string }) {
+export function CardExample({
+  cards,
+  caption,
+}: {
+  cards: Card[];
+  caption: string;
+}) {
   return (
     <div class="rounded-2xl border border-white/10 bg-black/30 p-3">
       <div class="flex justify-center">
@@ -265,7 +294,9 @@ export function CardExample({ cards, caption }: { cards: Card[]; caption: string
           ))}
         </div>
       </div>
-      <p class="mt-2 text-center text-[11px] leading-relaxed text-white/70">{caption}</p>
+      <p class="mt-2 text-center text-[11px] leading-relaxed text-white/70">
+        {caption}
+      </p>
     </div>
   );
 }
@@ -303,7 +334,9 @@ const CHIPS = [
 export function HowToScreen({ onBack }: { onBack: () => void }) {
   const jump = (id: string) => {
     try {
-      document.getElementById(`howto-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      document
+        .getElementById(`howto-${id}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch {
       /* DOM unavailable — ignore */
     }
@@ -317,15 +350,15 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
             type="button"
             aria-label="Back"
             onClick={onBack}
-            class="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-bold text-white shadow-sm transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-300"
+            class="inline-flex min-h-11 items-center gap-1.5 px-4 py-2 text-sm font-bold text-white  transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-300"
           >
             <span aria-hidden="true">←</span> Back
           </button>
-          <h2 class="mt-2 text-3xl font-black text-yellow-300">How to play 🃏</h2>
+          <h2 class="mt-2 text-3xl font-black text-yellow-300">How to play</h2>
           <p class="mt-0.5 text-xs text-white/60">
-            Tap through the lessons — every board is real Kadi.
+            Tap through the lessons every board is real Kadi.
           </p>
-          <div class="mt-2 flex gap-1.5 overflow-x-auto pb-1">
+          <div class="mt-2 flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
             {CHIPS.map((c) => (
               <button
                 key={c.id}
@@ -339,19 +372,26 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
           </div>
         </div>
 
-        <div class="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2">
+        <div class="mt-2 min-h-0 flex-1 overflow-y-auto no-scrollbar overscroll-contain pb-2">
           <Section
             id="goal"
             title="🎯 Goal"
-            line="Finish all your cards in one move. Your last card must be 4, 5, 6, 7, 9 or 10."
+            line="Finish all your cards in one move. Your last card must be 4, 5, 6, 7, 9 or 10 or an Ace answering a Q/8."
           >
             <TryBoard board={playBoard("goal-pick-winner")} />
+            <CardExample
+              cards={[
+                { id: "gx-q", rank: "Q", suit: "spades" },
+                { id: "gx-a", rank: "A", suit: "diamonds" },
+              ]}
+              caption="An Ace can also finish but only answering a Q or 8. Full lesson in Winning below."
+            />
           </Section>
 
           <Section
             id="kadi"
             title="📢 Niko Kadi"
-            line="Shout Niko Kadi the turn before you finish — or the win doesn't count. Early or late, you kula +1."
+            line="Shout Niko Kadi the turn before you finish or the win doesn't count. Early or late, you kula +1."
           >
             <ChoiceBoardView board={choiceBoard("kadi-shout-now")} />
             <ChoiceBoardView board={choiceBoard("kadi-too-early")} />
@@ -360,7 +400,7 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
           <Section
             id="match"
             title="🃏 Matching"
-            line="Match the top card's suit or rank. Tap cards in order — the first one must match."
+            line="Match the top card's suit or rank. Tap cards in order the first one must match."
           >
             <TryBoard board={playBoard("match-one")} />
             <TryBoard board={playBoard("combo-order")} />
@@ -378,7 +418,7 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
                 { id: "hx-a", rank: "A", suit: "clubs" },
                 { id: "hx-s", rank: "4", suit: "spades" },
               ]}
-              caption="A free Ace picks the next suit — here spades. Everyone follows it."
+              caption="A free Ace picks the next suit here spades. Everyone follows it."
             />
           </Section>
 
@@ -389,6 +429,20 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
           >
             <TryBoard board={playBoard("block-penalty")} />
             <TryBoard board={playBoard("penalty-choice")} />
+            <CardExample
+              cards={[
+                { id: "hx-2d", rank: "2", suit: "diamonds" },
+                { id: "JOKER-1", rank: "JOKER", suit: "none" },
+              ]}
+              caption="2♦, then Joker (+5). Next plays ♦, another Joker, or an Ace."
+            />
+            <CardExample
+              cards={[
+                { id: "hx-2h", rank: "2", suit: "hearts" },
+                { id: "JOKER-2", rank: "JOKER", suit: "none" },
+              ]}
+              caption="Any Joker answers any 2 or 3 — black Joker on 2♥ is legal. No color to match."
+            />
           </Section>
 
           <Section
@@ -397,20 +451,6 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
             line="A♠ names any exact card. Bring it, play an Ace, or kula. Stacked Aces always demand, Babu or not."
           >
             <TryBoard board={playBoard("babu-demand")} />
-            <CardExample
-              cards={[
-                { id: "JOKER-1", rank: "JOKER", suit: "none" },
-                { id: "hx-2h", rank: "2", suit: "hearts" },
-              ]}
-              caption="Red Joker ↔ ♥♦ family. Answer it with 2♥, 2♦, a red Joker — or an Ace."
-            />
-            <CardExample
-              cards={[
-                { id: "JOKER-2", rank: "JOKER", suit: "none" },
-                { id: "hx-2s", rank: "2", suit: "spades" },
-              ]}
-              caption="Black Joker ↔ ♠♣ family. Same deal: same color or Ace."
-            />
           </Section>
 
           <Section

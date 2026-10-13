@@ -130,7 +130,7 @@ export function SettingsScreen({
           </p>
         </div>
 
-        <div class="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2">
+        <div class="mt-2 min-h-0 flex-1 overflow-y-auto no-scrollbar overscroll-contain pb-2">
           <Section level="1" title="Sound & help" sub="Works right away.">
             <ToggleRow
               icon={settings.sound ? "🔊" : "🔇"}

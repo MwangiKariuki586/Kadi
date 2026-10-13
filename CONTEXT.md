@@ -58,10 +58,12 @@ declared on a strictly earlier turn (`Niko Kadi`), no cardless blocker.
 
 ### Decision log (each debated during build)
 
-1. **Penalty answers = penalty family + color.** A 2♥ is answered by any 2, same-suit 3♥,
-   color-matched Joker, or Ace. Non-penalty cards can never answer. Joker colors derive from
-   id (JOKER-1 red ↔ hearts/diamonds, JOKER-2 black ↔ spades/clubs); a Joker on top is
-   answered by same-color-family penalties or Ace.
+1. **Penalty answers = family; Joker takes the suit before it.** A 2♥ is answered by any 2,
+   same-suit 3♥, any Joker, or Ace. Non-penalty cards can never answer. A Joker is only
+   playable after a 2/3 (never a free play) and remembers that suit: 2♦, Joker, then only
+   ♦ penalties, another Joker, or Ace may answer (off-suit 2♠ is illegal). Joker art stays
+   red/black per id (JOKER-1 red, JOKER-2 black) — purely visual now, plus a legacy color
+   fallback for pre-memory saves.
 2. **No accumulation — top takes over.** Answering replaces the debt (Joker +5 answered by a
    2 → Pick 2; 2-on-2 stays 2). Flag: `penaltyAccumulates: false` (kept for legacy variants).
    Answering is still allowed (`allowPenaltyStacking` is the gate, unchanged).
