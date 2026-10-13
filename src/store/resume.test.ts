@@ -92,6 +92,14 @@ describe('resume guard', () => {  it('accepts a live, well-formed save', () => {
     expect(save.state.config.name).toBe(STANDARD_MAUA.name);
     expect(isResumable(save)).toBe(true);
   });
+
+  it('old saves without joker suit memory load with null (legacy color fallback)', () => {
+    const save = liveSave();
+    delete (save.state as unknown as Record<string, unknown>).pendingPenaltySuit;
+    refreshResumeConfig(save);
+    expect(save.state.pendingPenaltySuit).toBeNull();
+    expect(isResumable(save)).toBe(true);
+  });
 });
 
 describe('settings defaults', () => {

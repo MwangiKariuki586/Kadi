@@ -310,7 +310,7 @@ export function EventBanner({ events }: { events: FeedEvent[] }) {
         </span>
       </button>
       {open && (
-        <div class="mt-1 max-h-32 overflow-y-auto rounded-xl bg-black/50 border border-white/10 px-3 py-2 flex flex-col gap-1">
+        <div class="mt-1 max-h-32 overflow-y-auto no-scrollbar rounded-xl bg-black/50 border border-white/10 px-3 py-2 flex flex-col gap-1">
           {history.map((e, i) => (
             <p key={`${events.length}-${i}`} class="text-[11px] text-white/75">
               {e.icon} {e.text}

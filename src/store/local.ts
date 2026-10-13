@@ -79,6 +79,7 @@ export function refreshResumeConfig(save: ActiveGameSave): void {
   // Fields that did not exist when older saves were written.
   if (typeof save.state.pendingReverse !== 'number') save.state.pendingReverse = 0;
   if (typeof save.state.pendingSkip !== 'number') save.state.pendingSkip = 0;
+  if (typeof save.state.pendingPenaltySuit === 'undefined') save.state.pendingPenaltySuit = null;
 }
 
 export interface GameStore {
