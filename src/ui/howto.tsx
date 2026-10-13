@@ -434,7 +434,7 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
                 { id: "hx-2d", rank: "2", suit: "diamonds" },
                 { id: "JOKER-1", rank: "JOKER", suit: "none" },
               ]}
-              caption="2♦, then Joker (+5). Next plays ♦, another Joker, or an Ace."
+              caption="2♦, then Joker (+5). Only another Joker or an Ace relaxes it — eat and follow ♦."
             />
             <CardExample
               cards={[
