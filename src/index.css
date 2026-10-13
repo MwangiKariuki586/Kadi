@@ -163,7 +163,8 @@ html, body {
   animation: none;
 }
 [data-motion="reduced"] .card-btn,
-[data-motion="reduced"] .kadi-buzzer {
+[data-motion="reduced"] .kadi-buzzer,
+[data-motion="reduced"] .switch-knob {
   transition: none;
 }
 

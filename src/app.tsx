@@ -24,7 +24,12 @@ import {
   tryDeclareKadi,
   validateCombo,
 } from "./engine/validator";
-import { store, type ActiveGameSave, type Settings, type Stats } from "./store/local";
+import {
+  store,
+  type ActiveGameSave,
+  type Settings,
+  type Stats,
+} from "./store/local";
 import {
   CardRequestPicker,
   CardView,
@@ -266,14 +271,11 @@ export function App() {
     void store.saveSettings(patch);
   }, []);
 
-  const openSettings = useCallback(
-    (from: "home" | "game") => {
-      setSettingsOrigin(from);
-      setScreen("settings");
-      haptics.tap();
-    },
-    [],
-  );
+  const openSettings = useCallback((from: "home" | "game") => {
+    setSettingsOrigin(from);
+    setScreen("settings");
+    haptics.tap();
+  }, []);
 
   // ---- boot: settings, stats, then auto-resume a live match (no taps) ----
   useEffect(() => {
@@ -515,7 +517,7 @@ export function App() {
             type="button"
             aria-label="Open settings"
             onClick={() => openSettings("home")}
-            class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-white/15 bg-white/10 px-3 py-2 text-lg shadow-sm transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-300"
+            class="inline-flex min-h-11 min-w-11 items-center justify-center px-3 py-2 text-lg transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-300"
           >
             <span aria-hidden="true">⚙️</span>
           </button>
@@ -547,8 +549,8 @@ export function App() {
               class="mt-3 w-full max-w-xs rounded-2xl border border-yellow-400/60 bg-yellow-400/10 py-3 text-sm font-black text-yellow-200 active:scale-95 transition"
             >
               ⏸ Continue • {resumable.state.hands.length} players •{" "}
-              {resumable.state.currentPlayer === 0 ? "your turn" : "bot turn"} •
-              {" "}{resumable.state.hands[0].length} cards
+              {resumable.state.currentPlayer === 0 ? "your turn" : "bot turn"} •{" "}
+              {resumable.state.hands[0].length} cards
             </button>
           )}
           <button
@@ -573,7 +575,7 @@ export function App() {
                 type="button"
                 aria-label="Back to home"
                 onClick={() => setScreen("home")}
-                class="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-bold text-white shadow-sm transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-300"
+                class="inline-flex min-h-11 items-center gap-1.5 px-4 py-2 text-sm font-bold text-white transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-300"
               >
                 <span aria-hidden="true">←</span> Back
               </button>
@@ -581,7 +583,7 @@ export function App() {
                 type="button"
                 aria-label="Open settings"
                 onClick={() => openSettings("home")}
-                class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-white/15 bg-white/10 px-3 py-2 text-lg transition active:scale-95"
+                class="inline-flex min-h-11 min-w-11 items-center justify-center px-3 py-2 text-lg transition active:scale-95"
               >
                 <span aria-hidden="true">⚙️</span>
               </button>
@@ -610,65 +612,45 @@ export function App() {
             </div>
 
             <p class="mt-5 text-xs font-bold uppercase tracking-widest text-white/50">
-              Bots
+              Game mode
             </p>
-            <div class="mt-2 grid grid-cols-3 gap-2">
-              {(["easy", "medium", "hard"] as Difficulty[]).map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => savePatch({ difficulty: d })}
-                  class={`rounded-2xl py-3 font-bold capitalize ${difficulty === d ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"}`}
-                >
-                  {d === "easy" ? "😌 Easy" : d === "medium" ? "🧠 Normal" : "🔥 Hard"}
-                </button>
-              ))}
+            <div class="mt-2 flex w-full items-center gap-3 ">
+              <span class="min-w-0 flex-1 text-left">
+                <span class="text-sm font-bold">Joker mode</span>
+                <span class="mt-0.5 block text-[11px] text-white/60">
+                  {preset.jokersEnabled
+                    ? "Jokers in, be ready to kula +5."
+                    : "No Jokers, only 2s and 3s send you to kula."}
+                </span>
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={preset.jokersEnabled}
+                aria-label="Joker mode"
+                onClick={() =>
+                  savePatch({
+                    presetName: preset.jokersEnabled
+                      ? "Strict No-Joker"
+                      : "Standard Maua",
+                  })
+                }
+                class={`relative h-8 w-14 shrink-0 rounded-full border bg-black/60 transition-colors duration-200 active:scale-95 ${
+                  preset.jokersEnabled
+                    ? "border-yellow-400/70"
+                    : "border-white/20"
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  class={`switch-knob absolute left-1 top-1/2 block h-6 w-6 -translate-y-1/2 rounded-full border-[3px] transition-all duration-200 ${
+                    preset.jokersEnabled
+                      ? "translate-x-6 border-yellow-300 bg-black"
+                      : "translate-x-0 border-white/25 bg-black/80"
+                  }`}
+                />
+              </button>
             </div>
-
-            <p class="mt-5 text-xs font-bold uppercase tracking-widest text-white/50">
-              Cards
-            </p>
-            <div class="mt-2 flex flex-col gap-2">
-              {PRESETS.map((p) => (
-                <button
-                  key={p.name}
-                  type="button"
-                  onClick={() => savePatch({ presetName: p.name })}
-                  class={`rounded-2xl border p-3 text-left ${preset.name === p.name ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-white/5"}`}
-                >
-                  <span class="font-bold text-sm">{p.name}</span>
-                  <span class="block text-[11px] text-white/60 mt-0.5">
-                    {p.jokersEnabled ? "With Jokers" : "No Jokers"} •{" "}
-                    {p.dealCount} cards each
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => savePatch({ superAce: !superAceOn })}
-              class={`mt-5 w-full rounded-2xl border p-3 text-left ${superAceOn ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-white/5"}`}
-            >
-              <span class="font-bold text-sm">
-                ⚡ Babu {superAceOn ? "(on)" : "(off)"}
-              </span>
-              <span class="block text-[11px] text-white/60 mt-0.5">
-                A♠ asks for any card you name.
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => savePatch({ strict: !strictOn })}
-              class={`mt-2 w-full rounded-2xl border p-3 text-left ${strictOn ? "border-red-400 bg-red-400/10" : "border-white/10 bg-white/5"}`}
-            >
-              <span class="font-bold text-sm">
-                🚨 Strict table {strictOn ? "(on)" : "(off)"}
-              </span>
-              <span class="block text-[11px] text-white/60 mt-0.5">
-                Wrong moves kula +1.
-              </span>
-            </button>
           </div>
 
           <div class="shrink-0 border-t border-white/10 pt-3">
@@ -961,30 +943,27 @@ export function App() {
 
       {/* top bar */}
       <div class="flex items-center justify-between px-4 pt-3">
-        <div class="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setConfirmQuit(true)}
-            class="text-white/60 text-sm"
-          >
-            ← Quit
-          </button>
-          <button
-            type="button"
-            aria-label="Open settings"
-            onClick={() => openSettings("game")}
-            class="text-white/60 text-lg leading-none"
-          >
-            <span aria-hidden="true">⚙️</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setConfirmQuit(true)}
+          class="text-white/60 text-sm"
+        >
+          ← Quit
+        </button>
         <div class="flex items-center gap-2">
           <Pill>
             {state.direction === 1 ? "↻ clockwise" : "↺ anti-clockwise"}
           </Pill>
           {threats.some(Boolean) && <Pill tone="amber">KADI!</Pill>}
         </div>
-        <span class="text-white/60 text-xs">{preset.name}</span>
+        <button
+          type="button"
+          aria-label="Open settings"
+          onClick={() => openSettings("game")}
+          class="text-white/60 text-lg leading-none"
+        >
+          <span aria-hidden="true">⚙️</span>
+        </button>
       </div>
 
       {/* bots */}
