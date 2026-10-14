@@ -40,6 +40,17 @@ interaction involving code changes. Do NOT skip or relax these.
 - **Production:** deployed only after I explicitly confirm staging is good.
 - The same artifact (image/binary) goes to both. Never rebuild for prod.
 
+## Staging merging rules (`staging/*` is a testing env)
+
+- Merging feature/fix branches into `staging` is allowed at any time — no PR
+  required, CI is not a gate there.
+- Merge locally (`git merge --no-ff`) and push, or open a PR with base
+  `staging` for visibility on bigger changes.
+- Never force-push a shared branch. Never commit directly to `main`.
+- Feature branches may be deleted right after merging to `staging`.
+- `main` rules stay strict no matter what staging allowed: every change via
+  PR, all checks green, squash-merge, branch deleted after merge.
+
 ## Code Quality
 
 - No `console.log` / `print()` / `TODO` left in merged code.

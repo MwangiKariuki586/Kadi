@@ -11,6 +11,8 @@ export interface GameState {
   /** Accumulated picks the current player owes (0 = none). */
   pendingPenalty: number;
   pendingPenaltyRank: string | null;
+  /** Suit played before a live Joker (null = none). Answers to a Joker must follow it. */
+  pendingPenaltySuit: Suit | null;
   /** Declared suit after an Ace (null = follow top card normally). */
   activeSuit: Suit | null;
   /** Suit in force right before the latest Ace request (memory aid, null if none). */
@@ -19,6 +21,8 @@ export interface GameState {
   activeCardRequest: { rank: Rank; suit: Suit } | null;
   /** Number of players to skip at next advance (from Jacks). */
   pendingSkip: number;
+  /** Pending kickback reversals (from Kings): odd = flips on accept, even = fizzle. */
+  pendingReverse: number;
   kadiCalls: boolean[];
   kadiCallTurn: number[];
   turnNumber: number;
@@ -58,7 +62,8 @@ export function createGame({ numPlayers, config = STANDARD_MAUA, random = Math.r
   const [starter] = deck.splice(starterIndex, 1);
 
   return {
-    config,
+    // Copy: games must never alias (and pollute) the shared preset objects.
+    config: { ...config },
     hands,
     drawPile: deck,
     discardPile: [starter],
@@ -66,10 +71,12 @@ export function createGame({ numPlayers, config = STANDARD_MAUA, random = Math.r
     direction: 1,
     pendingPenalty: 0,
     pendingPenaltyRank: null,
+    pendingPenaltySuit: null,
     activeSuit: null,
     lastSuitBeforeRequest: null,
     activeCardRequest: null,
     pendingSkip: 0,
+    pendingReverse: 0,
     kadiCalls: Array(numPlayers).fill(false),
     kadiCallTurn: Array(numPlayers).fill(-1),
     turnNumber: 0,
@@ -79,11 +86,11 @@ export function createGame({ numPlayers, config = STANDARD_MAUA, random = Math.r
   };
 }
 
-/** Move turn forward, consuming pending skips. */
-export function advanceTurn(state: GameState): void {
+/** Move turn forward, consuming pending skips (unless kept for a victim decision). */
+export function advanceTurn(state: GameState, opts?: { steps?: number; keepSkip?: boolean }): void {
   const n = state.hands.length;
-  const steps = 1 + state.pendingSkip;
-  state.pendingSkip = 0;
+  const steps = opts?.steps ?? 1 + state.pendingSkip;
+  if (!opts?.keepSkip) state.pendingSkip = 0;
   let next = state.currentPlayer;
   for (let i = 0; i < steps; i++) {
     next = (next + state.direction + n) % n;
@@ -108,6 +115,14 @@ export function drawCards(state: GameState, playerIndex: number, count: number):
     if (!c) break;
     state.hands[playerIndex].push(c);
     drawn.push(c);
+  }
+  // Picking up cards voids a stale KADI claim: you said you would finish,
+  // then your hand grew — declare again when truly finishing. The late-call
+  // fine path and false-call fine path draw with no flag set (no-op).
+  if (drawn.length > 0 && state.kadiCalls[playerIndex]) {
+    state.kadiCalls[playerIndex] = false;
+    state.kadiCallTurn[playerIndex] = -1;
+    state.lastEffect = (state.lastEffect ? state.lastEffect + ' • ' : '') + 'KADI void — picked cards';
   }
   return drawn;
 }

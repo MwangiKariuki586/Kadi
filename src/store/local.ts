@@ -1,5 +1,5 @@
 import { del, get, set } from 'idb-keyval';
-import { migrateRules, type RulesConfig } from '../engine/rules';
+import { migrateRules, PRESETS, type RulesConfig } from '../engine/rules';
 import type { GameState } from '../engine/state';
 
 /** Backend-ready seam: UI only talks to this interface.
@@ -21,6 +21,10 @@ export interface Settings {
   coach: boolean;
   /** Strict tables: wrong plays are fined + turn passes. Off by default. */
   strict: boolean;
+  /** Vibration on taps/penalties/wins. On by default. */
+  haptics: boolean;
+  /** Full card/buzzer animations. Off forces calm mode. On by default. */
+  animations: boolean;
 }
 
 export interface ActiveGameMeta {
@@ -52,9 +56,36 @@ export function isResumable(save: unknown): save is ActiveGameSave {
   return true;
 }
 
+/**
+ * Bring a resumed table onto current rules. Saves snapshot their RulesConfig,
+ * so a built-in preset would otherwise keep stale flags forever (e.g. the old
+ * 2-player J/K-as-question). Re-apply the live preset and keep only the
+ * player's own overlays (special-ace mode, strict table). Unknown profiles
+ * keep the legacy migrateRules path. Safe mid-match: no question-mode debt
+ * persists in state (bare questions draw immediately), so nothing in flight
+ * contradicts the refreshed flags.
+ */
+export function refreshResumeConfig(save: ActiveGameSave): void {
+  const preset = PRESETS.find((p) => p.name === save.meta.presetName);
+  if (!preset) {
+    save.state.config = migrateRules({ ...save.state.config, name: save.state.config.name });
+    return;
+  }
+  save.state.config = {
+    ...preset,
+    superAceEnabled: save.meta.superAce,
+    strictWrongPlay: save.state.config.strictWrongPlay,
+  };
+  // Fields that did not exist when older saves were written.
+  if (typeof save.state.pendingReverse !== 'number') save.state.pendingReverse = 0;
+  if (typeof save.state.pendingSkip !== 'number') save.state.pendingSkip = 0;
+  if (typeof save.state.pendingPenaltySuit === 'undefined') save.state.pendingPenaltySuit = null;
+}
+
 export interface GameStore {
   getStats(): Promise<Stats>;
   recordResult(won: boolean): Promise<Stats>;
+  resetStats(): Promise<Stats>;
   getSettings(): Promise<Settings>;
   saveSettings(s: Partial<Settings>): Promise<Settings>;
   getCustomRules(): Promise<RulesConfig[]>;
@@ -65,7 +96,7 @@ export interface GameStore {
 }
 
 const DEFAULT_STATS: Stats = { games: 0, wins: 0, bestStreak: 0, streak: 0 };
-export const DEFAULT_SETTINGS: Settings = { sound: true, difficulty: 'medium', presetName: 'Standard Maua', superAce: false, coach: false, strict: false };
+export const DEFAULT_SETTINGS: Settings = { sound: true, difficulty: 'medium', presetName: 'Standard Maua', superAce: false, coach: false, strict: false, haptics: true, animations: true };
 
 export class LocalStore implements GameStore {
   async getStats(): Promise<Stats> {
@@ -84,6 +115,12 @@ export class LocalStore implements GameStore {
     }
     await set('kadi-stats', s);
     return s;
+  }
+
+  async resetStats(): Promise<Stats> {
+    const fresh = { ...DEFAULT_STATS };
+    await set('kadi-stats', fresh);
+    return fresh;
   }
 
   async getSettings(): Promise<Settings> {
@@ -123,7 +160,7 @@ export class LocalStore implements GameStore {
     }
     if (!isResumable(raw)) return null;
     // Upgrade stored rules without breaking old saves.
-    raw.state.config = migrateRules({ ...raw.state.config, name: raw.state.config.name });
+    refreshResumeConfig(raw);
     return raw;
   }
 
