@@ -357,6 +357,15 @@ export function describeStall(name: string, detail: string, turn = 0): FeedEvent
   return mk(turn, name, '🐞', `${name} stalls — illegal move blocked (${detail})`, 'info');
 }
 
+/**
+ * Generic tap-notice for actions that change no state (out-of-turn taps,
+ * already-called / cardless KADI presses). Routed through the event feed so
+ * the panel stays the single in-game notification channel.
+ */
+export function describeNotice(actor: string, text: string, turn = 0): FeedEvent {
+  return mk(turn, actor, 'ℹ️', text, 'info');
+}
+
 export type CoachTone = 'action' | 'ok' | 'bad' | 'wait' | 'win';
 
 export interface CoachMsg {

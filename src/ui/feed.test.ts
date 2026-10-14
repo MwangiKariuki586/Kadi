@@ -4,7 +4,7 @@ import { STANDARD_MAUA } from '../engine/rules';
 import { createGame, type GameState } from '../engine/state';
 import { passOrPick, playCombo } from '../engine/validator';
 import {
-  describeDeal, describeDelayKadi, describeFalseKadi, describeKadi, describePick, describePlay, describeResume, describeWrongPlay, groupFeed, snapshotState, turnCoach,
+  describeDeal, describeDelayKadi, describeFalseKadi, describeKadi, describeNotice, describePick, describePlay, describeResume, describeWrongPlay, groupFeed, snapshotState, turnCoach,
   type CoachInput,
 } from './feed';
 
@@ -197,6 +197,21 @@ describe('feed', () => {
   it('resume no longer claims your move', () => {
     expect(describeResume(0, NAMES, 3).text).toBe('Back at the table — you to play');
     expect(describeResume(1, NAMES, 3).text).toBe('Back at the table — Jabari to play');
+  });
+
+  it('dead-tap notices are info events that group with the same turn+actor', () => {
+    const a = describeNotice('You', 'Wait for your turn…', 5);
+    const b = describeNotice('You', 'KADI already called — go out and finish!', 5);
+    expect(a.tone).toBe('info');
+    expect(a.actor).toBe('You');
+    expect(a.turn).toBe(5);
+    expect(a.id).not.toBe(b.id);
+    const groups = groupFeed([a, b]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].events.map((e) => e.text)).toEqual([
+      'Wait for your turn…',
+      'KADI already called — go out and finish!',
+    ]);
   });
 });
 

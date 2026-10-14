@@ -7,7 +7,7 @@ No account, no server, no network needed after first load.
 
 - Solo play vs 1–3 bots (Easy / Medium / Hard) with a pure-TypeScript rules engine
 - Tap-to-play combos (tap cards in order, then Play); invalid plays explain themselves inline
-- Event feed narrates every auto-consequence (debts, blocks, skips, reverses, demands, wins)
+- Event feed is the single in-game channel (auto-consequences plus dead-tap notices); toasts survive only for Home/Settings confirmations
 - Quit-safe: every move is persisted, refresh or HMR reload drops you back at the table
 - Installable PWA (offline precache, auto-update, portrait standalone)
 - Zero-asset media: WebAudio-synthesized SFX, inline-SVG cards, haptics via `navigator.vibrate`

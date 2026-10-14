@@ -109,11 +109,13 @@ declared on a strictly earlier turn (`Niko Kadi`), no cardless blocker.
 
 * **Tap-to-play** (tap in order → Play), no drag (reliable on low-end touch).
 * **Invalid selections disable Play upfront** with the inline reason — no tap-to-discover.
-* **Event feed, not toasts, narrates the table:** every auto-consequence is announced
+* **Event feed is the single in-game channel:** every auto-consequence is announced
   (`Pick 2 hangs over You (from 2♣)`, `lifts the rank — follow Clubs ♣`, eats/blocks/
-  skips/reverses/demands/wins), latest two always visible, tap 📜 for history. Penalty lines
-  name source cards; suit calls always name the previous suit. Toasts are reserved for
-  illegal taps.
+  skips/reverses/demands/wins) plus throttled info notices for dead taps
+  (out-of-turn, already-called/cardless KADI), latest summary always visible,
+  tap 📜 for history. Penalty lines
+  name source cards; suit calls always name the previous suit. Toasts survive
+  only on Home/Settings confirmations (Resumed!, Stats cleared…) which have no panel.
 * **Turn coach is opt-in (default off):** contextual `turnCoach` line (debts → corrections →
   opportunities) behind Home's `💡 Hints` toggle. Default table shows only `👉 Your turn`.
 * **Quit confirmation modal:** Quit → "Keep playing / Save & exit". Exiting preserves the game;

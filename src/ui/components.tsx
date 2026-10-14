@@ -330,7 +330,7 @@ export function EventBanner({ events }: { events: FeedEvent[] }) {
     ? latestGroup.events[latestGroup.events.length - 1]
     : latest;
   return (
-    <div class="px-4 -mt-1 mb-1">
+    <div class="px-4 -mt-1 mb-1" aria-live="polite">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
