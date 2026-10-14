@@ -49,6 +49,7 @@ import {
   describeDelayKadi,
   describeFalseKadi,
   describeKadi,
+  describeNotice,
   describePick,
   describePlay,
   describeResume,
@@ -108,6 +109,23 @@ export function App() {
     setFeed((f) => [...f, ...evts].slice(-15));
   }, []);
 
+  // Throttled feed notices for dead taps (no state change). Prevents mash-spam
+  // from evicting real history out of the capped 15-event window.
+  const noticeThrottle = useRef<{ text: string; at: number }>({
+    text: "",
+    at: 0,
+  });
+  const pushNotice = useCallback(
+    (text: string, turn: number) => {
+      const now = Date.now();
+      const last = noticeThrottle.current;
+      if (last.text === text && now - last.at < 1500) return;
+      noticeThrottle.current = { text, at: now };
+      pushFeed(describeNotice("You", text, turn));
+    },
+    [pushFeed],
+  );
+
   const stateRef = useRef<GameState | null>(null);
   const recordedRef = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
@@ -123,6 +141,9 @@ export function App() {
   const kadiTimerRef = useRef<number>(0);
   const state = stateRef.current;
 
+  // Home/Settings-only transient confirmations (Resumed!, Stats cleared…).
+  // The game screen uses pushFeed/pushNotice so the event panel stays the
+  // single in-game notification channel.
   const flash = useCallback((msg: string) => {
     setToast(msg);
     window.clearTimeout(toastTimer.current);
@@ -768,7 +789,7 @@ export function App() {
 
   const toggleSelect = (card: Card) => {
     if (!myTurn || busy) {
-      flash(state.gameOver ? "Game over" : "Wait for your turn…");
+      pushNotice(state.gameOver ? "Game over" : "Wait for your turn…", state.turnNumber);
       return;
     }
     haptics.tap();
@@ -789,6 +810,8 @@ export function App() {
       sfx.error();
       haptics.penalty();
       // Strict tables fine the attempt (draw + turn passes); casual rejects free.
+      // The reason is already shown inline + in the coach line — no toast: the
+      // feed (strict fine) is the only panel entry.
       const fined = resolveWrongPlay(state, 0);
       if (fined > 0) {
         pushFeed(describeWrongPlay("You", cards, fined, state.turnNumber));
@@ -796,14 +819,6 @@ export function App() {
         setSuitPickerFor(null);
         setSuperPickerFor(null);
       }
-      flash(
-        reasonText(
-          r.reason ?? null,
-          state.activeSuit,
-          before.pendingPenalty > 0 && before.topSuit === 'none',
-          cards.some((c) => c.rank === 'JOKER'),
-        ),
-      );
       bump();
       return;
     }
@@ -820,8 +835,8 @@ export function App() {
     if (r.won) {
       // win sfx handled by effect
     } else if (r.fined) {
+      // Narrated by the describePlay fined event above — no toast.
       sfx.penalty();
-      flash(`No call — fined +${r.fined}. Say KADI a turn earlier!`);
     } else if (r.becameCardless) {
       sfx.penalty();
     } else {
@@ -872,11 +887,11 @@ export function App() {
   const onKadi = () => {
     if (state.gameOver) return;
     if (state.kadiCalls[0]) {
-      flash("KADI already called — go out and finish!");
+      pushNotice("KADI already called — go out and finish!", state.turnNumber);
       return;
     }
     if (myHand.length === 0) {
-      flash("Cardless — nothing to declare with.");
+      pushNotice("Cardless — nothing to declare with.", state.turnNumber);
       return;
     }
     const latePress =
@@ -895,11 +910,6 @@ export function App() {
       pushFeed(describeKadi("You", state.turnNumber));
       sfx.penalty();
       haptics.penalty();
-      flash(
-        fined > 0
-          ? `Late KADI — fined +${fined}, but it counts. Go finish!`
-          : "Late KADI — it counts. Go finish!",
-      );
       bump();
       return;
     }
@@ -913,14 +923,12 @@ export function App() {
       sfx.penalty();
       haptics.penalty();
       pushFeed(describeFalseKadi("You", r.fined, state.turnNumber));
-      flash(
-        `False KADI — no winnable hand, fined +${r.fined}. Need 4 5 6 7 9 10, Q/8 + same-suit answer, or Q/8 + Ace.`,
-      );
       bump();
     } else if (r.falseCall) {
       sfx.error();
-      flash(
-        "False KADI — no winnable hand. Lone A/J/K/2/3/Joker can't finish; Ace only wins answering Q/8.",
+      pushNotice(
+        "False KADI — no winnable hand.",
+        state.turnNumber,
       );
       bump();
     }
@@ -928,7 +936,6 @@ export function App() {
 
   return (
     <div class="min-h-dvh bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col safe-top safe-bottom">
-      <Toast message={toast} />
       {suitPickerFor && (
         <SuitPicker
           onCancel={() => setSuitPickerFor(null)}
