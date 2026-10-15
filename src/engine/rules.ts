@@ -129,10 +129,18 @@ export const BOM_NI_BOM: RulesConfig = {
   penaltyAccumulates: true,
 };
 
+/**
+ * Backstreet Pesa — the money-game table. Country-wide common rules because
+ * cash is on the line: penalties accumulate (eater picks the total) and the
+ * table is strict (illegal taps are fined + turn passes, no free passes).
+ * Same-suit question answers, hard Niko Kadi call fines and the cardless
+ * block all carry over from Standard.
+ */
 export const BACKSTREET_PESA: RulesConfig = {
   ...STANDARD_MAUA,
   name: 'Backstreet Pesa',
   penaltyAccumulates: true,
+  strictWrongPlay: true,
 };
 
 export const PRESETS: RulesConfig[] = [STANDARD_MAUA, BOM_NI_BOM, BACKSTREET_PESA, STRICT_NO_JOKER];

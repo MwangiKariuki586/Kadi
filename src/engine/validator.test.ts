@@ -1248,4 +1248,20 @@ describe('rules migration + presets', () => {
     expect(BOM_NI_BOM.dodgePenaltyWithJumpKickback).toBe(true);
     expect(BOM_NI_BOM.penaltyAccumulates).toBe(true);
   });
+
+  it('Backstreet Pesa preset accumulates and runs a strict table', () => {
+    expect(BACKSTREET_PESA.penaltyAccumulates).toBe(true);
+    expect(BACKSTREET_PESA.strictWrongPlay).toBe(true);
+    // Standard stays casual; money-table strictness is opt-in via preset.
+    expect(STANDARD_MAUA.strictWrongPlay).toBe(false);
+    expect(STANDARD_MAUA.penaltyAccumulates).toBe(false);
+  });
+
+  it('Backstreet Pesa fines illegal taps and passes the turn', () => {
+    const s = rigged([C('5', 'hearts', 'a'), C('4', 'clubs', 'k')], C('9', 'clubs'), [C('6', 'spades')], 2, BACKSTREET_PESA);
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    expect(resolveWrongPlay(s, 0)).toBe(1);
+    expect(s.hands[0].length).toBe(3);
+    expect(s.currentPlayer).toBe(1);
+  });
 });
