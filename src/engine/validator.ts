@@ -427,6 +427,8 @@ export function legalSingles(state: GameState, playerIndex: number): Card[] {
 function comboIsWinningOnly(cards: Card[], state: GameState): boolean {
   // Final dump must end "clean": a winning rank, or an Ace answering a
   // question (Q + A any suit). Lone Aces, J/K and penalties can never close.
+  // Must-end-on-one tables only accept a lone single card as the closer.
+  if (state.config.winningDumpMustBeSingle && cards.length !== 1) return false;
   const last = cards[cards.length - 1];
   if (isWinningRank(last.rank, state.config)) return true;
   if (isAceAnswer(last, state.config)) {
@@ -482,6 +484,8 @@ export function canFinishNow(state: GameState, playerIndex: number): boolean {
   // Must have said Kadi on a strictly earlier turn (same rule as the win itself).
   if (!state.kadiCalls[playerIndex] || !(state.kadiCallTurn[playerIndex] < state.turnNumber)) return false;
   if (config.cardlessBlocksWin && state.hands.some((h, i) => i !== playerIndex && h.length === 0)) return false;
+  // Must-end-on-one tables only win from a lone last card.
+  if (config.winningDumpMustBeSingle && hand.length !== 1) return false;
   // The closer must be a winning rank or an Ace-answering-question.
   if (!hand.some((c) => isWinningRank(c.rank, config) || isAceAnswer(c, config))) return false;
 
@@ -509,6 +513,8 @@ export function canDeclareKadi(state: GameState, playerIndex: number): boolean {
  * True only when the hand could legally dump in one winning move on a
  * future turn: 1-3 cards, every card a winning rank (4/5/6/7/9/10), a
  * question (Q/8) with an answer present, or an Ace answering a question.
+ * Must-end-on-one tables (`winningDumpMustBeSingle`) additionally require
+ * a lone single card.
  *
  * An Ace answers any open question regardless of suit (Q♠ + A♦ is winnable
  * and wins ending on the Ace). A lone Ace, J/K, 2/3/Joker, or lone Q/8
@@ -517,6 +523,8 @@ export function canDeclareKadi(state: GameState, playerIndex: number): boolean {
  */
 export function isWinnableShape(hand: Card[], config: RulesConfig): boolean {
   if (hand.length === 0 || hand.length > 3) return false;
+  // Must-end-on-one tables only declare (and win) holding a lone card.
+  if (config.winningDumpMustBeSingle && hand.length !== 1) return false;
   const aceAllowed = config.aceAnswersQuestion !== false;
   const hasQuestion = hand.some((c) => isQuestionRank(c.rank, config));
   const answerable = (q: Card): boolean =>

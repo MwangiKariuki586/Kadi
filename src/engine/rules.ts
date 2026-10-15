@@ -49,8 +49,16 @@ export interface RulesConfig {
   unansweredQuestionPickCount: number;
   /** Ranks that alone can finish a game. */
   winningRanks: Rank[];
+  /** Must say Niko Kadi on an earlier turn to win. */
   mustSayNikoKadi: boolean;
+  /** Someone cardless at the table blocks every win. */
   cardlessBlocksWin: boolean;
+  /**
+   * Must-end-on-one: only a lone single card can close a game. Multi-card
+   * dumps can shed down to one card but never win outright — engineer your
+   * hand to a single finisher and play it alone.
+   */
+  winningDumpMustBeSingle: boolean;
   /** Ranks that may never open the discard pile. */
   starterBlacklist: Rank[];
   /** With exactly 2 players, J behaves like a Question (needs answer) instead of skip. */
@@ -100,6 +108,7 @@ export const STANDARD_MAUA: RulesConfig = {
   winningRanks: ['4', '5', '6', '7', '9', '10'],
   mustSayNikoKadi: true,
   cardlessBlocksWin: true,
+  winningDumpMustBeSingle: false,
   starterBlacklist: ['2', '3', 'J', 'Q', '8', 'K', 'A', 'JOKER'],
   twoPlayerJumpAsQuestion: false,
   twoPlayerKickbackAsQuestion: false,
@@ -168,4 +177,103 @@ export function isQuestionRank(rank: Rank, config: RulesConfig): boolean {
 
 export function isWinningRank(rank: Rank, config: RulesConfig): boolean {
   return config.winningRanks.includes(rank);
+}
+
+/**
+ * Guardrails for hand-built profiles (builder UI + share-code imports).
+ * Returns human-readable problems; empty means the profile is playable.
+ */
+export function validateRulesConfig(c: RulesConfig): string[] {
+  const problems: string[] = [];
+  if (!c.name || c.name.trim() === '') problems.push('Give the profile a name.');
+  if (c.winningRanks.length === 0) problems.push('Pick at least one rank that can finish.');
+  const picks = c.penaltyPicks;
+  if (picks['2'] == null && picks['3'] == null && picks['JOKER'] == null) {
+    problems.push('Keep at least one penalty card (2, 3 or Joker) active.');
+  }
+  for (const r of ['2', '3', 'JOKER'] as const) {
+    const n = picks[r];
+    if (n != null && !(n >= 1)) problems.push(`Pick count for ${r} must be at least 1.`);
+  }
+  if (!(c.superAceMinAces >= 2)) problems.push('Stacked super aces need at least 2.');
+  if (!(c.dealCount >= 2 && c.dealCount <= 7)) problems.push('Deal 2–7 cards each.');
+  const fines: [string, number][] = [
+    ['unanswered question', c.unansweredQuestionPickCount],
+    ['late Niko Kadi call', c.lateCallPickCount],
+    ['false Kadi call', c.falseKadiPickCount],
+    ['slow Kadi call', c.kadiDelayPickCount],
+    ['illegal play', c.invalidPlayPickCount],
+    ['unmet exact demand', c.unmetRequestPickCount],
+  ];
+  for (const [label, n] of fines) {
+    if (!(n >= 0)) problems.push(`Fine for ${label} cannot be negative.`);
+  }
+  return problems;
+}
+
+/** Prefix for offline share codes: `kadi2.` + base64url(JSON). */
+export const SHARE_CODE_PREFIX = 'kadi2.';
+
+/** Pack a profile into a copy-paste share code (offline, clipboard only). */
+export function encodeRulesConfig(c: RulesConfig): string {
+  const json = JSON.stringify(migrateRules({ ...c }));
+  const bytes = new TextEncoder().encode(json);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return (
+    SHARE_CODE_PREFIX +
+    btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  );
+}
+
+/** Unpack a share code back into a validated profile. Throws on any problem. */
+export function decodeRulesConfig(code: string): RulesConfig {
+  const trimmed = code.trim();
+  if (!trimmed.startsWith(SHARE_CODE_PREFIX)) {
+    throw new Error(`Not a Kadi share code — it should start with ${SHARE_CODE_PREFIX}`);
+  }
+  const b64 = trimmed
+    .slice(SHARE_CODE_PREFIX.length)
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  let json: string;
+  try {
+    const bin = atob(b64);
+    const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
+    json = new TextDecoder().decode(bytes);
+  } catch {
+    throw new Error('Share code is corrupted — ask for a fresh copy.');
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    throw new Error('Share code is corrupted — ask for a fresh copy.');
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('Share code is corrupted — ask for a fresh copy.');
+  }
+  const rec = raw as Record<string, unknown>;
+  const name = typeof rec['name'] === 'string' && rec['name'].trim() !== '' ? rec['name'] : 'Shared table';
+  const migrated = migrateRules({ ...(raw as Partial<RulesConfig>), name });
+  const problems = validateRulesConfig(migrated);
+  if (problems.length > 0) throw new Error(`Shared rules are not playable: ${problems[0]}`);
+  return migrated;
+}
+
+/** One-line card for preset/custom pickers: the ways this table differs. */
+export function describeRules(c: RulesConfig): string {
+  const bits: string[] = [];
+  if (c.penaltyMatchMode === 'any') bits.push('Bom stacking');
+  else if (c.penaltyMatchMode === 'sameRank') bits.push('Same-rank stacks');
+  if (c.dodgePenaltyWithJumpKickback) bits.push('J/K dodge');
+  bits.push(c.penaltyAccumulates ? 'Eats all' : 'Top takes over');
+  if (c.superAceEnabled) bits.push('Babu');
+  bits.push(c.jokersEnabled ? 'Jokers' : 'No jokers');
+  if (c.winningDumpMustBeSingle) bits.push('One-card finish');
+  if (!c.mustSayNikoKadi) bits.push('Silent finish');
+  if (!c.cardlessBlocksWin) bits.push('No cardless block');
+  if (c.strictWrongPlay) bits.push('Strict');
+  bits.push(`${c.dealCount} cards each`);
+  return bits.join(' • ');
 }

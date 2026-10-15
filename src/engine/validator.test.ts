@@ -1265,3 +1265,51 @@ describe('rules migration + presets', () => {
     expect(s.currentPlayer).toBe(1);
   });
 });
+
+describe('must end on one (single-card finish)', () => {
+  const ONE = { ...STANDARD_MAUA, name: 'One', winningDumpMustBeSingle: true };
+
+  it('a lone last card still wins when declared earlier', () => {
+    const s = rigged([C('5', 'hearts', 'f')], C('9', 'hearts'), [C('4', 'clubs')], 2, ONE);
+    declareKadi(s, 0);
+    s.turnNumber += 1;
+    s.currentPlayer = 0;
+    const r = playCombo(s, 0, [s.hands[0][0]]);
+    expect(r.won).toBe(true);
+    expect(s.gameOver).toBe(true);
+  });
+
+  it('a two-card final dump cannot win — player goes cardless instead', () => {
+    const s = rigged(
+      [C('5', 'hearts', 'a'), C('5', 'diamonds', 'b')],
+      C('9', 'hearts'),
+      [C('4', 'clubs')],
+      2,
+      ONE,
+    );
+    declareKadi(s, 0);
+    s.turnNumber += 1;
+    s.currentPlayer = 0;
+    const r = playCombo(s, 0, [s.hands[0][0], s.hands[0][1]]);
+    expect(r.ok).toBe(true);
+    expect(r.won).toBeFalsy();
+    expect(r.becameCardless).toBe(true);
+    expect(s.gameOver).toBe(false);
+  });
+
+  it('shape and threat checks require a lone card', () => {
+    expect(isWinnableShape([C('5', 'hearts', 'a')], ONE)).toBe(true);
+    expect(isWinnableShape([C('5', 'hearts', 'a'), C('6', 'spades', 'b')], ONE)).toBe(false);
+    const two = rigged(
+      [C('5', 'hearts', 'a'), C('6', 'spades', 'b')],
+      C('9', 'hearts'),
+      [C('4', 'clubs')],
+      2,
+      ONE,
+    );
+    declareKadi(two, 0);
+    two.turnNumber += 1;
+    two.currentPlayer = 0;
+    expect(canFinishNow(two, 0)).toBe(false);
+  });
+});
