@@ -83,11 +83,14 @@ export function isSuperAceCombo(cards: Card[], state: GameState): boolean {
 
 /**
  * Penalty-family answer check. Only penalty cards (2/3/Joker) or an Ace
- * may answer a pending penalty:
- * - a Joker answers any 2/3, unrestricted by suit or color;
- * - a Joker on top is relaxed only by another Joker or an Ace. Even a
- *   same-suit 2/3 is illegal — eat or block;
- * - 2/3 on 2/3: same rank any suit, or same suit any penalty rank.
+ * may answer a pending penalty. J/K are never penalties (see dodge rule).
+ * Matching is governed by `penaltyMatchMode`:
+ * - 'any' (Bom ni Bom): any penalty answers any other, no suit/rank check.
+ * - 'sameRank': same rank only (2♣ on 2♥, JOKER on JOKER).
+ * - 'family' (default): a Joker answers any 2/3, unrestricted by suit or
+ *   color; a Joker on top is relaxed only by another Joker or an Ace — even
+ *   a same-suit 2/3 is illegal, eat or block; 2/3 on 2/3: same rank any
+ *   suit, or same suit any penalty rank.
  * rememberedSuit is kept for post-eat suit continuation (eat a Joker and
  * play follows the suit before it), not for answering. It is null only
  * for pre-memory saves, which stay free-play after the eat.
@@ -101,6 +104,9 @@ export function penaltyAnswerOk(
   if (card.rank === 'A') return config.aceBlocksPenalty;
   if (!isPenaltyRank(card.rank, config)) return false;
   if (!config.allowPenaltyStacking) return false;
+  const mode = config.penaltyMatchMode ?? 'family';
+  if (mode === 'any') return true;
+  if (mode === 'sameRank') return card.rank === table.rank;
   if (card.rank === 'JOKER') return true;
   if (table.rank === 'JOKER') {
     return false;
@@ -205,6 +211,22 @@ function checkComboShape(cards: Card[], state: GameState): ComboCheck | null {
   return null;
 }
 
+/**
+ * Bom ni Bom dodge: a single J or K played onto a pending penalty passes the
+ * unchanged debt onward. Never a penalty, never adds picks, never stacks.
+ * J/K stay jump/reverse cards — they never count as penalties.
+ */
+export function isPenaltyDodge(cards: Card[], state: GameState): boolean {
+  const { config } = state;
+  if (!config.dodgePenaltyWithJumpKickback) return false;
+  if (state.pendingPenalty <= 0) return false;
+  if (cards.length !== 1) return false;
+  const rank = cards[0].rank;
+  if (cards.some((c) => c.rank === 'A')) return false;
+  if (cards.some((c) => isPenaltyRank(c.rank, config))) return false;
+  return isJumpRank(rank, config) || isKickbackRank(rank, config);
+}
+
 /** Chained cards must connect to previous by suit-or-rank (Ace/Joker wild connect). */
 function validateChainLinks(cards: Card[]): ComboCheck {
   for (let i = 1; i < cards.length; i++) {
@@ -299,7 +321,7 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
     return { ok: true };
   }
 
-  // Pending penalty: only penalty-family answers or Ace block.
+  // Pending penalty: only penalty-family answers, Ace block, or Bom ni Bom dodge.
   if (state.pendingPenalty > 0) {
     const table = topCard(state);
     const hasAce = cards.some((c) => c.rank === 'A');
@@ -312,14 +334,30 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
       return { ok: true };
     }
     if (cards.length === 0) return { ok: false, reason: 'CARD_NOT_IN_HAND' };
+    // Dodge passes the unchanged debt onward — no penalty semantics.
+    if (isPenaltyDodge(cards, state)) return { ok: true };
     if (!isPenaltyRank(cards[0].rank, config) || !penaltyAnswerOk(cards[0], table, config, state.pendingPenaltySuit)) {
       return { ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' };
     }
-    const links = validateChainLinks(cards);
-    if (!links.ok) return links;
     // Every stacked card must itself be a penalty card (no sneaking in answers).
+    // Mixed stacks keep chain-first reasons (e.g. Joker + normal → NO_MATCH).
     if (!cards.every((c) => isPenaltyRank(c.rank, config))) {
+      const links = validateChainLinks(cards);
+      if (!links.ok) return links;
       return { ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' };
+    }
+    // All-penalty stacks chain per the active match mode — except 'any'
+    // (Bom ni Bom), which accepts cross-rank/cross-suit stacks outright.
+    // Other modes keep the generic chain check first so rejection reasons
+    // match the pre-mode behavior, then enforce the mode per card.
+    if (config.penaltyMatchMode !== 'any') {
+      const links = validateChainLinks(cards);
+      if (!links.ok) return links;
+    }
+    for (let i = 1; i < cards.length; i++) {
+      if (!penaltyAnswerOk(cards[i], cards[i - 1], config)) {
+        return { ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' };
+      }
     }
     return { ok: true };
   }
@@ -347,6 +385,18 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
 
   // Normal: first card matches top.
   if (!singleMatchesTop(cards[0], state)) return { ok: false, reason: 'NO_MATCH' };
+
+  // All-penalty combos stack per the active match mode (same rule as answering
+  // a debt), so 'sameRank' rejects suited cross-rank stacks and 'any' accepts
+  // cross-rank/cross-suit stacks even as free play.
+  if (cards.length > 1 && cards.every((c) => isPenaltyRank(c.rank, config))) {
+    for (let i = 1; i < cards.length; i++) {
+      if (!penaltyAnswerOk(cards[i], cards[i - 1], config)) {
+        return { ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' };
+      }
+    }
+    return { ok: true };
+  }
 
   // An Ace plays solo or with Aces only — except as a question answer
   // (Q + A any suit is legal). A + 10 is never a combo, even suited.
@@ -605,6 +655,8 @@ export function playCombo(
   // A combo played while a penalty is pending answers it (validate guarantees
   // aces-only here) — a pure block that calls nothing further.
   const answersPenalty = state.pendingPenalty > 0;
+  // Bom ni Bom dodge: single J/K passes the unchanged debt onward (no picks added).
+  const dodgesPenalty = answersPenalty && isPenaltyDodge(cards, state);
 
   // Which Aces answer an open question in this combo (Q + A any suit).
   // Answering Aces never declare: the suit in force auto-follows the Ace's
@@ -628,6 +680,15 @@ export function playCombo(
 
   // Resolve effects in play order.
   for (const [ci, c] of cards.entries()) {
+    if (dodgesPenalty) {
+      if (isJumpRank(c.rank, config)) {
+        effect = `Dodged! Pick ${state.pendingPenalty} passes on`;
+      } else if (isKickbackRank(c.rank, config)) {
+        state.direction = (state.direction * -1) as 1 | -1;
+        effect = `Dodged! Pick ${state.pendingPenalty} passes on`;
+      }
+      continue;
+    }
     if (isPenaltyRank(c.rank, config) && !(state.pendingPenalty > 0 && c.rank === 'A')) {
       const picks = config.penaltyPicks[c.rank as '2' | '3' | 'JOKER'] ?? 0;
       // No accumulation: the latest penalty replaces the debt (top takes over).
@@ -711,10 +772,16 @@ export function playCombo(
 
   // Jump/kickback response model. A pure single-family combo defers to the
   // victim (refuse-with-one keeps the turn; stacks must be accepted).
+  // A penalty dodge skips this entirely: the debt passes on unchanged and
+  // the 'Dodged!' effect from the loop above stands.
   const skipBefore = state.pendingSkip;
   const revBefore = state.pendingReverse ?? 0;
-  const jumps = cards.filter((c) => isJumpRank(c.rank, config) && !jumpActsAsQuestion(state));
-  const kicks = cards.filter((c) => isKickbackRank(c.rank, config) && !kickbackActsAsQuestion(state));
+  const jumps = dodgesPenalty
+    ? []
+    : cards.filter((c) => isJumpRank(c.rank, config) && !jumpActsAsQuestion(state));
+  const kicks = dodgesPenalty
+    ? []
+    : cards.filter((c) => isKickbackRank(c.rank, config) && !kickbackActsAsQuestion(state));
   // Refusal (validator guarantees exactly one card): clear the live debt and
   // keep the turn — the victim plays on.
   let keptTurn = false;
@@ -754,7 +821,8 @@ export function playCombo(
 
   // Asked without an answer: the obligation is to draw — never a blocked move.
   // Drawn before the win check so an emptied hand refills and play continues.
-  if (comboLeavesQuestionOpen(cards, state)) {
+  // Dodge is never a question (it takes precedence even in 2P question mode).
+  if (!dodgesPenalty && comboLeavesQuestionOpen(cards, state)) {
     const owed = config.unansweredQuestionPickCount;
     if (owed > 0) {
       const drawn = drawCards(state, playerIndex, owed);

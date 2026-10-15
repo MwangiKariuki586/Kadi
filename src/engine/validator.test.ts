@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { STANDARD_MAUA, STRICT_NO_JOKER } from './rules';
+import { BACKSTREET_PESA, BOM_NI_BOM, STANDARD_MAUA, STRICT_NO_JOKER, migrateRules } from './rules';
 import { createGame, type GameState } from './state';
 import { canFinishNow, declareKadi, fineKadiDelay, isSuperAceCombo, isWinnableShape, legalSingles, passOrPick, playCombo, resolveWrongPlay, tryDeclareKadi, validateCombo } from './validator';
 import type { Card } from './cards';
@@ -1121,5 +1121,131 @@ describe('kadi declaration consequences', () => {
     expect(r0.ok).toBe(false);
     expect(r0.fined).toBeFalsy();
     expect(s0.kadiCalls[0]).toBe(false);
+  });
+});
+
+describe('penalty match modes', () => {
+  it('sameRank: 2 answers 2 off-suit, but 3♥ cannot answer 2♥', () => {
+    const cfg = { ...STANDARD_MAUA, penaltyMatchMode: 'sameRank' as const };
+    const s = rigged([C('2', 'hearts', 't')], C('9', 'hearts'), [C('3', 'hearts', 'x')], 2, cfg);
+    playCombo(s, 0, [s.hands[0][0]]);
+    expect(validateCombo([s.hands[1][0]], s, 1)).toMatchObject({ ok: false });
+
+    const s2 = rigged([C('2', 'hearts', 't')], C('9', 'hearts'), [C('2', 'spades', 'y')], 2, cfg);
+    playCombo(s2, 0, [s2.hands[0][0]]);
+    expect(validateCombo([s2.hands[1][0]], s2, 1).ok).toBe(true);
+  });
+
+  it('any (Bom ni Bom): 3♠ answers 2♥ and 2 answers a Joker', () => {
+    const JOKER: Card = { id: 'JOKER-1', suit: 'none', rank: 'JOKER' };
+    const s = rigged([C('2', 'hearts', 't')], C('9', 'hearts'), [C('3', 'spades', 'x')], 2, BOM_NI_BOM);
+    playCombo(s, 0, [s.hands[0][0]]);
+    expect(validateCombo([s.hands[1][0]], s, 1).ok).toBe(true);
+
+    const s2 = rigged([JOKER], C('9', 'clubs'), [C('2', 'spades', 'y')], 2, BOM_NI_BOM);
+    s2.discardPile = [JOKER];
+    s2.hands[0] = [];
+    s2.currentPlayer = 1;
+    s2.pendingPenalty = 5;
+    expect(validateCombo([s2.hands[1][0]], s2, 1).ok).toBe(true);
+  });
+
+  it('any mode stacks cross-rank in one combo (2♥ + 3♠)', () => {
+    const s = rigged(
+      [C('2', 'hearts', 't1'), C('3', 'spades', 't2')],
+      C('9', 'hearts'),
+      [C('4', 'clubs')],
+      2,
+      BOM_NI_BOM,
+    );
+    // Bom ni Bom accumulates: 2 + 3 = 5
+    expect(playCombo(s, 0, [s.hands[0][0], s.hands[0][1]]).ok).toBe(true);
+    expect(s.pendingPenalty).toBe(5);
+  });
+
+  it('sameRank rejects suited cross-rank stacks in one combo', () => {
+    const cfg = { ...STANDARD_MAUA, penaltyMatchMode: 'sameRank' as const };
+    const s = rigged(
+      [C('2', 'hearts', 't1'), C('3', 'hearts', 't2')],
+      C('9', 'hearts'),
+      [C('4', 'clubs')],
+      2,
+      cfg,
+    );
+    expect(validateCombo([s.hands[0][0], s.hands[0][1]], s, 0)).toMatchObject({ ok: false });
+  });
+});
+
+describe('penalty accumulation (eats all vs top takes over)', () => {
+  it('accumulate: 2 answered by 3 sums to 5 and eater picks 5', () => {
+    const s = rigged([C('2', 'hearts', 't')], C('9', 'hearts'), [C('3', 'hearts', 's3')], 2, BACKSTREET_PESA);
+    s.drawPile = Array.from({ length: 20 }, (_, i) => C('7', 'clubs', `d${i}`));
+    playCombo(s, 0, [s.hands[0][0]]);
+    expect(s.pendingPenalty).toBe(2);
+    expect(playCombo(s, 1, [s.hands[1][0]]).ok).toBe(true);
+    expect(s.pendingPenalty).toBe(5);
+    const r = passOrPick(s, 0);
+    expect(r.picked).toBe(5);
+  });
+
+  it('top-takes-over default preserved (existing behavior)', () => {
+    expect(STANDARD_MAUA.penaltyAccumulates).toBe(false);
+    expect(BACKSTREET_PESA.penaltyAccumulates).toBe(true);
+    expect(BOM_NI_BOM.penaltyAccumulates).toBe(true);
+  });
+});
+
+describe('Bom ni Bom dodge (J/K pass the debt)', () => {
+  it('single J dodges: debt unchanged, turn passes to next', () => {
+    const s = rigged([C('2', 'hearts', 't')], C('9', 'hearts'), [C('J', 'spades', 'j'), C('4', 'clubs', 'o')], 3, BOM_NI_BOM);
+    playCombo(s, 0, [s.hands[0][0]]);
+    expect(s.pendingPenalty).toBe(2);
+    expect(validateCombo([s.hands[1][0]], s, 1).ok).toBe(true);
+    expect(playCombo(s, 1, [s.hands[1][0]]).ok).toBe(true);
+    expect(s.pendingPenalty).toBe(2);
+    expect(s.pendingSkip).toBe(0);
+    expect(s.currentPlayer).toBe(2);
+    expect(s.lastEffect).toMatch(/Dodged!/);
+  });
+
+  it('single K dodges: debt unchanged, direction flips', () => {
+    const s = rigged([C('2', 'hearts', 't')], C('9', 'hearts'), [C('K', 'clubs', 'k'), C('4', 'clubs', 'o')], 3, BOM_NI_BOM);
+    playCombo(s, 0, [s.hands[0][0]]);
+    const dir = s.direction;
+    expect(playCombo(s, 1, [s.hands[1][0]]).ok).toBe(true);
+    expect(s.pendingPenalty).toBe(2);
+    expect(s.direction).toBe((dir * -1) as 1 | -1);
+  });
+
+  it('dodge is off by default: J on a penalty is illegal in Standard', () => {
+    const s = rigged([C('2', 'hearts', 't')], C('9', 'hearts'), [C('J', 'spades', 'j')], 2, STANDARD_MAUA);
+    playCombo(s, 0, [s.hands[0][0]]);
+    expect(validateCombo([s.hands[1][0]], s, 1)).toMatchObject({
+      ok: false,
+      reason: 'PENALTY_MUST_STACK_OR_BLOCK',
+    });
+  });
+
+  it('J stays jump-only: J is not a penalty rank', () => {
+    expect(BOM_NI_BOM.jumpRanks).toContain('J');
+    const s = rigged([C('J', 'hearts', 'j')], C('9', 'hearts'), [C('4', 'clubs')], 3, BOM_NI_BOM);
+    // free-play J is a jump (skip), never a penalty
+    expect(playCombo(s, 0, [s.hands[0][0]]).ok).toBe(true);
+    expect(s.pendingPenalty).toBe(0);
+  });
+});
+
+describe('rules migration + presets', () => {
+  it('v1 input migrates to v2 with regional defaults', () => {
+    const m = migrateRules({ version: 1, name: 'Estate' });
+    expect(m.version).toBe(2);
+    expect(m.penaltyMatchMode).toBe('family');
+    expect(m.dodgePenaltyWithJumpKickback).toBe(false);
+  });
+
+  it('Bom ni Bom preset carries any + dodge + accumulate', () => {
+    expect(BOM_NI_BOM.penaltyMatchMode).toBe('any');
+    expect(BOM_NI_BOM.dodgePenaltyWithJumpKickback).toBe(true);
+    expect(BOM_NI_BOM.penaltyAccumulates).toBe(true);
   });
 });

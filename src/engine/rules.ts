@@ -5,7 +5,7 @@ import type { Rank, Suit } from './cards';
  * Add a field + default to support a new house rule without breaking old profiles.
  */
 export interface RulesConfig {
-  version: 1;
+  version: number;
   /** Display name for presets / custom profiles */
   name: string;
   /** Cards dealt to each player at start */
@@ -15,8 +15,23 @@ export interface RulesConfig {
   penaltyPicks: Partial<Record<'2' | '3' | 'JOKER', number>>;
   /** Gate: a pending penalty may be answered with a matching penalty card (else pick or Ace-block). */
   allowPenaltyStacking: boolean;
-  /** Debts accumulate across stacks (true) or the latest penalty replaces (false: top takes over). */
+  /** Debts accumulate across stacks (true: eater picks the total) or the latest penalty replaces (false: top takes over). */
   penaltyAccumulates: boolean;
+  /**
+   * How a penalty card answers a pending penalty:
+   * - 'family' (default): a Joker answers any 2/3; a Joker on top is relaxed
+   *   only by another Joker or an Ace; 2/3 on 2/3: same rank any suit, or
+   *   same suit any penalty rank.
+   * - 'sameRank': only the same rank answers (2-on-2, 3-on-3, JOKER-on-JOKER).
+   * - 'any' (Bom ni Bom): any penalty answers any other, regardless of rank/suit.
+   */
+  penaltyMatchMode: 'family' | 'sameRank' | 'any';
+  /**
+   * Bom ni Bom dodge: while a penalty is pending, a single J (jump) or K
+   * (kickback) may be played to pass the unchanged debt onward. J/K stay
+   * jump/reverse cards — they never count as penalties and never add picks.
+   */
+  dodgePenaltyWithJumpKickback: boolean;
   /** Ace played on a penalty clears it (block). */
   aceBlocksPenalty: boolean;
   /** Ace declares the next suit (request). */
@@ -63,13 +78,15 @@ export interface RulesConfig {
 }
 
 export const STANDARD_MAUA: RulesConfig = {
-  version: 1,
+  version: 2,
   name: 'Standard Maua',
   dealCount: 4,
   jokersEnabled: true,
   penaltyPicks: { '2': 2, '3': 3, 'JOKER': 5 },
   allowPenaltyStacking: true,
   penaltyAccumulates: false,
+  penaltyMatchMode: 'family',
+  dodgePenaltyWithJumpKickback: false,
   aceBlocksPenalty: true,
   aceCallsSuit: true,
   jumpRanks: ['J'],
@@ -104,11 +121,25 @@ export const STRICT_NO_JOKER: RulesConfig = {
   penaltyPicks: { '2': 2, '3': 3 },
 };
 
-export const PRESETS: RulesConfig[] = [STANDARD_MAUA, STRICT_NO_JOKER];
+export const BOM_NI_BOM: RulesConfig = {
+  ...STANDARD_MAUA,
+  name: 'Bom ni Bom',
+  penaltyMatchMode: 'any',
+  dodgePenaltyWithJumpKickback: true,
+  penaltyAccumulates: true,
+};
+
+export const BACKSTREET_PESA: RulesConfig = {
+  ...STANDARD_MAUA,
+  name: 'Backstreet Pesa',
+  penaltyAccumulates: true,
+};
+
+export const PRESETS: RulesConfig[] = [STANDARD_MAUA, BOM_NI_BOM, BACKSTREET_PESA, STRICT_NO_JOKER];
 
 /** Migrate any stored config to current version (forward-compatible). */
 export function migrateRules(input: Partial<RulesConfig> & { version?: number }): RulesConfig {
-  return { ...STANDARD_MAUA, ...input, version: 1, name: input.name ?? 'Custom' };
+  return { ...STANDARD_MAUA, ...input, version: 2, name: input.name ?? 'Custom' };
 }
 
 export function isPenaltyRank(rank: Rank, config: RulesConfig): boolean {
