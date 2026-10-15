@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { Difficulty } from "../bots/bot";
-import { PRESETS } from "../engine/rules";
+import { PRESETS, describeRules, type RulesConfig } from "../engine/rules";
 import type { Settings, Stats } from "../store/local";
 import { Pill } from "./components";
 
@@ -10,13 +10,17 @@ export interface SettingsScreenProps {
   settings: Settings;
   stats: Stats;
   hasSave: boolean;
+  customs: RulesConfig[];
+  isCustom: boolean;
+  onNewCustom: () => void;
+  onEditCustom: () => void;
   onBack: () => void;
   onSave: (patch: Partial<Settings>) => void;
   onResetStats: () => void;
   onClearSave: () => void;
 }
 
-function Section({
+export function Section({
   level,
   title,
   sub,
@@ -39,7 +43,7 @@ function Section({
   );
 }
 
-function ToggleRow({
+export function ToggleRow({
   icon,
   title,
   sub,
@@ -101,6 +105,10 @@ export function SettingsScreen({
   settings,
   stats,
   hasSave,
+  customs,
+  isCustom,
+  onNewCustom,
+  onEditCustom,
   onBack,
   onSave,
   onResetStats,
@@ -202,7 +210,7 @@ export function SettingsScreen({
               <p class="mt-1 text-xs font-bold uppercase tracking-widest text-white/50">
                 Cards
               </p>
-              {PRESETS.map((p) => (
+              {[...PRESETS, ...customs].map((p) => (
                 <button
                   key={p.name}
                   type="button"
@@ -216,25 +224,51 @@ export function SettingsScreen({
                 >
                   <span class="text-sm font-bold">{p.name}</span>
                   <span class="mt-0.5 block text-[11px] text-white/60">
-                    {p.jokersEnabled ? "With Jokers" : "No Jokers"} •{" "}
-                    {p.dealCount} cards each
+                    {describeRules(p)}
                   </span>
                 </button>
               ))}
-              <ToggleRow
-                icon="⚡"
-                title={`Babu ${settings.superAce ? "(on)" : "(off)"}`}
-                sub="A♠ asks for any card you name."
-                on={settings.superAce}
-                onPress={() => onSave({ superAce: !settings.superAce })}
-              />
-              <ToggleRow
-                icon="🚨"
-                title={`Strict table ${settings.strict ? "(on)" : "(off)"}`}
-                sub="Wrong moves kula +1."
-                on={settings.strict}
-                onPress={() => onSave({ strict: !settings.strict })}
-              />
+              <button
+                type="button"
+                onClick={onNewCustom}
+                class="w-full rounded-2xl border border-dashed border-white/20 bg-transparent p-3 text-left transition active:scale-[0.99]"
+              >
+                <span class="text-sm font-bold">＋ New custom table</span>
+                <span class="mt-0.5 block text-[11px] text-white/60">
+                  Clone these rules, tweak all 20+, share a code.
+                </span>
+              </button>
+              {isCustom ? (
+                <div>
+                  <button
+                    type="button"
+                    onClick={onEditCustom}
+                    class="w-full rounded-2xl border border-yellow-400/50 bg-yellow-400/10 p-3 text-left transition active:scale-[0.99]"
+                  >
+                    <span class="text-sm font-bold">✏️ Tweak this table</span>
+                    <span class="mt-0.5 block text-[11px] text-white/60">
+                      Babu, strict and everything else live inside your profile.
+                    </span>
+                  </button>
+                </div>
+              ) : (
+                <div class="flex flex-col gap-2">
+                  <ToggleRow
+                    icon="⚡"
+                    title={`Babu ${settings.superAce ? "(on)" : "(off)"}`}
+                    sub="A♠ asks for any card you name."
+                    on={settings.superAce}
+                    onPress={() => onSave({ superAce: !settings.superAce })}
+                  />
+                  <ToggleRow
+                    icon="🚨"
+                    title={`Strict table ${settings.strict ? "(on)" : "(off)"}`}
+                    sub="Wrong moves kula +1."
+                    on={settings.strict}
+                    onPress={() => onSave({ strict: !settings.strict })}
+                  />
+                </div>
+              )}
             </Section>
           )}
 

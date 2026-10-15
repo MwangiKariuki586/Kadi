@@ -25,6 +25,7 @@ import {
   validateCombo,
 } from "./engine/validator";
 import {
+  resolveProfile,
   store,
   type ActiveGameSave,
   type Settings,
@@ -42,6 +43,7 @@ import {
   Toast,
 } from "./ui/components";
 import { SettingsScreen } from "./ui/settings";
+import { RulesBuilder } from "./ui/rulesBuilder";
 import { HowToScreen } from "./ui/howto";
 import { reasonText } from "./ui/reasons";
 import {
@@ -63,7 +65,7 @@ import { haptics, isHapticsEnabled, setHapticsEnabled } from "./ui/haptics";
 import { isMuted, setMuted, sfx } from "./ui/sounds";
 import { applyMotionPreference } from "./ui/motion";
 
-type Screen = "home" | "lobby" | "game" | "settings" | "howto";
+type Screen = "home" | "lobby" | "game" | "settings" | "rules" | "howto";
 
 const BOT_NAMES = ["Jabari", "Amani", "Zawadi", "Neema"];
 const NAMES = ["You", ...BOT_NAMES];
@@ -80,6 +82,12 @@ export function App() {
   const [numBots, setNumBots] = useState(2);
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [preset, setPreset] = useState<RulesConfig>(STANDARD_MAUA);
+  const [customs, setCustoms] = useState<RulesConfig[]>([]);
+  const [builderInit, setBuilderInit] = useState<{
+    initial: RulesConfig;
+    sourceName: string;
+    editingName: string | null;
+  } | null>(null);
   const [superAceOn, setSuperAceOn] = useState(false);
   const [muted, setMutedState] = useState(isMuted());
   const [stats, setStats] = useState<Stats>({
@@ -104,6 +112,9 @@ export function App() {
   const [hapticsOn, setHapticsOn] = useState(isHapticsEnabled());
   const [animationsOn, setAnimationsOn] = useState(true);
   const [settingsOrigin, setSettingsOrigin] = useState<"home" | "game">("home");
+  const customsRef = useRef<RulesConfig[]>([]);
+  /** True when the active table is a saved custom — its flags stand alone. */
+  const isCustomActive = !PRESETS.some((p) => p.name === preset.name);
 
   const pushFeed = useCallback((...evts: FeedEvent[]) => {
     setFeed((f) => [...f, ...evts].slice(-15));
@@ -201,8 +212,7 @@ export function App() {
       recordedRef.current = false;
       setNumBots(save.meta.numBots);
       setDifficulty(save.meta.difficulty);
-      const p = PRESETS.find((x) => x.name === save.meta.presetName);
-      if (p) setPreset(p);
+      setPreset(resolveProfile(save.meta.presetName, customsRef.current));
       setSuperAceOn(save.meta.superAce);
       setStrictOn(save.state.config.strictWrongPlay);
       setSelected([]);
@@ -249,11 +259,15 @@ export function App() {
   );
 
   const startGame = useCallback(() => {
-    const config: RulesConfig = {
-      ...preset,
-      superAceEnabled: superAceOn,
-      strictWrongPlay: strictOn,
-    };
+    // Customs stand alone; presets take the lobby Babu/strict overlays.
+    const custom = !PRESETS.some((p) => p.name === preset.name);
+    const config: RulesConfig = custom
+      ? { ...preset }
+      : {
+          ...preset,
+          superAceEnabled: superAceOn,
+          strictWrongPlay: strictOn,
+        };
     const st = createGame({ numPlayers: 1 + numBots, config });
     stateRef.current = st;
     recordedRef.current = false;
@@ -272,8 +286,8 @@ export function App() {
   const savePatch = useCallback((patch: Partial<Settings>) => {
     if (patch.difficulty !== undefined) setDifficulty(patch.difficulty);
     if (patch.presetName !== undefined) {
-      const p = PRESETS.find((x) => x.name === patch.presetName);
-      if (p) setPreset(p);
+      const p = [...PRESETS, ...customsRef.current].find((x) => x.name === patch.presetName);
+      if (p) setPreset({ ...p });
     }
     if (patch.superAce !== undefined) setSuperAceOn(patch.superAce);
     if (patch.coach !== undefined) setCoachOn(patch.coach);
@@ -299,23 +313,75 @@ export function App() {
     haptics.tap();
   }, []);
 
-  // ---- boot: settings, stats, then auto-resume a live match (no taps) ----
+  const openBuilderNew = useCallback(() => {
+    setBuilderInit({
+      initial: { ...preset },
+      sourceName: `Cloned from ${preset.name}`,
+      editingName: null,
+    });
+    setScreen("rules");
+    haptics.tap();
+  }, [preset]);
+
+  const openBuilderEdit = useCallback(() => {
+    setBuilderInit({ initial: { ...preset }, sourceName: preset.name, editingName: preset.name });
+    setScreen("rules");
+    haptics.tap();
+  }, [preset]);
+
+  const saveCustomProfile = useCallback(
+    (profile: RulesConfig) => {
+      void store.saveCustomRules(profile).then((next) => {
+        setCustoms(next);
+        customsRef.current = next;
+        setPreset({ ...profile });
+        void store.saveSettings({ presetName: profile.name });
+        setBuilderInit(null);
+        setScreen("settings");
+        flash("Table rules saved 💾");
+      });
+    },
+    [flash],
+  );
+
+  const deleteCustomProfile = useCallback(
+    (name: string) => {
+      void store.deleteCustomRules(name).then((next) => {
+        setCustoms(next);
+        customsRef.current = next;
+        setPreset({ ...STANDARD_MAUA });
+        void store.saveSettings({ presetName: STANDARD_MAUA.name });
+        setBuilderInit(null);
+        setScreen("settings");
+        flash("Profile deleted 🗑");
+      });
+    },
+    [flash],
+  );
+
+  // ---- boot: customs, settings, stats, then auto-resume a live match (no taps) ----
   useEffect(() => {
     void store.getStats().then(setStats);
-    void store.getSettings().then((s) => {
-      setDifficulty(s.difficulty);
-      const p = PRESETS.find((x) => x.name === s.presetName);
-      if (p) setPreset(p);
-      setSuperAceOn(s.superAce);
-      setCoachOn(s.coach);
-      setStrictOn(s.strict);
-      setMutedState(!s.sound);
-      setMuted(!s.sound);
-      setHapticsOn(s.haptics);
-      setHapticsEnabled(s.haptics);
-      setAnimationsOn(s.animations);
-      applyMotionPreference(s.animations);
-    });
+    void store
+      .getCustomRules()
+      .then((cs) => {
+        setCustoms(cs);
+        customsRef.current = cs;
+        return store.getSettings();
+      })
+      .then((s) => {
+        setDifficulty(s.difficulty);
+        setPreset(resolveProfile(s.presetName, customsRef.current));
+        setSuperAceOn(s.superAce);
+        setCoachOn(s.coach);
+        setStrictOn(s.strict);
+        setMutedState(!s.sound);
+        setMuted(!s.sound);
+        setHapticsOn(s.haptics);
+        setHapticsEnabled(s.haptics);
+        setAnimationsOn(s.animations);
+        applyMotionPreference(s.animations);
+      });
     void store.loadActiveGame().then((save) => {
       if (save) {
         setResumable(save);
@@ -630,8 +696,20 @@ export function App() {
             </div>
 
             <p class="mt-5 text-xs font-bold uppercase tracking-widest text-white/50">
-              Game mode
+              Table rules
             </p>
+            {isCustomActive ? (
+              <button
+                type="button"
+                onClick={() => openSettings("home")}
+                class="mt-2 w-full rounded-2xl border border-yellow-400/50 bg-yellow-400/10 p-3 text-left transition active:scale-[0.99]"
+              >
+                <span class="text-sm font-bold">{preset.name} ✏️</span>
+                <span class="mt-0.5 block text-[11px] text-white/60">
+                  Custom table — tap to view or tweak in Settings.
+                </span>
+              </button>
+            ) : (
             <div class="mt-2 flex w-full items-center gap-3 ">
               <span class="min-w-0 flex-1 text-left">
                 <span class="text-sm font-bold">Joker mode</span>
@@ -669,6 +747,7 @@ export function App() {
                 />
               </button>
             </div>
+            )}
           </div>
 
           <div class="shrink-0 border-t border-white/10 pt-3">
@@ -704,6 +783,10 @@ export function App() {
           }}
           stats={stats}
           hasSave={settingsOrigin === "home" && resumable !== null}
+          customs={customs}
+          isCustom={isCustomActive}
+          onNewCustom={openBuilderNew}
+          onEditCustom={openBuilderEdit}
           onBack={() => setScreen(settingsOrigin)}
           onSave={(patch) => {
             savePatch(patch);
@@ -721,6 +804,24 @@ export function App() {
               flash("Saved match forfeited ⏸");
             });
           }}
+        />
+      </div>
+    );
+  }
+
+  // ---- custom table rules builder (home/settings only, never mid-match) ----
+  if (screen === "rules" && builderInit) {
+    return (
+      <div>
+        <Toast message={toast} />
+        <RulesBuilder
+          initial={builderInit.initial}
+          sourceName={builderInit.sourceName}
+          editingName={builderInit.editingName}
+          customNames={customs.map((c) => c.name)}
+          onBack={() => setScreen("settings")}
+          onSave={saveCustomProfile}
+          onDelete={deleteCustomProfile}
         />
       </div>
     );

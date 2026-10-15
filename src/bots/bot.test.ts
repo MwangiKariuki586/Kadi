@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { STANDARD_MAUA } from '../engine/rules';
+import { BOM_NI_BOM, STANDARD_MAUA } from '../engine/rules';
 import { createGame } from '../engine/state';
 import { playCombo } from '../engine/validator';
 import { bestSuit, chooseMove, chooseRequestCard, isDeclaredThreat, shouldDeclareKadi } from './bot';
@@ -35,6 +35,37 @@ describe('bots', () => {
     s.currentPlayer = 0;
     const move = chooseMove(s, 0, 'medium', () => 0.9);
     expect(move?.cards[0].rank).toBe('2');
+  });
+
+  it('Bom ni Bom: bot moves stay legal (any-stack + dodge + accumulate)', () => {
+    for (let i = 0; i < 40; i++) {
+      const s = createGame({ numPlayers: 2 + (i % 3), config: BOM_NI_BOM });
+      for (const diff of ['easy', 'medium', 'hard'] as const) {
+        const move = chooseMove(s, s.currentPlayer, diff, () => 0.5);
+        if (!move) continue;
+        const r = playCombo(
+          structuredClone(s),
+          s.currentPlayer,
+          move.cards.map((c) => ({ ...c })),
+          move.declaredSuit,
+          move.requestedCard ?? null,
+        );
+        expect(r.ok, `${diff} illegal ${move.cards.map((c) => c.rank + c.suit)}`).toBe(true);
+      }
+    }
+  });
+
+  it('Bom ni Bom: medium+ dodges a penalty with a lone J instead of eating it', () => {
+    const s = createGame({ numPlayers: 3, config: BOM_NI_BOM, random: () => 0.1 });
+    s.discardPile = [{ id: '2-hearts-top', suit: 'hearts', rank: '2' }];
+    s.pendingPenalty = 2;
+    s.hands[1] = [
+      { id: 'j-spades', suit: 'spades', rank: 'J' },
+      { id: '9-hearts', suit: 'hearts', rank: '9' },
+    ];
+    s.currentPlayer = 1;
+    const move = chooseMove(s, 1, 'medium', () => 0.9);
+    expect(move?.cards[0].rank).toBe('J');
   });
 
   it('declares Kadi with a winnable hand', () => {

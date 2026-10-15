@@ -197,6 +197,8 @@ export function validateRulesConfig(c: RulesConfig): string[] {
   }
   if (!(c.superAceMinAces >= 2)) problems.push('Stacked super aces need at least 2.');
   if (!(c.dealCount >= 2 && c.dealCount <= 7)) problems.push('Deal 2–7 cards each.');
+  const clash = c.jumpRanks.find((r) => c.kickbackRanks.includes(r));
+  if (clash) problems.push(`A rank cannot jump and reverse at once (see ${clash}).`);
   const fines: [string, number][] = [
     ['unanswered question', c.unansweredQuestionPickCount],
     ['late Niko Kadi call', c.lateCallPickCount],
