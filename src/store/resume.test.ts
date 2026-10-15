@@ -3,7 +3,7 @@ import { chooseMove } from '../bots/bot';
 import { migrateRules, STANDARD_MAUA } from '../engine/rules';
 import { createGame } from '../engine/state';
 import { playCombo } from '../engine/validator';
-import { isResumable, refreshResumeConfig, DEFAULT_SETTINGS, type ActiveGameSave } from './local';
+import { isResumable, refreshResumeConfig, resolveProfile, DEFAULT_SETTINGS, type ActiveGameSave } from './local';
 import { STRICT_NO_JOKER } from '../engine/rules';
 
 function liveSave(): ActiveGameSave {
@@ -99,6 +99,32 @@ describe('resume guard', () => {  it('accepts a live, well-formed save', () => {
     refreshResumeConfig(save);
     expect(save.state.pendingPenaltySuit).toBeNull();
     expect(isResumable(save)).toBe(true);
+  });
+
+  it('custom profiles keep their snapshotted config (never preset-reset)', () => {
+    const save = liveSave();
+    save.meta.presetName = 'Estate Sunday';
+    save.state.config = {
+      ...save.state.config,
+      name: 'Estate Sunday',
+      penaltyMatchMode: 'any',
+      dodgePenaltyWithJumpKickback: true,
+    };
+    refreshResumeConfig(save);
+    expect(save.state.config.name).toBe('Estate Sunday');
+    expect(save.state.config.penaltyMatchMode).toBe('any');
+    expect(save.state.config.dodgePenaltyWithJumpKickback).toBe(true);
+    expect(isResumable(save)).toBe(true);
+  });
+});
+
+describe('resolveProfile', () => {
+  it('prefers built-ins, then customs, then Standard fallback', () => {
+    const customs = [migrateRules({ name: 'Estate Sunday', penaltyMatchMode: 'any' as const })];
+    expect(resolveProfile('Standard Maua', customs).penaltyMatchMode).toBe('family');
+    expect(resolveProfile('Estate Sunday', customs).penaltyMatchMode).toBe('any');
+    expect(resolveProfile('Nobody', customs).name).toBe('Standard Maua');
+    expect(resolveProfile('Estate Sunday', []).name).toBe('Standard Maua');
   });
 });
 
