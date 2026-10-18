@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   BACKSTREET_PESA,
   BOM_NI_BOM,
+  PRESETS,
   STANDARD_MAUA,
-  STRICT_NO_JOKER,
   decodeRulesConfig,
   describeRules,
   encodeRulesConfig,
@@ -13,7 +13,7 @@ import {
 
 describe('validateRulesConfig', () => {
   it('accepts every built-in preset', () => {
-    for (const p of [STANDARD_MAUA, STRICT_NO_JOKER, BOM_NI_BOM, BACKSTREET_PESA]) {
+    for (const p of PRESETS) {
       expect(validateRulesConfig(p)).toEqual([]);
     }
   });
@@ -74,12 +74,11 @@ describe('share codec', () => {
 
 describe('describeRules', () => {
   it('names the ways a table differs', () => {
-    expect(describeRules(BOM_NI_BOM)).toMatch(/Bom stacking/);
-    expect(describeRules(BOM_NI_BOM)).toMatch(/J\/K dodge/);
+    expect(describeRules(BOM_NI_BOM)).toMatch(/Any penalty answers any/);
+    expect(describeRules(BOM_NI_BOM)).toMatch(/Dodge penalty with J\/K/);
     expect(describeRules(BACKSTREET_PESA)).toMatch(/Strict/);
-    expect(describeRules(STRICT_NO_JOKER)).toMatch(/No jokers/);
     expect(describeRules({ ...STANDARD_MAUA, winningDumpMustBeSingle: true })).toMatch(
-      /One-card finish/,
+      /Must play single card to win/,
     );
   });
 });

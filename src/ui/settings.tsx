@@ -1,7 +1,6 @@
 import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { Difficulty } from "../bots/bot";
-import { PRESETS, describeRules, type RulesConfig } from "../engine/rules";
 import type { Settings, Stats } from "../store/local";
 import { Pill } from "./components";
 
@@ -10,7 +9,6 @@ export interface SettingsScreenProps {
   settings: Settings;
   stats: Stats;
   hasSave: boolean;
-  customs: RulesConfig[];
   isCustom: boolean;
   onNewCustom: () => void;
   onEditCustom: () => void;
@@ -18,6 +16,7 @@ export interface SettingsScreenProps {
   onSave: (patch: Partial<Settings>) => void;
   onResetStats: () => void;
   onClearSave: () => void;
+  onClearCustoms: () => void;
 }
 
 export function Section({
@@ -105,7 +104,6 @@ export function SettingsScreen({
   settings,
   stats,
   hasSave,
-  customs,
   isCustom,
   onNewCustom,
   onEditCustom,
@@ -113,9 +111,11 @@ export function SettingsScreen({
   onSave,
   onResetStats,
   onClearSave,
+  onClearCustoms,
 }: SettingsScreenProps) {
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmCustomsClear, setConfirmCustomsClear] = useState(false);
   const rulesLocked = origin === "game";
 
   return (
@@ -168,6 +168,13 @@ export function SettingsScreen({
               on={settings.coach}
               onPress={() => onSave({ coach: !settings.coach })}
             />
+            <ToggleRow
+              icon="🃏"
+              title="Jokers"
+              sub="Jokers in the deck for all tables."
+              on={settings.jokersEnabled}
+              onPress={() => onSave({ jokersEnabled: !settings.jokersEnabled })}
+            />
           </Section>
 
           {rulesLocked ? (
@@ -183,8 +190,8 @@ export function SettingsScreen({
           ) : (
             <Section
               level="2"
-              title="Game setup"
-              sub="Used for your next game."
+              title="Game rules"
+              sub="Used for your next game. Pick your rules on the Play screen."
             >
               <p class="text-xs font-bold uppercase tracking-widest text-white/50">
                 Bots
@@ -207,66 +214,55 @@ export function SettingsScreen({
                   </button>
                 ))}
               </div>
-              <p class="mt-1 text-xs font-bold uppercase tracking-widest text-white/50">
-                Cards
-              </p>
-              {[...PRESETS, ...customs].map((p) => (
-                <button
-                  key={p.name}
-                  type="button"
-                  aria-pressed={settings.presetName === p.name}
-                  onClick={() => onSave({ presetName: p.name })}
-                  class={`w-full rounded-2xl border p-3 text-left transition active:scale-[0.99] ${
-                    settings.presetName === p.name
-                      ? "border-yellow-400 bg-yellow-400/10"
-                      : "border-white/10 bg-white/5"
-                  }`}
-                >
-                  <span class="text-sm font-bold">{p.name}</span>
-                  <span class="mt-0.5 block text-[11px] text-white/60">
-                    {describeRules(p)}
-                  </span>
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={onNewCustom}
-                class="w-full rounded-2xl border border-dashed border-white/20 bg-transparent p-3 text-left transition active:scale-[0.99]"
-              >
-                <span class="text-sm font-bold">＋ New custom table</span>
-                <span class="mt-0.5 block text-[11px] text-white/60">
-                  Clone these rules, tweak all 20+, share a code.
-                </span>
-              </button>
               {isCustom ? (
-                <div>
+                <div class="mt-4 flex flex-col gap-2">
                   <button
                     type="button"
                     onClick={onEditCustom}
                     class="w-full rounded-2xl border border-yellow-400/50 bg-yellow-400/10 p-3 text-left transition active:scale-[0.99]"
                   >
-                    <span class="text-sm font-bold">✏️ Tweak this table</span>
+                    <span class="text-sm font-bold">✏️ Edit rules</span>
                     <span class="mt-0.5 block text-[11px] text-white/60">
-                      Babu, strict and everything else live inside your profile.
+                      Babu, strict and everything else live inside your rules.
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onNewCustom}
+                    class="w-full rounded-2xl border border-dashed border-white/20 bg-transparent p-3 text-left transition active:scale-[0.99]"
+                  >
+                    <span class="text-sm font-bold">＋ Custom rules</span>
+                    <span class="mt-0.5 block text-[11px] text-white/60">
+                      Copy these rules, customize everything, share with friends.
                     </span>
                   </button>
                 </div>
               ) : (
-                <div class="flex flex-col gap-2">
+                <div class="mt-4 flex flex-col gap-2">
                   <ToggleRow
                     icon="⚡"
-                    title={`Babu ${settings.superAce ? "(on)" : "(off)"}`}
+                    title={`Special Ace (Babu) ${settings.superAce ? "(on)" : "(off)"}`}
                     sub="A♠ asks for any card you name."
                     on={settings.superAce}
                     onPress={() => onSave({ superAce: !settings.superAce })}
                   />
                   <ToggleRow
                     icon="🚨"
-                    title={`Strict table ${settings.strict ? "(on)" : "(off)"}`}
+                    title={`Strict rules ${settings.strict ? "(on)" : "(off)"}`}
                     sub="Wrong moves kula +1."
                     on={settings.strict}
                     onPress={() => onSave({ strict: !settings.strict })}
                   />
+                  <button
+                    type="button"
+                    onClick={onNewCustom}
+                    class="w-full rounded-2xl border border-dashed border-white/20 bg-transparent p-3 text-left transition active:scale-[0.99]"
+                  >
+                    <span class="text-sm font-bold">＋ Custom rules</span>
+                    <span class="mt-0.5 block text-[11px] text-white/60">
+                      Copy the current rules, customize everything, share with friends.
+                    </span>
+                  </button>
                 </div>
               )}
             </Section>
@@ -337,6 +333,29 @@ export function SettingsScreen({
                 </span>
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => {
+                if (confirmCustomsClear) {
+                  setConfirmCustomsClear(false);
+                  onClearCustoms();
+                } else {
+                  setConfirmCustomsClear(true);
+                }
+              }}
+              class={`w-full rounded-2xl border p-3 text-left transition active:scale-[0.99] ${
+                confirmCustomsClear
+                  ? "border-red-400 bg-red-400/15"
+                  : "border-red-400/50 bg-red-400/10"
+              }`}
+            >
+              <span class="text-sm font-bold">
+                {confirmCustomsClear ? "Tap again to delete" : "🗑 Clear all custom rules"}
+              </span>
+              <span class="mt-0.5 block text-[11px] text-white/60">
+                Removes duplicate/broken profiles created during setup.
+              </span>
+            </button>
             <div class="rounded-2xl border border-white/10 bg-black/30 p-3 text-[11px] leading-relaxed text-white/60">
               Kadi • plays offline • no account needed.
             </div>

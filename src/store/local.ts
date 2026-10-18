@@ -21,6 +21,8 @@ export interface Settings {
   coach: boolean;
   /** Strict tables: wrong plays are fined + turn passes. Off by default. */
   strict: boolean;
+  /** Joker mode overlay (applies to all presets). On by default. */
+  jokersEnabled: boolean;
   /** Vibration on taps/penalties/wins. On by default. */
   haptics: boolean;
   /** Full card/buzzer animations. Off forces calm mode. On by default. */
@@ -105,13 +107,14 @@ export interface GameStore {
   getCustomRules(): Promise<RulesConfig[]>;
   saveCustomRules(r: RulesConfig): Promise<RulesConfig[]>;
   deleteCustomRules(name: string): Promise<RulesConfig[]>;
+  clearAllCustomRules(): Promise<void>;
   saveActiveGame(save: ActiveGameSave): Promise<void>;
   loadActiveGame(): Promise<ActiveGameSave | null>;
   clearActiveGame(): Promise<void>;
 }
 
 const DEFAULT_STATS: Stats = { games: 0, wins: 0, bestStreak: 0, streak: 0 };
-export const DEFAULT_SETTINGS: Settings = { sound: true, difficulty: 'medium', presetName: 'Standard Maua', superAce: false, coach: false, strict: false, haptics: true, animations: true };
+export const DEFAULT_SETTINGS: Settings = { sound: true, difficulty: 'medium', presetName: 'Standard Maua', superAce: false, coach: false, strict: false, jokersEnabled: true, haptics: true, animations: true };
 
 export class LocalStore implements GameStore {
   async getStats(): Promise<Stats> {
@@ -167,6 +170,10 @@ export class LocalStore implements GameStore {
     const next = cur.filter((x) => x.name !== name);
     await set('kadi-rules', next);
     return next;
+  }
+
+  async clearAllCustomRules(): Promise<void> {
+    await set('kadi-rules', []);
   }
 
   async saveActiveGame(save: ActiveGameSave): Promise<void> {

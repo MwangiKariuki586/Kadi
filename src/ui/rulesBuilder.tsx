@@ -240,26 +240,37 @@ export function RulesBuilder({
           >
             <span aria-hidden="true">←</span> Back
           </button>
-          <h2 class="mt-2 text-3xl font-black text-yellow-300">Table rules 🃏</h2>
-          <p class="mt-0.5 text-xs text-white/60">{sourceName}. Tweaks apply to your next game.</p>
+          <h2 class="mt-2 text-3xl font-black text-yellow-300">Custom rules 🃏</h2>
+          <p class="mt-0.5 text-xs text-white/60">{sourceName}. Changes apply to your next game.</p>
         </div>
 
         <div class="mt-2 min-h-0 flex-1 overflow-y-auto no-scrollbar overscroll-contain pb-2">
-          <Section level="✏️" title="Name it" sub="Saved on this phone. Share it with a code below.">
+          <Section level="✏️" title="Name your rules" sub="Saved on this phone. Share with a code.">
             <input
               type="text"
               value={name}
               maxLength={28}
               placeholder="Estate Sunday"
-              aria-label="Profile name"
+              aria-label="Rules name"
               onInput={(e) => setName((e.target as HTMLInputElement).value)}
               class="w-full rounded-2xl border border-white/10 bg-white/5 p-3 text-sm font-bold text-white placeholder:text-white/30 focus:border-yellow-400 focus:outline-none"
             />
           </Section>
+          <Section level="📝" title="Short description" sub="Shown in the rules picker. One sentence.">
+            <input
+              type="text"
+              value={draft.description ?? ''}
+              maxLength={80}
+              placeholder="Family penalties, latest replaces, Jokers hit hard."
+              aria-label="Rules description"
+              onInput={(e) => set({ description: (e.target as HTMLInputElement).value })}
+              class="w-full rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white placeholder:text-white/30 focus:border-yellow-400 focus:outline-none"
+            />
+          </Section>
 
-          <Section level="⚡" title="Penalties" sub="2s, 3s and Jokers — who eats what.">
+          <Section level="⚡" title="Penalty cards (2, 3, Joker)" sub="How they stack and what they cost.">
             <Radio
-              label="Answering"
+              label="How penalties stack"
               value={draft.penaltyMatchMode}
               onPick={(v) => set({ penaltyMatchMode: v })}
               options={[
@@ -286,8 +297,8 @@ export function RulesBuilder({
             />
             <ToggleRow
               icon="🥞"
-              title="Stacking allowed"
-              sub="Off means eat it or block it with an Ace."
+              title="Allow stacking penalties"
+              sub="Off means eat it or block with an Ace."
               on={draft.allowPenaltyStacking}
               onPress={() => set({ allowPenaltyStacking: !draft.allowPenaltyStacking })}
             />
@@ -298,136 +309,136 @@ export function RulesBuilder({
             )}
           </Section>
 
-          <Section level="❓" title="Questions & Ace" sub="Q, 8 and what an Ace may do.">
+          <Section level="❓" title="Questions (Q, 8) & Ace" sub="What counts as a question and what an Ace can do.">
             <ChipRow label="Question cards" options={QUESTION_CHIPS} selected={draft.questionRanks} onToggle={(r) => toggleListRank("questionRanks", r)} />
             <ToggleRow
               icon="🎯"
-              title="Same-suit answers"
-              sub="Answers must match the question's suit."
+              title="Answers must match suit"
+              sub="Answer must be same suit as the question."
               on={draft.mustAnswerSameSuit}
               onPress={() => set({ mustAnswerSameSuit: !draft.mustAnswerSameSuit })}
             />
             <ToggleRow
               icon="🅰️"
-              title="Ace covers any question"
-              sub="Q♠ + A♦ closes, any suit."
+              title="Ace answers any question"
+              sub="Q♠ + A♦ closes it, any suit."
               on={draft.aceAnswersQuestion}
               onPress={() => set({ aceAnswersQuestion: !draft.aceAnswersQuestion })}
             />
             <ToggleRow
               icon="🧱"
-              title="Ace blocks penalties"
+              title="Ace blocks penalty"
               sub="An Ace fungas the debt."
               on={draft.aceBlocksPenalty}
               onPress={() => set({ aceBlocksPenalty: !draft.aceBlocksPenalty })}
             />
             <ToggleRow
               icon="📢"
-              title="Ace calls a suit"
+              title="Ace picks suit"
               sub="A free Ace names the next suit."
               on={draft.aceCallsSuit}
               onPress={() => set({ aceCallsSuit: !draft.aceCallsSuit })}
             />
-            <Stepper title="Bare question fine" sub="Asked with no answer: draw this many." value={draft.unansweredQuestionPickCount} min={0} max={5} onChange={(v) => set({ unansweredQuestionPickCount: v })} />
+            <Stepper title="Asking with no answer: draw" sub="Bare question picks this many." value={draft.unansweredQuestionPickCount} min={0} max={5} onChange={(v) => set({ unansweredQuestionPickCount: v })} />
           </Section>
 
-          <Section level="⚡" title="Babu & demands" sub="The special Ace that names an exact card.">
+          <Section level="⚡" title="Special Ace (Babu)" sub="The Ace that demands an exact card.">
             <ToggleRow
               icon="⚡"
-              title="Babu (special Ace)"
+              title="Babu"
               sub="A lone special Ace demands any card you name."
               on={draft.superAceEnabled}
               onPress={() => set({ superAceEnabled: !draft.superAceEnabled })}
             />
             {draft.superAceEnabled && (
-              <ChipRow label="Special Ace suit" options={[...SUITS]} selected={[draft.specialAceSuit]} onToggle={(s) => set({ specialAceSuit: s })} render={suitGlyph} />
+              <ChipRow label="Babu suit" options={[...SUITS]} selected={[draft.specialAceSuit]} onToggle={(s) => set({ specialAceSuit: s })} render={suitGlyph} />
             )}
-            <Stepper title="Stacked super aces" sub="This many stacked Aces always demand." value={draft.superAceMinAces} min={2} max={4} onChange={(v) => set({ superAceMinAces: v })} />
-            <Stepper title="Unmet demand fine" sub="Cannot bring the card: draw this many." value={draft.unmetRequestPickCount} min={0} max={5} onChange={(v) => set({ unmetRequestPickCount: v })} />
+            <Stepper title="Stacked Aces = Babu" sub="This many stacked Aces always demand." value={draft.superAceMinAces} min={2} max={4} onChange={(v) => set({ superAceMinAces: v })} />
+            <Stepper title="Can't give card: draw" sub="Unmet demand picks this many." value={draft.unmetRequestPickCount} min={0} max={5} onChange={(v) => set({ unmetRequestPickCount: v })} />
           </Section>
 
-          <Section level="🏆" title="Winning & Kadi" sub="What closes the game, and the call.">
-            <ChipRow label="Finishing ranks" options={WIN_CHIPS} selected={draft.winningRanks} onToggle={(r) => toggleListRank("winningRanks", r)} />
+          <Section level="🏆" title="Winning & Kadi call" sub="What wins the game and the call rules.">
+            <ChipRow label="Cards that can win" options={WIN_CHIPS} selected={draft.winningRanks} onToggle={(r) => toggleListRank("winningRanks", r)} />
             <ToggleRow
               icon="1️⃣"
-              title="Must end on one"
+              title="Must play one card to win"
               sub="Only a lone single card can win — no multi-card dumps."
               on={draft.winningDumpMustBeSingle}
               onPress={() => set({ winningDumpMustBeSingle: !draft.winningDumpMustBeSingle })}
             />
             <ToggleRow
               icon="📢"
-              title="Must say Niko Kadi"
+              title="Must say 'Niko Kadi'"
               sub="Off means silent finishes count."
               on={draft.mustSayNikoKadi}
               onPress={() => set({ mustSayNikoKadi: !draft.mustSayNikoKadi })}
             />
             <ToggleRow
               icon="🪑"
-              title="Cardless blocks wins"
-              sub="No one wins while a rival sits cardless."
+              title="Empty hand blocks wins"
+              sub="No one wins while a rival has no cards."
               on={draft.cardlessBlocksWin}
               onPress={() => set({ cardlessBlocksWin: !draft.cardlessBlocksWin })}
             />
-            <Stepper title="No-call fine" sub="Clean dump, no prior call: draw this many." value={draft.lateCallPickCount} min={0} max={5} onChange={(v) => set({ lateCallPickCount: v })} />
-            <Stepper title="False Kadi fine" sub="Calling with no winnable hand: draw this many." value={draft.falseKadiPickCount} min={0} max={5} onChange={(v) => set({ falseKadiPickCount: v })} />
-            <Stepper title="Slow Kadi fine" sub="Letting the call window expire: draw this many." value={draft.kadiDelayPickCount} min={0} max={5} onChange={(v) => set({ kadiDelayPickCount: v })} />
+            <Stepper title="Win without calling: draw" sub="Clean finish, no prior call: draw this many." value={draft.lateCallPickCount} min={0} max={5} onChange={(v) => set({ lateCallPickCount: v })} />
+            <Stepper title="Wrong Kadi call: draw" sub="Calling with no winning hand: draw this many." value={draft.falseKadiPickCount} min={0} max={5} onChange={(v) => set({ falseKadiPickCount: v })} />
+            <Stepper title="Late Kadi call: draw" sub="Letting the call window expire: draw this many." value={draft.kadiDelayPickCount} min={0} max={5} onChange={(v) => set({ kadiDelayPickCount: v })} />
           </Section>
 
-          <Section level="🔀" title="Jump & reverse" sub="J skips, K turns the table.">
-            <ChipRow label="Jump ranks" options={[...RANKS]} selected={draft.jumpRanks} onToggle={(r) => toggleListRank("jumpRanks", r)} />
-            <ChipRow label="Reverse ranks" options={[...RANKS]} selected={draft.kickbackRanks} onToggle={(r) => toggleListRank("kickbackRanks", r)} />
+          <Section level="🔀" title="Skip (J) & Reverse (K)" sub="J skips, K turns the table.">
+            <ChipRow label="Skip cards" options={[...RANKS]} selected={draft.jumpRanks} onToggle={(r) => toggleListRank("jumpRanks", r)} />
+            <ChipRow label="Reverse cards" options={[...RANKS]} selected={draft.kickbackRanks} onToggle={(r) => toggleListRank("kickbackRanks", r)} />
             <ToggleRow
               icon="🙅"
-              title="Jumps can be refused"
-              sub="Answer a lone jump with your own J."
+              title="Can block skip with J"
+              sub="Answer a lone J with your own J."
               on={draft.jumpCounterable}
               onPress={() => set({ jumpCounterable: !draft.jumpCounterable })}
             />
             <ToggleRow
               icon="🔄"
-              title="Reverses can be refused"
-              sub="Answer a lone reversal with your own K."
+              title="Can block reverse with K"
+              sub="Answer a lone K with your own K."
               on={draft.kickbackCounterable}
               onPress={() => set({ kickbackCounterable: !draft.kickbackCounterable })}
             />
             <ToggleRow
               icon="👥"
-              title="2-player J asks"
+              title="2 players: J = question"
               sub="Heads-up, a J needs an answer like a question."
               on={draft.twoPlayerJumpAsQuestion}
               onPress={() => set({ twoPlayerJumpAsQuestion: !draft.twoPlayerJumpAsQuestion })}
             />
             <ToggleRow
               icon="👥"
-              title="2-player K asks"
+              title="2 players: K = question"
               sub="Heads-up, a K needs an answer like a question."
               on={draft.twoPlayerKickbackAsQuestion}
               onPress={() => set({ twoPlayerKickbackAsQuestion: !draft.twoPlayerKickbackAsQuestion })}
             />
           </Section>
 
-          <Section level="🃏" title="Deck & table" sub="What gets dealt and what may open.">
+          <Section level="🃏" title="Deck & dealing" sub="What gets dealt and what can't start.">
             <ToggleRow
               icon="🃏"
-              title="Jokers in the deck"
+              title="Include Jokers"
               sub="Off removes both Jokers entirely."
               on={draft.jokersEnabled}
               onPress={() => set({ jokersEnabled: !draft.jokersEnabled })}
             />
-            <Stepper title="Cards dealt each" sub="Opening hand size." value={draft.dealCount} min={2} max={7} onChange={(v) => set({ dealCount: v })} />
-            <ChipRow label="Never open with" options={STARTER_CHIPS} selected={draft.starterBlacklist} onToggle={(r) => toggleListRank("starterBlacklist", r)} />
+            <Stepper title="Cards per player" sub="Opening hand size." value={draft.dealCount} min={2} max={7} onChange={(v) => set({ dealCount: v })} />
+            <ChipRow label="Can't start with" options={STARTER_CHIPS} selected={draft.starterBlacklist} onToggle={(r) => toggleListRank("starterBlacklist", r)} />
           </Section>
 
-          <Section level="🚨" title="Strictness" sub="How mistakes are punished.">
+          <Section level="🚨" title="Mistakes" sub="What happens when you play wrong.">
             <ToggleRow
               icon="🚨"
-              title="Strict table"
+              title="Strict: wrong play = penalty + lose turn"
               sub="Wrong moves kula and lose the turn."
               on={draft.strictWrongPlay}
               onPress={() => set({ strictWrongPlay: !draft.strictWrongPlay })}
             />
-            <Stepper title="Illegal-play fine" sub="Wrong move: draw this many." value={draft.invalidPlayPickCount} min={0} max={5} onChange={(v) => set({ invalidPlayPickCount: v })} />
+            <Stepper title="Wrong play: draw" sub="Illegal move picks this many." value={draft.invalidPlayPickCount} min={0} max={5} onChange={(v) => set({ invalidPlayPickCount: v })} />
           </Section>
 
           <Section level="🔗" title="Share it" sub="A code friends paste on their phones — no account, offline.">

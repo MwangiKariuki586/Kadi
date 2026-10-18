@@ -8,6 +8,8 @@ export interface RulesConfig {
   version: number;
   /** Display name for presets / custom profiles */
   name: string;
+  /** Short human-friendly blurb shown in preset picker */
+  description?: string;
   /** Cards dealt to each player at start */
   dealCount: number;
   jokersEnabled: boolean;
@@ -88,6 +90,7 @@ export interface RulesConfig {
 export const STANDARD_MAUA: RulesConfig = {
   version: 2,
   name: 'Standard Maua',
+  description: 'The classic Maua — family-style penalties, latest replaces, Jokers hit hard.',
   dealCount: 4,
   jokersEnabled: true,
   penaltyPicks: { '2': 2, '3': 3, 'JOKER': 5 },
@@ -123,16 +126,10 @@ export const STANDARD_MAUA: RulesConfig = {
   unmetRequestPickCount: 1,
 };
 
-export const STRICT_NO_JOKER: RulesConfig = {
-  ...STANDARD_MAUA,
-  name: 'Strict No-Joker',
-  jokersEnabled: false,
-  penaltyPicks: { '2': 2, '3': 3 },
-};
-
 export const BOM_NI_BOM: RulesConfig = {
   ...STANDARD_MAUA,
   name: 'Bom ni Bom',
+  description: 'Wild penalties — any answers any, J/K dodges, debts add up. Fast and chaotic.',
   penaltyMatchMode: 'any',
   dodgePenaltyWithJumpKickback: true,
   penaltyAccumulates: true,
@@ -148,15 +145,16 @@ export const BOM_NI_BOM: RulesConfig = {
 export const BACKSTREET_PESA: RulesConfig = {
   ...STANDARD_MAUA,
   name: 'Backstreet Pesa',
+  description: 'Money-game rules — penalties add up, strict table, no free passes. High stakes.',
   penaltyAccumulates: true,
   strictWrongPlay: true,
 };
 
-export const PRESETS: RulesConfig[] = [STANDARD_MAUA, BOM_NI_BOM, BACKSTREET_PESA, STRICT_NO_JOKER];
+export const PRESETS: RulesConfig[] = [STANDARD_MAUA, BOM_NI_BOM, BACKSTREET_PESA];
 
 /** Migrate any stored config to current version (forward-compatible). */
 export function migrateRules(input: Partial<RulesConfig> & { version?: number }): RulesConfig {
-  return { ...STANDARD_MAUA, ...input, version: 2, name: input.name ?? 'Custom' };
+  return { ...STANDARD_MAUA, ...input, version: 2, name: input.name ?? 'Custom', description: input.description };
 }
 
 export function isPenaltyRank(rank: Rank, config: RulesConfig): boolean {
@@ -266,16 +264,24 @@ export function decodeRulesConfig(code: string): RulesConfig {
 /** One-line card for preset/custom pickers: the ways this table differs. */
 export function describeRules(c: RulesConfig): string {
   const bits: string[] = [];
-  if (c.penaltyMatchMode === 'any') bits.push('Bom stacking');
-  else if (c.penaltyMatchMode === 'sameRank') bits.push('Same-rank stacks');
-  if (c.dodgePenaltyWithJumpKickback) bits.push('J/K dodge');
-  bits.push(c.penaltyAccumulates ? 'Eats all' : 'Top takes over');
-  if (c.superAceEnabled) bits.push('Babu');
-  bits.push(c.jokersEnabled ? 'Jokers' : 'No jokers');
-  if (c.winningDumpMustBeSingle) bits.push('One-card finish');
-  if (!c.mustSayNikoKadi) bits.push('Silent finish');
-  if (!c.cardlessBlocksWin) bits.push('No cardless block');
-  if (c.strictWrongPlay) bits.push('Strict');
+  // Penalty matching style
+  if (c.penaltyMatchMode === 'any') bits.push('Any penalty answers any (Bom ni Bom)');
+  else if (c.penaltyMatchMode === 'sameRank') bits.push('Same-rank only stacks');
+  else bits.push('Family: Joker covers 2/3, same rank/suit otherwise');
+  // Stacking behavior
+  bits.push(c.penaltyAccumulates ? 'Penalties add up (eater pays all)' : 'Latest penalty replaces (top takes over)');
+  // J/K dodge
+  if (c.dodgePenaltyWithJumpKickback) bits.push('Dodge penalty with J/K');
+  // Jokers
+  bits.push(c.jokersEnabled ? 'Jokers in (+5)' : 'No Jokers');
+  // Strict
+  if (c.strictWrongPlay) bits.push('Strict: wrong play = penalty + lose turn');
+  // Winning quirks
+  if (c.winningDumpMustBeSingle) bits.push('Must play single card to win');
+  if (!c.mustSayNikoKadi) bits.push('Silent finish allowed');
+  if (!c.cardlessBlocksWin) bits.push('Empty hand does not block win');
+  // Babu
+  if (c.superAceEnabled) bits.push('Babu (special Ace demands exact card)');
   bits.push(`${c.dealCount} cards each`);
   return bits.join(' • ');
 }

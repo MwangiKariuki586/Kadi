@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { jokerColor, type Card, type Rank, type Suit } from "../engine/cards";
 import { groupFeed, type FeedEvent, type FeedTone, type CoachMsg, type CoachTone } from "./feed";
+import { describeRules } from "../engine/rules";
 
 const GLYPH: Record<Suit, string> = {
   hearts: "♥",
@@ -526,6 +527,57 @@ export function QuitConfirmModal({
         </button>
       </div>
     </div>
+  );
+}
+
+/** Arcade-style 3D buzzer for declaring Kadi — chrome ring, glossy red dome. */
+export interface PresetPillProps {
+  preset: import("../engine/rules").RulesConfig;
+  isActive: boolean;
+  onSelect: () => void;
+  onCustomize?: () => void;
+  showCustomize?: boolean;
+}
+
+export function PresetPill({
+  preset,
+  isActive,
+  onSelect,
+  onCustomize,
+  showCustomize = false,
+}: PresetPillProps) {
+  const desc = describeRules(preset);
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      class={`w-full flex items-center gap-2 rounded-xl px-3 py-2 text-left transition active:scale-[0.99] ${
+        isActive
+          ? "border-yellow-400 bg-yellow-400/10"
+          : "border-white/10 bg-white/5 hover:bg-white/10"
+      }`}
+    >
+      <span class="text-lg shrink-0" aria-hidden="true">
+        {preset.jokersEnabled ? (preset.penaltyMatchMode === "any" ? "💣" : "🃏") : "🚫"}
+      </span>
+      <div class="min-w-0 flex-1">
+        <span class="text-sm font-bold text-white truncate block">{preset.name}</span>
+        <span class="text-[10px] text-white/60 truncate block">{desc}</span>
+      </div>
+      {showCustomize && onCustomize && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCustomize();
+          }}
+          class="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 text-white/70 hover:bg-white/10 active:scale-95 transition"
+          aria-label={`Customize ${preset.name}`}
+        >
+          <span class="text-[11px]">✏️</span>
+        </button>
+      )}
+    </button>
   );
 }
 

@@ -8,7 +8,12 @@ import {
 import { chooseMove, shouldDeclareKadi, type Difficulty } from "./bots/bot";
 import type { Card, Rank, Suit } from "./engine/cards";
 import { cardLabel } from "./engine/cards";
-import { PRESETS, STANDARD_MAUA, type RulesConfig } from "./engine/rules";
+import {
+  PRESETS,
+  STANDARD_MAUA,
+  describeRules,
+  type RulesConfig,
+} from "./engine/rules";
 import { createGame, topCard, type GameState } from "./engine/state";
 import {
   canDeclareKadi,
@@ -109,6 +114,7 @@ export function App() {
   const [feed, setFeed] = useState<FeedEvent[]>([]);
   const [coachOn, setCoachOn] = useState(false);
   const [strictOn, setStrictOn] = useState(false);
+  const [jokersOn, setJokersOn] = useState(true);
   const [hapticsOn, setHapticsOn] = useState(isHapticsEnabled());
   const [animationsOn, setAnimationsOn] = useState(true);
   const [settingsOrigin, setSettingsOrigin] = useState<"home" | "game">("home");
@@ -220,7 +226,9 @@ export function App() {
       setSuperPickerFor(null);
       setBusy(false);
       setScreen("game");
-      setFeed([describeResume(save.state.currentPlayer, NAMES, save.state.turnNumber)]);
+      setFeed([
+        describeResume(save.state.currentPlayer, NAMES, save.state.turnNumber),
+      ]);
       bump();
     },
     [bump],
@@ -262,11 +270,12 @@ export function App() {
     // Customs stand alone; presets take the lobby Babu/strict overlays.
     const custom = !PRESETS.some((p) => p.name === preset.name);
     const config: RulesConfig = custom
-      ? { ...preset }
+      ? { ...preset, jokersEnabled: jokersOn }
       : {
           ...preset,
           superAceEnabled: superAceOn,
           strictWrongPlay: strictOn,
+          jokersEnabled: jokersOn,
         };
     const st = createGame({ numPlayers: 1 + numBots, config });
     stateRef.current = st;
@@ -280,18 +289,21 @@ export function App() {
     sfx.shuffle();
     haptics.tap();
     bump();
-  }, [numBots, preset, superAceOn, strictOn, bump]);
+  }, [numBots, preset, superAceOn, strictOn, jokersOn, bump]);
 
   /** Single write-through for all Settings page + quick toggles. */
   const savePatch = useCallback((patch: Partial<Settings>) => {
     if (patch.difficulty !== undefined) setDifficulty(patch.difficulty);
     if (patch.presetName !== undefined) {
-      const p = [...PRESETS, ...customsRef.current].find((x) => x.name === patch.presetName);
+      const p = [...PRESETS, ...customsRef.current].find(
+        (x) => x.name === patch.presetName,
+      );
       if (p) setPreset({ ...p });
     }
     if (patch.superAce !== undefined) setSuperAceOn(patch.superAce);
     if (patch.coach !== undefined) setCoachOn(patch.coach);
     if (patch.strict !== undefined) setStrictOn(patch.strict);
+    if (patch.jokersEnabled !== undefined) setJokersOn(patch.jokersEnabled);
     if (patch.sound !== undefined) {
       setMutedState(!patch.sound);
       setMuted(!patch.sound);
@@ -324,7 +336,11 @@ export function App() {
   }, [preset]);
 
   const openBuilderEdit = useCallback(() => {
-    setBuilderInit({ initial: { ...preset }, sourceName: preset.name, editingName: preset.name });
+    setBuilderInit({
+      initial: { ...preset },
+      sourceName: preset.name,
+      editingName: preset.name,
+    });
     setScreen("rules");
     haptics.tap();
   }, [preset]);
@@ -375,6 +391,7 @@ export function App() {
         setSuperAceOn(s.superAce);
         setCoachOn(s.coach);
         setStrictOn(s.strict);
+        setJokersOn(s.jokersEnabled);
         setMutedState(!s.sound);
         setMuted(!s.sound);
         setHapticsOn(s.haptics);
@@ -457,7 +474,13 @@ export function App() {
         } else {
           // Should never happen (moves are pre-validated) — narrate instead
           // of silently swallowing so ghosts leave evidence, not confusion.
-          pushFeed(describeStall(NAMES[me], move.cards.map(cardLabel).join(" + "), s.turnNumber));
+          pushFeed(
+            describeStall(
+              NAMES[me],
+              move.cards.map(cardLabel).join(" + "),
+              s.turnNumber,
+            ),
+          );
         }
       } else {
         const pr = passOrPick(s, me);
@@ -696,58 +719,129 @@ export function App() {
             </div>
 
             <p class="mt-5 text-xs font-bold uppercase tracking-widest text-white/50">
-              Table rules
+              Game rules
             </p>
-            {isCustomActive ? (
-              <button
-                type="button"
-                onClick={() => openSettings("home")}
-                class="mt-2 w-full rounded-2xl border border-yellow-400/50 bg-yellow-400/10 p-3 text-left transition active:scale-[0.99]"
-              >
-                <span class="text-sm font-bold">{preset.name} ✏️</span>
-                <span class="mt-0.5 block text-[11px] text-white/60">
-                  Custom table — tap to view or tweak in Settings.
-                </span>
-              </button>
-            ) : (
-            <div class="mt-2 flex w-full items-center gap-3 ">
+            <div class="mt-2 flex w-full items-center gap-3">
               <span class="min-w-0 flex-1 text-left">
-                <span class="text-sm font-bold">Joker mode</span>
+                <span class="text-sm font-bold">Jokers</span>
                 <span class="mt-0.5 block text-[11px] text-white/60">
-                  {preset.jokersEnabled
-                    ? "Jokers in, be ready to kula +5."
-                    : "No Jokers, only 2s and 3s send you to kula."}
+                  {jokersOn
+                    ? "Kula tano 💀"
+                    : "No Jokers — only 2s and 3s make you kula."}
                 </span>
               </span>
               <button
                 type="button"
                 role="switch"
-                aria-checked={preset.jokersEnabled}
-                aria-label="Joker mode"
-                onClick={() =>
-                  savePatch({
-                    presetName: preset.jokersEnabled
-                      ? "Strict No-Joker"
-                      : "Standard Maua",
-                  })
-                }
+                aria-checked={jokersOn}
+                aria-label="Jokers"
+                onClick={() => {
+                  savePatch({ jokersEnabled: !jokersOn });
+                  haptics.tap();
+                }}
                 class={`relative h-8 w-14 shrink-0 rounded-full border bg-black/60 transition-colors duration-200 active:scale-95 ${
-                  preset.jokersEnabled
-                    ? "border-yellow-400/70"
-                    : "border-white/20"
+                  jokersOn ? "border-yellow-400/70" : "border-white/20"
                 }`}
               >
                 <span
                   aria-hidden="true"
                   class={`switch-knob absolute left-1 top-1/2 block h-6 w-6 -translate-y-1/2 rounded-full border-[3px] transition-all duration-200 ${
-                    preset.jokersEnabled
+                    jokersOn
                       ? "translate-x-6 border-yellow-300 bg-black"
                       : "translate-x-0 border-white/25 bg-black/80"
                   }`}
                 />
               </button>
             </div>
-            )}
+            <div class="mt-3 space-y-2">
+              {PRESETS.map((p) => (
+                <button
+                  key={p.name}
+                  type="button"
+                  aria-pressed={preset.name === p.name}
+                  onClick={() => savePatch({ presetName: p.name })}
+                  class={`w-full rounded-2xl border p-3 text-left transition active:scale-[0.99] relative ${
+                    preset.name === p.name
+                      ? "border-yellow-400 bg-yellow-400/10"
+                      : "border-white/10 bg-white/5"
+                  }`}
+                >
+                  <span class="flex items-center gap-1.5">
+                    {p.jokersEnabled
+                      ? p.penaltyMatchMode === "any"
+                        ? "💣"
+                        : "🃏"
+                      : "🚫"}
+                    <span class="text-sm font-bold">{p.name}</span>
+                  </span>
+                  <span class="mt-0.5 block text-[11px] text-white/60">
+                    {p.description ?? describeRules(p)}
+                  </span>
+                </button>
+              ))}
+              {customs.map((c) => (
+                <button
+                  key={c.name}
+                  type="button"
+                  aria-pressed={preset.name === c.name}
+                  onClick={() => savePatch({ presetName: c.name })}
+                  class={`w-full rounded-2xl border p-3 text-left transition active:scale-[0.99] relative ${
+                    preset.name === c.name
+                      ? "border-yellow-400 bg-yellow-400/10"
+                      : "border-white/10 bg-white/5"
+                  }`}
+                >
+                  <span class="flex items-center gap-1.5">
+                    {c.jokersEnabled
+                      ? c.penaltyMatchMode === "any"
+                        ? "💣"
+                        : "🃏"
+                      : "🚫"}
+                    <span class="text-sm font-bold">{c.name}</span>
+                  </span>
+                  <span class="mt-0.5 block text-[11px] text-white/60">
+                    {c.description ?? describeRules(c)}
+                  </span>
+                  {preset.name === c.name && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setBuilderInit({
+                          initial: { ...c },
+                          sourceName: c.name,
+                          editingName: c.name,
+                        });
+                        setScreen("rules");
+                        haptics.tap();
+                      }}
+                      class="absolute right-3 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-white/70 hover:bg-white/20 active:scale-95 transition"
+                      aria-label={`Customize ${c.name}`}
+                    >
+                      <span class="text-[11px]">✏️</span>
+                    </button>
+                  )}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setBuilderInit({
+                    initial: { ...STANDARD_MAUA },
+                    sourceName: `Cloned from ${STANDARD_MAUA.name}`,
+                    editingName: null,
+                  });
+                  setScreen("rules");
+                  haptics.tap();
+                }}
+                class="w-full rounded-2xl border border-dashed border-white/20 bg-transparent p-3 text-left transition active:scale-[0.99]"
+              >
+                <span class="text-sm font-bold">＋ Custom rules</span>
+                <span class="mt-0.5 block text-[11px] text-white/60">
+                  Build your own rules from Standard Maua.
+                </span>
+              </button>
+            </div>
           </div>
 
           <div class="shrink-0 border-t border-white/10 pt-3">
@@ -778,12 +872,12 @@ export function App() {
             superAce: superAceOn,
             coach: coachOn,
             strict: strictOn,
+            jokersEnabled: jokersOn,
             haptics: hapticsOn,
             animations: animationsOn,
           }}
           stats={stats}
           hasSave={settingsOrigin === "home" && resumable !== null}
-          customs={customs}
           isCustom={isCustomActive}
           onNewCustom={openBuilderNew}
           onEditCustom={openBuilderEdit}
@@ -802,6 +896,13 @@ export function App() {
             void store.clearActiveGame().then(() => {
               setResumable(null);
               flash("Saved match forfeited ⏸");
+            });
+          }}
+          onClearCustoms={() => {
+            void store.clearAllCustomRules().then(() => {
+              setCustoms([]);
+              customsRef.current = [];
+              flash("Custom rules cleared 🗑");
             });
           }}
         />
@@ -883,14 +984,17 @@ export function App() {
     ? reasonText(
         validation.reason ?? null,
         state.activeSuit,
-        state.pendingPenalty > 0 && topCard(state).rank === 'JOKER',
-        selectedCards.some((c) => c.rank === 'JOKER'),
+        state.pendingPenalty > 0 && topCard(state).rank === "JOKER",
+        selectedCards.some((c) => c.rank === "JOKER"),
       )
     : null;
 
   const toggleSelect = (card: Card) => {
     if (!myTurn || busy) {
-      pushNotice(state.gameOver ? "Game over" : "Wait for your turn…", state.turnNumber);
+      pushNotice(
+        state.gameOver ? "Game over" : "Wait for your turn…",
+        state.turnNumber,
+      );
       return;
     }
     haptics.tap();
@@ -1027,10 +1131,7 @@ export function App() {
       bump();
     } else if (r.falseCall) {
       sfx.error();
-      pushNotice(
-        "False KADI — no winnable hand.",
-        state.turnNumber,
-      );
+      pushNotice("False KADI — no winnable hand.", state.turnNumber);
       bump();
     }
   };
@@ -1199,8 +1300,8 @@ export function App() {
                 ? reasonText(
                     validation.reason ?? null,
                     state.activeSuit,
-                    state.pendingPenalty > 0 && topCard(state).rank === 'JOKER',
-                    selectedCards.some((c) => c.rank === 'JOKER'),
+                    state.pendingPenalty > 0 && topCard(state).rank === "JOKER",
+                    selectedCards.some((c) => c.rank === "JOKER"),
                   )
                 : null,
             legalCount: hints.size,

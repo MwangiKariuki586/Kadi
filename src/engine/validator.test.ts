@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BACKSTREET_PESA, BOM_NI_BOM, STANDARD_MAUA, STRICT_NO_JOKER, migrateRules } from './rules';
+import { BACKSTREET_PESA, BOM_NI_BOM, STANDARD_MAUA, migrateRules } from './rules';
 import { createGame, type GameState } from './state';
 import { canFinishNow, declareKadi, fineKadiDelay, isSuperAceCombo, isWinnableShape, legalSingles, passOrPick, playCombo, resolveWrongPlay, tryDeclareKadi, validateCombo } from './validator';
 import type { Card } from './cards';
@@ -327,7 +327,8 @@ describe('penalties', () => {
 
   it('strict differs from standard only by jokers — stacking still allowed', () => {
     const two = C('2', 'hearts', 't1');
-    const s = rigged([two], C('9', 'hearts'), [C('3', 'hearts', 't2')], 2, STRICT_NO_JOKER);
+    const strictConfig = { ...STANDARD_MAUA, jokersEnabled: false };
+    const s = rigged([two], C('9', 'hearts'), [C('3', 'hearts', 't2')], 2, strictConfig);
     playCombo(s, 0, [two]);
     expect(s.pendingPenalty).toBe(2);
     // same-suit 3 answers the 2 even in strict — debt becomes 3, not 5

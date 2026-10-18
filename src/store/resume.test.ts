@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { chooseMove } from '../bots/bot';
-import { migrateRules, STANDARD_MAUA } from '../engine/rules';
+import { migrateRules, STANDARD_MAUA, BACKSTREET_PESA } from '../engine/rules';
 import { createGame } from '../engine/state';
 import { playCombo } from '../engine/validator';
 import { isResumable, refreshResumeConfig, resolveProfile, DEFAULT_SETTINGS, type ActiveGameSave } from './local';
-import { STRICT_NO_JOKER } from '../engine/rules';
 
 function liveSave(): ActiveGameSave {
   const state = createGame({ numPlayers: 3, config: STANDARD_MAUA, random: () => 0.42 });
@@ -139,6 +138,6 @@ describe('settings defaults', () => {
 
   it('both presets play casual tables by default', () => {
     expect(STANDARD_MAUA.strictWrongPlay).toBe(false);
-    expect(STRICT_NO_JOKER.strictWrongPlay).toBe(false);
+    expect(BACKSTREET_PESA.strictWrongPlay).toBe(true);
   });
 });
