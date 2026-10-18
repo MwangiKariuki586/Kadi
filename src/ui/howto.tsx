@@ -350,9 +350,9 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
             type="button"
             aria-label="Back"
             onClick={onBack}
-            class="inline-flex min-h-11 items-center gap-1.5 px-4 py-2 text-sm font-bold text-white  transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-300"
+            class="text-white/60 text-lg leading-none"
           >
-            <span aria-hidden="true">←</span> Back
+            <span aria-hidden="true" class="font-black text-2xl">⬅</span>
           </button>
           <h2 class="mt-2 text-3xl font-black text-yellow-300">How to play</h2>
           <p class="mt-0.5 text-xs text-white/60">

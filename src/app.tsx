@@ -682,15 +682,15 @@ export function App() {
                 type="button"
                 aria-label="Back to home"
                 onClick={() => setScreen("home")}
-                class="inline-flex min-h-11 items-center gap-1.5 px-4 py-2 text-sm font-bold text-white transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-300"
+                class="text-white/60 text-lg leading-none"
               >
-                <span aria-hidden="true">←</span> Back
+                <span aria-hidden="true" class="font-black text-2xl">⬅</span>
               </button>
               <button
                 type="button"
                 aria-label="Open settings"
                 onClick={() => openSettings("home")}
-                class="inline-flex min-h-11 min-w-11 items-center justify-center px-3 py-2 text-lg transition active:scale-95"
+                class="text-white/60 text-lg leading-none"
               >
                 <span aria-hidden="true">⚙️</span>
               </button>
@@ -1164,9 +1164,10 @@ export function App() {
         <button
           type="button"
           onClick={() => setConfirmQuit(true)}
-          class="text-white/60 text-sm"
+          aria-label="Quit"
+          class="text-white/60 text-lg leading-none"
         >
-          ← Quit
+          <span aria-hidden="true">⏻</span>
         </button>
         <div class="flex items-center gap-2">
           <Pill>
