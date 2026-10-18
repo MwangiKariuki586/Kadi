@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { chooseMove } from '../bots/bot';
-import { migrateRules, STANDARD_MAUA } from '../engine/rules';
+import { migrateRules, STANDARD_MAUA, BACKSTREET_PESA } from '../engine/rules';
 import { createGame } from '../engine/state';
 import { playCombo } from '../engine/validator';
-import { isResumable, refreshResumeConfig, DEFAULT_SETTINGS, type ActiveGameSave } from './local';
-import { STRICT_NO_JOKER } from '../engine/rules';
+import { isResumable, refreshResumeConfig, resolveProfile, DEFAULT_SETTINGS, type ActiveGameSave } from './local';
 
 function liveSave(): ActiveGameSave {
   const state = createGame({ numPlayers: 3, config: STANDARD_MAUA, random: () => 0.42 });
@@ -100,6 +99,32 @@ describe('resume guard', () => {  it('accepts a live, well-formed save', () => {
     expect(save.state.pendingPenaltySuit).toBeNull();
     expect(isResumable(save)).toBe(true);
   });
+
+  it('custom profiles keep their snapshotted config (never preset-reset)', () => {
+    const save = liveSave();
+    save.meta.presetName = 'Estate Sunday';
+    save.state.config = {
+      ...save.state.config,
+      name: 'Estate Sunday',
+      penaltyMatchMode: 'any',
+      dodgePenaltyWithJumpKickback: true,
+    };
+    refreshResumeConfig(save);
+    expect(save.state.config.name).toBe('Estate Sunday');
+    expect(save.state.config.penaltyMatchMode).toBe('any');
+    expect(save.state.config.dodgePenaltyWithJumpKickback).toBe(true);
+    expect(isResumable(save)).toBe(true);
+  });
+});
+
+describe('resolveProfile', () => {
+  it('prefers built-ins, then customs, then Standard fallback', () => {
+    const customs = [migrateRules({ name: 'Estate Sunday', penaltyMatchMode: 'any' as const })];
+    expect(resolveProfile('Standard Maua', customs).penaltyMatchMode).toBe('family');
+    expect(resolveProfile('Estate Sunday', customs).penaltyMatchMode).toBe('any');
+    expect(resolveProfile('Nobody', customs).name).toBe('Standard Maua');
+    expect(resolveProfile('Estate Sunday', []).name).toBe('Standard Maua');
+  });
 });
 
 describe('settings defaults', () => {
@@ -113,6 +138,6 @@ describe('settings defaults', () => {
 
   it('both presets play casual tables by default', () => {
     expect(STANDARD_MAUA.strictWrongPlay).toBe(false);
-    expect(STRICT_NO_JOKER.strictWrongPlay).toBe(false);
+    expect(BACKSTREET_PESA.strictWrongPlay).toBe(true);
   });
 });
