@@ -1340,8 +1340,8 @@ export function App() {
             <KadiBuzzer urgent={kadiHot} title={kadiTitle} onPress={onKadi} />
           </div>
         )}
-        <div class="flex shrink-0 justify-center overflow-x-auto no-scrollbar pt-3">
-          <div class="flex" style={{ paddingLeft: 8 }}>
+        <div class="flex shrink-0 overflow-x-auto no-scrollbar pt-3">
+          <div class="flex" style={{ paddingLeft: 8, paddingRight: 8 }}>
             {myHand.map((c) => (
               <div key={c.id} class="-ml-4 first:ml-0">
                 <CardView
