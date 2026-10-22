@@ -1,7 +1,20 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
-import { jokerColor, type Card, type Rank, type Suit } from "../engine/cards";
-import { groupFeed, type FeedEvent, type FeedTone, type CoachMsg, type CoachTone } from "./feed";
+import {
+  cardLabel,
+  jokerColor,
+  type Card,
+  type Rank,
+  type Suit,
+} from "../engine/cards";
+import {
+  groupFeed,
+  type CoachMsg,
+  type CoachTone,
+  type FeedEvent,
+  type FeedTone,
+  type TurnGroup,
+} from "./feed";
 import { describeRules } from "../engine/rules";
 
 const GLYPH: Record<Suit, string> = {
@@ -103,7 +116,9 @@ export function CardView({
     return (
       <div
         class={`rounded-lg border-2 border-yellow-400/60 bg-gradient-to-br from-green-800 to-green-950 shadow-md flex items-center justify-center ${
-          large ? "w-20 h-28 text-2xl" : "w-12 h-[68px] text-lg"
+          large
+            ? "w-20 h-28 text-2xl md:w-24 md:h-32 md:text-3xl lg:w-28 lg:h-40"
+            : "w-12 h-[68px] text-lg md:w-14 md:h-20 md:text-xl lg:w-16 lg:h-24"
         }`}
       >
         <span class="text-yellow-400/80">♛</span>
@@ -113,18 +128,29 @@ export function CardView({
   const red = isRed(card);
   const badge = rankBadge(card.rank);
   const joker = card.rank === "JOKER" ? (jokerColor(card) ?? "red") : null;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      class={`card-btn relative rounded-lg bg-white shadow-md border flex flex-col justify-between p-1 text-left ${
-        large ? "w-20 h-28" : "w-14 h-20"
-      } ${selected ? "border-yellow-400 ring-2 ring-yellow-400 -translate-y-2" : "border-gray-300"} ${
-        hint && !selected ? "border-green-400" : ""
-      } ${joker === "red" || red ? "text-red-600" : "text-gray-900"}`}
-    >
+  const className = `card-btn relative rounded-lg bg-white shadow-md border flex flex-col justify-between p-1 text-left ${
+    large
+      ? "w-20 h-28 md:w-24 md:h-32 lg:w-28 lg:h-40"
+      : "w-14 h-20 md:w-16 md:h-24 lg:w-20 lg:h-28"
+  } ${
+    selected
+      ? "border-yellow-400 ring-2 ring-yellow-400 -translate-y-2"
+      : `border-gray-300 ${onClick ? "hover:-translate-y-1" : ""}`
+  } ${hint && !selected ? "border-green-400" : ""} ${
+    joker === "red" || red ? "text-red-600" : "text-gray-900"
+  }`;
+  const content = (
+    <>
       <div
-        class={`font-bold leading-none tracking-tight ${joker ? (large ? "text-sm" : "text-[10px]") : large ? "text-lg" : "text-sm"}`}
+        class={`font-bold leading-none tracking-tight ${
+          joker
+            ? large
+              ? "text-sm md:text-base lg:text-lg"
+              : "text-[10px] md:text-xs lg:text-sm"
+            : large
+              ? "text-lg md:text-xl lg:text-2xl"
+              : "text-sm md:text-base lg:text-lg"
+        }`}
       >
         {joker ? "JOKER" : card.rank}
         {card.suit !== "none" && (
@@ -133,15 +159,29 @@ export function CardView({
       </div>
       <div class="self-center leading-none">
         {joker ? (
-          <JesterFace className={large ? "w-10 h-[60px]" : "w-8 h-12"} />
+          <JesterFace
+            className={
+              large
+                ? "w-10 h-[60px] md:w-12 md:h-[72px] lg:w-14 lg:h-[84px]"
+                : "w-8 h-12 md:w-9 md:h-14 lg:w-10 lg:h-16"
+            }
+          />
         ) : (
-          <span class={large ? "text-3xl" : "text-2xl"}>
+          <span
+            class={
+              large
+                ? "text-3xl md:text-4xl lg:text-5xl"
+                : "text-2xl md:text-3xl lg:text-4xl"
+            }
+          >
             {card.suit === "none" ? "★" : GLYPH[card.suit as Suit]}
           </span>
         )}
       </div>
       <div
-        class={`leading-none ${large ? "text-[10px]" : "text-[8px]"} font-bold text-center rounded ${
+        class={`leading-none ${
+          large ? "text-[10px] md:text-[11px] lg:text-xs" : "text-[8px] md:text-[9px] lg:text-[10px]"
+        } font-bold text-center rounded ${
           badge ? "bg-gray-900 text-yellow-300 px-1 py-0.5" : ""
         }`}
       >
@@ -152,6 +192,25 @@ export function CardView({
           {order}
         </span>
       )}
+    </>
+  );
+
+  if (!onClick) {
+    return (
+      <div class={className} role="img" aria-label={cardLabel(card)}>
+        {content}
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={cardLabel(card)}
+      aria-pressed={selected === true}
+      class={className}
+    >
+      {content}
     </button>
   );
 }
@@ -178,6 +237,55 @@ export function Pill({
   );
 }
 
+export function OpponentSeat({
+  name,
+  cards,
+  isTurn,
+  thinking,
+  kadi,
+  slot,
+  className = "",
+}: {
+  name: string;
+  cards: number;
+  isTurn: boolean;
+  thinking: boolean;
+  kadi: boolean;
+  slot: "left" | "top" | "right";
+  className?: string;
+}) {
+  return (
+    <div
+      data-testid={`seat-${slot}`}
+      aria-current={isTurn ? "true" : undefined}
+      class={`flex min-w-0 w-full max-w-xs items-center gap-2 rounded-2xl border px-3 py-2 transition lg:max-w-[12rem] lg:px-4 lg:py-3 ${className} ${
+        isTurn
+          ? "border-yellow-400 bg-yellow-400/10 shadow-lg shadow-yellow-400/10"
+          : "border-white/10 bg-black/30"
+      }`}
+    >
+      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15 text-lg md:h-11 md:w-11 md:text-xl">
+        🤖
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="truncate text-xs font-bold md:text-sm">
+          {name}
+          {kadi && <span class="ml-1 text-yellow-300">KADI!</span>}
+        </div>
+        <div class="text-[11px] text-white/60 md:text-xs">
+          {thinking ? "thinking…" : `${cards} cards`}
+        </div>
+      </div>
+      {isTurn && (
+        <span
+          aria-hidden="true"
+          class="h-2 w-2 shrink-0 animate-pulse rounded-full bg-yellow-300"
+        />
+      )}
+    </div>
+  );
+}
+
 const SUIT_BUTTONS: { suit: Suit; glyph: string; red: boolean }[] = [
   { suit: "hearts", glyph: "♥", red: true },
   { suit: "diamonds", glyph: "♦", red: true },
@@ -194,11 +302,14 @@ export function SuitPicker({
 }) {
   return (
     <div
-      class="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4"
+      class="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center"
       onClick={onCancel}
     >
       <div
-        class="w-full max-w-sm rounded-2xl bg-green-950 border border-yellow-400/40 p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Choose a suit"
+        class="w-full max-w-sm rounded-2xl bg-green-950 border border-yellow-400/40 p-4 max-h-[85dvh] overflow-y-auto md:max-w-md"
         onClick={(e) => e.stopPropagation()}
       >
         <p class="text-yellow-300 font-bold text-center mb-1">
@@ -302,8 +413,46 @@ function rowClass(e: FeedEvent): string {
   return "text-white/80";
 }
 
-/** Grouped turn-log: one-line latest summary; tap to expand newest-turn-first groups. */
-export function EventBanner({ events }: { events: FeedEvent[] }) {
+function FeedGroups({ groups }: { groups: TurnGroup[] }) {
+  return (
+    <>
+      {groups.map((g) => (
+        <div key={`${g.turn}-${g.actor}-${g.events[0]?.id ?? "empty"}`}>
+          <p class="text-[10px] font-bold uppercase tracking-widest text-white/40">
+            {g.actor === "Table" ? "Table" : `Turn ${g.turn} · ${g.actor}`}
+          </p>
+          <div class="mt-0.5 flex flex-col gap-1">
+            {g.events.map((e) => (
+              <p
+                key={e.id}
+                class={`flex items-start gap-1.5 text-[11px] leading-snug break-words ${rowClass(e)}`}
+              >
+                <span
+                  aria-hidden="true"
+                  class={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${TONE_DOT[e.tone]}`}
+                />
+                <span aria-hidden="true">{e.icon}</span>
+                <span>{e.text}</span>
+              </p>
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Grouped turn-log. The banner variant shows the latest line and expands on
+ * tap; the panel variant is permanently expanded for the desktop rail.
+ */
+export function EventBanner({
+  events,
+  variant = "banner",
+}: {
+  events: FeedEvent[];
+  variant?: "banner" | "panel";
+}) {
   const [open, setOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const visible = events.slice(-15);
@@ -318,6 +467,16 @@ export function EventBanner({ events }: { events: FeedEvent[] }) {
   }, [events.length, open]);
 
   if (!latest) {
+    if (variant === "panel") {
+      return (
+        <div
+          class="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-center text-xs text-white/40"
+          data-testid="feed-panel"
+        >
+          New match — shuffling…
+        </div>
+      );
+    }
     return (
       <div class="px-4 -mt-1 mb-1">
         <div class="w-full rounded-xl bg-black/40 border border-white/15 px-3 py-1.5 text-center text-xs text-white/40">
@@ -326,12 +485,33 @@ export function EventBanner({ events }: { events: FeedEvent[] }) {
       </div>
     );
   }
+
+  if (variant === "panel") {
+    return (
+      <div
+        class="flex h-full min-h-0 flex-col"
+        aria-live="polite"
+        data-testid="feed-panel"
+      >
+        <div class="flex items-center justify-between px-1">
+          <p class="text-[10px] font-bold uppercase tracking-widest text-white/40">
+            Match log
+          </p>
+          <span class="text-[10px] text-white/40">{visible.length}</span>
+        </div>
+        <div class="mt-2 min-h-0 flex-1 overflow-y-auto no-scrollbar overscroll-contain rounded-xl border border-white/10 bg-black/40 px-3 py-2 flex flex-col gap-2">
+          <FeedGroups groups={groupsDesc} />
+        </div>
+      </div>
+    );
+  }
+
   const latestGroup = groups[groups.length - 1];
   const summary = latestGroup && latestGroup.events.length > 0
     ? latestGroup.events[latestGroup.events.length - 1]
     : latest;
   return (
-    <div class="px-4 -mt-1 mb-1" aria-live="polite">
+    <div class="px-4 -mt-1 mb-1" aria-live="polite" data-testid="feed-banner">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -356,22 +536,7 @@ export function EventBanner({ events }: { events: FeedEvent[] }) {
           aria-live="polite"
           class="mt-1 max-h-44 overflow-y-auto no-scrollbar rounded-xl bg-black/50 border border-white/10 px-3 py-2 flex flex-col gap-2"
         >
-          {groupsDesc.map((g) => (
-            <div key={`${g.turn}-${g.actor}-${g.events[0]?.id ?? "empty"}`}>
-              <p class="text-[10px] font-bold uppercase tracking-widest text-white/40">
-                {g.actor === "Table" ? "Table" : `Turn ${g.turn} · ${g.actor}`}
-              </p>
-              <div class="mt-0.5 flex flex-col gap-1">
-                {g.events.map((e) => (
-                  <p key={e.id} class={`flex items-start gap-1.5 text-[11px] leading-snug break-words ${rowClass(e)}`}>
-                    <span aria-hidden="true" class={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${TONE_DOT[e.tone]}`} />
-                    <span aria-hidden="true">{e.icon}</span>
-                    <span>{e.text}</span>
-                  </p>
-                ))}
-              </div>
-            </div>
-          ))}
+          <FeedGroups groups={groupsDesc} />
         </div>
       )}
     </div>
@@ -409,11 +574,14 @@ export function CardRequestPicker({
       .length;
   return (
     <div
-      class="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4"
+      class="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center"
       onClick={onCancel}
     >
       <div
-        class="w-full max-w-sm rounded-2xl bg-green-950 border border-yellow-400/40 p-4 max-h-[85dvh] overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Demand a card"
+        class="w-full max-w-sm rounded-2xl bg-green-950 border border-yellow-400/40 p-4 max-h-[85dvh] overflow-y-auto md:max-w-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <p class="text-yellow-300 font-bold text-center">
@@ -489,11 +657,14 @@ export function QuitConfirmModal({
 }) {
   return (
     <div
-      class="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4"
+      class="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center"
       onClick={onClose}
     >
       <div
-        class="relative w-full max-w-sm rounded-3xl bg-green-950 border border-yellow-400/40 p-6 text-center anim-fly-in"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Quit this match?"
+        class="relative w-full max-w-sm rounded-3xl bg-green-950 border border-yellow-400/40 p-6 text-center anim-fly-in max-h-[85dvh] overflow-y-auto md:max-w-md"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -601,6 +772,7 @@ export function KadiBuzzer({
       disabled={off}
       aria-label="Declare Kadi"
       title={title}
+      data-testid="kadi-buzzer"
       class={`kadi-buzzer ${urgent && !off ? "kadi-buzzer-urgent" : "kadi-buzzer-idle"}${off ? " kadi-buzzer-disabled" : ""}`}
     >
       <span class="kadi-buzzer-shadow" aria-hidden="true" />

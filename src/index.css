@@ -21,6 +21,22 @@ html, body {
   flex-direction: column;
 }
 
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid #facc15;
+  outline-offset: 2px;
+}
+
+input,
+textarea,
+[contenteditable] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* Card play / pick animations — GPU-friendly transforms only */
 @keyframes kadi-fly-in {
   from { transform: translateY(24px) scale(0.92); opacity: 0; }
@@ -143,6 +159,34 @@ html, body {
   color: #fff;
   text-shadow: 0 2px 3px rgba(0, 0, 0, 0.65);
   pointer-events: none;
+}
+
+@media (min-width: 768px) {
+  .kadi-buzzer {
+    width: 84px;
+    height: 84px;
+  }
+  .kadi-buzzer-dome {
+    width: 64px;
+    height: 64px;
+  }
+  .kadi-buzzer-label {
+    font-size: 16px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .kadi-buzzer {
+    width: 92px;
+    height: 92px;
+  }
+  .kadi-buzzer-dome {
+    width: 70px;
+    height: 70px;
+  }
+  .kadi-buzzer-label {
+    font-size: 17px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

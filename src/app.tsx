@@ -42,6 +42,7 @@ import {
   CoachBar,
   EventBanner,
   KadiBuzzer,
+  OpponentSeat,
   Pill,
   QuitConfirmModal,
   SuitPicker,
@@ -50,6 +51,12 @@ import {
 import { SettingsScreen } from "./ui/settings";
 import { RulesBuilder } from "./ui/rulesBuilder";
 import { HowToScreen } from "./ui/howto";
+import {
+  PageHeader,
+  SEAT_SLOT_CLASS,
+  ScreenFrame,
+  seatPlacement,
+} from "./ui/layout";
 import { reasonText } from "./ui/reasons";
 import {
   describeDeal,
@@ -619,54 +626,62 @@ export function App() {
     return (
       <div class="min-h-dvh bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col safe-top safe-bottom">
         <Toast message={toast} />
-        <div class="flex justify-end px-4 pt-3">
+        <div class="flex justify-end px-4 pt-3 md:px-8">
           <button
             type="button"
             aria-label="Open settings"
             onClick={() => openSettings("home")}
-            class="inline-flex min-h-11 min-w-11 items-center justify-center px-3 py-2 text-lg transition active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-300"
+            class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl px-3 py-2 text-lg transition hover:bg-white/10 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-300"
           >
             <span aria-hidden="true">⚙️</span>
           </button>
         </div>
-        <div class="flex-1 flex flex-col items-center justify-center px-6 pb-6 text-center">
-          <div class="text-6xl mb-2">🂡</div>
-          <h1 class="text-5xl font-black tracking-tight text-yellow-300">
-            KADI
-          </h1>
-          <p class="mt-1 text-white/70 text-sm">
-            Kenyan card game • plays offline
-          </p>
-          <div class="mt-4 flex gap-2">
-            <Pill>{stats.games} games</Pill>
-            <Pill tone="amber">{stats.wins} wins</Pill>
-            <Pill tone="green">🔥 Best {stats.bestStreak}</Pill>
+        <div class="flex flex-1 flex-col items-center justify-center px-6 pb-6 text-center md:px-8">
+          <div class="w-full max-w-md md:max-w-2xl lg:grid lg:max-w-5xl lg:grid-cols-[1.15fr_0.85fr] lg:items-center lg:gap-16 lg:text-left">
+            <div class="flex flex-col items-center lg:items-start">
+              <div class="text-6xl mb-2 md:text-7xl lg:text-8xl">🂡</div>
+              <h1 class="text-5xl font-black tracking-tight text-yellow-300 md:text-6xl lg:text-7xl">
+                KADI
+              </h1>
+              <p class="mt-1 text-white/70 text-sm md:text-base">
+                Kenyan card game • plays offline
+              </p>
+              <div class="mt-4 flex gap-2 md:mt-5">
+                <Pill>{stats.games} games</Pill>
+                <Pill tone="amber">{stats.wins} wins</Pill>
+                <Pill tone="green">🔥 Best {stats.bestStreak}</Pill>
+              </div>
+            </div>
+            <div class="mt-8 flex w-full max-w-xs flex-col items-stretch lg:mt-0 lg:max-w-sm">
+              <button
+                type="button"
+                onClick={() => setScreen("lobby")}
+                class="w-full rounded-2xl bg-yellow-400 py-4 text-xl font-black text-gray-900 shadow-xl transition hover:brightness-105 active:scale-95 md:py-5 md:text-2xl"
+              >
+                ▶ &nbsp;Play
+              </button>
+              {resumable && (
+                <button
+                  type="button"
+                  onClick={() => restoreSave(resumable)}
+                  class="mt-3 w-full rounded-2xl border border-yellow-400/60 bg-yellow-400/10 py-3 text-sm font-black text-yellow-200 transition hover:bg-yellow-400/20 active:scale-95"
+                >
+                  ⏸ Continue • {resumable.state.hands.length} players •{" "}
+                  {resumable.state.currentPlayer === 0
+                    ? "your turn"
+                    : "bot turn"}{" "}
+                  • {resumable.state.hands[0].length} cards
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setScreen("howto")}
+                class="mt-3 w-full rounded-2xl bg-white/10 py-3 text-sm font-bold text-white transition hover:bg-white/15 active:scale-95"
+              >
+                How to play
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setScreen("lobby")}
-            class="mt-8 w-full max-w-xs rounded-2xl bg-yellow-400 py-4 text-xl font-black text-gray-900 shadow-xl active:scale-95 transition"
-          >
-            ▶ &nbsp;Play
-          </button>
-          {resumable && (
-            <button
-              type="button"
-              onClick={() => restoreSave(resumable)}
-              class="mt-3 w-full max-w-xs rounded-2xl border border-yellow-400/60 bg-yellow-400/10 py-3 text-sm font-black text-yellow-200 active:scale-95 transition"
-            >
-              ⏸ Continue • {resumable.state.hands.length} players •{" "}
-              {resumable.state.currentPlayer === 0 ? "your turn" : "bot turn"} •{" "}
-              {resumable.state.hands[0].length} cards
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setScreen("howto")}
-            class="mt-3 w-full max-w-xs rounded-2xl bg-white/10 py-3 text-sm font-bold text-white active:scale-95 transition"
-          >
-            How to play
-          </button>
         </div>
       </div>
     );
@@ -674,31 +689,24 @@ export function App() {
 
   if (screen === "lobby") {
     return (
-      <div class="h-dvh overflow-hidden bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col safe-top safe-bottom">
-        <div class="mx-auto flex h-full w-full max-w-md flex-col px-6 pb-4 pt-4">
-          <div class="shrink-0">
-            <div class="flex items-center justify-between">
-              <button
-                type="button"
-                aria-label="Back to home"
-                onClick={() => setScreen("home")}
-                class="text-white/60 text-lg leading-none"
-              >
-                <span aria-hidden="true" class="font-black text-2xl">⬅</span>
-              </button>
-              <button
-                type="button"
-                aria-label="Open settings"
-                onClick={() => openSettings("home")}
-                class="text-white/60 text-lg leading-none"
-              >
-                <span aria-hidden="true">⚙️</span>
-              </button>
-            </div>
-            <h2 class="mt-2 text-3xl font-black text-yellow-300">New Game</h2>
-          </div>
+      <ScreenFrame width="lg">
+        <PageHeader
+          title="New Game"
+          onBack={() => setScreen("home")}
+          right={
+            <button
+              type="button"
+              aria-label="Open settings"
+              onClick={() => openSettings("home")}
+              class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-white/60 transition hover:text-white"
+            >
+              <span aria-hidden="true">⚙️</span>
+            </button>
+          }
+        />
 
-          <div class="mt-4 min-h-0 flex-1 overflow-y-auto no-scrollbar overscroll-contain pb-1">
+        <div class="mt-4 min-h-0 flex-1 overflow-y-auto no-scrollbar overscroll-contain pb-1 lg:grid lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:items-start lg:gap-8">
+          <div>
             <p class="text-xs font-bold uppercase tracking-widest text-white/50">
               Players
             </p>
@@ -708,7 +716,7 @@ export function App() {
                   key={n}
                   type="button"
                   onClick={() => setNumBots(n)}
-                  class={`rounded-2xl py-3 font-black ${numBots === n ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"}`}
+                  class={`rounded-2xl py-3 font-black transition hover:brightness-110 md:py-4 ${numBots === n ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"}`}
                 >
                   {n + 1}P
                   <span class="block text-[10px] font-normal">
@@ -719,7 +727,7 @@ export function App() {
             </div>
 
             <p class="mt-5 text-xs font-bold uppercase tracking-widest text-white/50">
-              Game rules
+              Table options
             </p>
             <div class="mt-2 flex w-full items-center gap-3">
               <span class="min-w-0 flex-1 text-left">
@@ -753,14 +761,20 @@ export function App() {
                 />
               </button>
             </div>
-            <div class="mt-3 space-y-2">
+          </div>
+
+          <div class="mt-6 lg:mt-0">
+            <p class="text-xs font-bold uppercase tracking-widest text-white/50">
+              Game rules
+            </p>
+            <div class="mt-2 grid gap-2 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
               {PRESETS.map((p) => (
                 <button
                   key={p.name}
                   type="button"
                   aria-pressed={preset.name === p.name}
                   onClick={() => savePatch({ presetName: p.name })}
-                  class={`w-full rounded-2xl border p-3 text-left transition active:scale-[0.99] relative ${
+                  class={`w-full rounded-2xl border p-3 text-left transition hover:border-white/25 hover:bg-white/10 active:scale-[0.99] relative ${
                     preset.name === p.name
                       ? "border-yellow-400 bg-yellow-400/10"
                       : "border-white/10 bg-white/5"
@@ -785,7 +799,7 @@ export function App() {
                   type="button"
                   aria-pressed={preset.name === c.name}
                   onClick={() => savePatch({ presetName: c.name })}
-                  class={`w-full rounded-2xl border p-3 text-left transition active:scale-[0.99] relative ${
+                  class={`w-full rounded-2xl border p-3 text-left transition hover:border-white/25 hover:bg-white/10 active:scale-[0.99] relative ${
                     preset.name === c.name
                       ? "border-yellow-400 bg-yellow-400/10"
                       : "border-white/10 bg-white/5"
@@ -834,7 +848,7 @@ export function App() {
                   setScreen("rules");
                   haptics.tap();
                 }}
-                class="w-full rounded-2xl border border-dashed border-white/20 bg-transparent p-3 text-left transition active:scale-[0.99]"
+                class="w-full rounded-2xl border border-dashed border-white/20 bg-transparent p-3 text-left transition hover:border-white/40 hover:bg-white/5 active:scale-[0.99] md:col-span-2"
               >
                 <span class="text-sm font-bold">＋ Custom rules</span>
                 <span class="mt-0.5 block text-[11px] text-white/60">
@@ -843,18 +857,18 @@ export function App() {
               </button>
             </div>
           </div>
-
-          <div class="shrink-0 border-t border-white/10 pt-3">
-            <button
-              type="button"
-              onClick={startGame}
-              class="w-full rounded-2xl bg-yellow-400 py-4 text-xl font-black text-gray-900 shadow-xl active:scale-95 transition"
-            >
-              Deal me in 🂡
-            </button>
-          </div>
         </div>
-      </div>
+
+        <div class="shrink-0 border-t border-white/10 pt-3 md:pt-4">
+          <button
+            type="button"
+            onClick={startGame}
+            class="w-full rounded-2xl bg-yellow-400 py-4 text-xl font-black text-gray-900 shadow-xl transition hover:brightness-105 active:scale-95 md:py-5 md:text-2xl"
+          >
+            Deal me in 🂡
+          </button>
+        </div>
+      </ScreenFrame>
     );
   }
 
@@ -970,7 +984,7 @@ export function App() {
       : kadiHot && kadiLate
         ? `Late KADI — still counts, but fined +${state.config.kadiDelayPickCount ?? 1}`
         : kadiHot
-          ? "Niko Kadi! Tap to declare"
+          ? "Niko Kadi! Press to declare"
           : `Say KADI anytime — a wrong call is fined +${state.config.falseKadiPickCount} on the spot`;
   const selectedCards = selected.flatMap(
     (id) => myHand.find((c) => c.id === id) ?? [],
@@ -1136,8 +1150,50 @@ export function App() {
     }
   };
 
+  const waitingOn =
+    BOT_NAMES[(state.currentPlayer - 1 + BOT_NAMES.length) % BOT_NAMES.length];
+  const coachMsg = turnCoach({
+    gameOver: state.gameOver,
+    winner:
+      state.winnerIndex == null
+        ? null
+        : state.winnerIndex === 0
+          ? "You"
+          : BOT_NAMES[
+              (state.winnerIndex - 1 + BOT_NAMES.length) % BOT_NAMES.length
+            ],
+    myTurn,
+    waitingOn,
+    busyThinking: busy && state.currentPlayer !== 0,
+    pendingPenalty: state.pendingPenalty,
+    pendingSkip: state.pendingSkip,
+    pendingReverse: state.pendingReverse ?? 0,
+    activeSuit: state.activeSuit,
+    prevSuit: state.lastSuitBeforeRequest ?? null,
+    request: state.activeCardRequest,
+    topLabel: cardLabel(top),
+    selectedCount: selectedCards.length,
+    comboValid: validation ? validation.ok : null,
+    invalidReason:
+      validation && !validation.ok
+        ? reasonText(
+            validation.reason ?? null,
+            state.activeSuit,
+            state.pendingPenalty > 0 && topCard(state).rank === "JOKER",
+            selectedCards.some((c) => c.rank === "JOKER"),
+          )
+        : null,
+    legalCount: hints.size,
+    kadiReady: canDeclareKadi(state, 0) && shouldDeclareKadi(state, 0),
+  });
+  const turnLine = state.gameOver
+    ? "Game over"
+    : myTurn
+      ? "👉 Your turn"
+      : `Waiting on ${waitingOn}…`;
+
   return (
-    <div class="min-h-dvh bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col safe-top safe-bottom">
+    <div class="min-h-dvh bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col safe-top safe-bottom lg:h-dvh lg:flex-row lg:overflow-hidden">
       {suitPickerFor && (
         <SuitPicker
           onCancel={() => setSuitPickerFor(null)}
@@ -1159,255 +1215,276 @@ export function App() {
         />
       )}
 
-      {/* top bar */}
-      <div class="flex items-center justify-between px-4 pt-3">
-        <button
-          type="button"
-          onClick={() => setConfirmQuit(true)}
-          aria-label="Quit"
-          class="text-white/60 text-lg leading-none"
+      <div class="flex min-w-0 flex-1 flex-col lg:h-full">
+        {/* top bar */}
+        <div
+          class="flex items-center justify-between px-4 pt-3 lg:px-6"
+          data-testid="game-topbar"
         >
-          <span aria-hidden="true">⏻</span>
-        </button>
-        <div class="flex items-center gap-2">
-          <Pill>
-            {state.direction === 1 ? "↻ clockwise" : "↺ anti-clockwise"}
-          </Pill>
-          {threats.some(Boolean) && <Pill tone="amber">KADI!</Pill>}
+          <button
+            type="button"
+            onClick={() => setConfirmQuit(true)}
+            aria-label="Quit"
+            class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-white/60 transition hover:bg-white/10 hover:text-white"
+          >
+            <span aria-hidden="true" class="text-lg">
+              ⏻
+            </span>
+          </button>
+          <div class="flex items-center gap-2">
+            <Pill>
+              {state.direction === 1 ? "↻ clockwise" : "↺ anti-clockwise"}
+            </Pill>
+            {threats.some(Boolean) && <Pill tone="amber">KADI!</Pill>}
+          </div>
+          <button
+            type="button"
+            aria-label="Open settings"
+            onClick={() => openSettings("game")}
+            class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-white/60 transition hover:bg-white/10 hover:text-white"
+          >
+            <span aria-hidden="true">⚙️</span>
+          </button>
         </div>
-        <button
-          type="button"
-          aria-label="Open settings"
-          onClick={() => openSettings("game")}
-          class="text-white/60 text-lg leading-none"
-        >
-          <span aria-hidden="true">⚙️</span>
-        </button>
-      </div>
 
-      {/* bots */}
-      <div class="flex justify-center gap-3 px-4 pt-2">
-        {state.hands.map((hand, i) => {
-          if (i === 0) return null;
-          const isTurn = state.currentPlayer === i && !state.gameOver;
-          return (
-            <div
-              key={i}
-              class={`flex items-center gap-2 rounded-2xl border px-3 py-2 ${isTurn ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-black/30"}`}
-            >
-              <div class="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-lg">
-                🤖
-              </div>
-              <div>
-                <div class="text-xs font-bold">
-                  {BOT_NAMES[(i - 1) % BOT_NAMES.length]}
-                  {state.kadiCalls[i] && threats[i] && (
-                    <span class="ml-1 text-yellow-300">KADI!</span>
-                  )}
+        {/* table */}
+        <div
+          class="relative flex min-h-0 flex-1 flex-col px-4 pb-2 lg:grid lg:grid-cols-[minmax(8rem,11rem)_minmax(0,1fr)_minmax(8rem,11rem)] lg:grid-rows-[auto_minmax(0,1fr)_auto] lg:gap-x-4 lg:px-6 lg:pb-4"
+          data-testid="game-table"
+        >
+          {/* bots */}
+          <div class="flex justify-center gap-3 pt-2 lg:contents">
+            {state.hands.map((hand, i) => {
+              if (i === 0) return null;
+              const slot = seatPlacement(i - 1, state.hands.length - 1);
+              const isTurn = state.currentPlayer === i && !state.gameOver;
+              return (
+                <OpponentSeat
+                  key={i}
+                  name={BOT_NAMES[(i - 1) % BOT_NAMES.length]}
+                  cards={hand.length}
+                  isTurn={isTurn}
+                  thinking={isTurn && busy}
+                  kadi={Boolean(state.kadiCalls[i] && threats[i])}
+                  slot={slot}
+                  className={SEAT_SLOT_CLASS[slot]}
+                />
+              );
+            })}
+          </div>
+
+          {/* center */}
+          <div class="flex min-h-0 flex-col items-center justify-center py-4 lg:col-start-2 lg:row-start-2 lg:py-0">
+            <div class="flex items-center justify-center gap-6">
+              <button
+                type="button"
+                onClick={onPickPress}
+                class="flex flex-col items-center gap-1 rounded-xl transition hover:bg-white/5 disabled:cursor-not-allowed"
+                disabled={!myTurn}
+                aria-label={`Pick a card (${state.drawPile.length} left)`}
+                data-testid="draw-pile"
+              >
+                <div
+                  class={`rounded-lg border-2 border-dashed ${myTurn ? "border-yellow-400/70" : "border-white/20"} bg-black/30 w-20 h-28 md:w-24 md:h-32 lg:w-28 lg:h-40 flex flex-col items-center justify-center`}
+                >
+                  <span class="text-2xl md:text-3xl lg:text-4xl">🂠</span>
+                  <span class="text-[11px] text-white/70 font-bold md:text-xs">
+                    {state.drawPile.length} left
+                  </span>
+                  <span class="text-[10px] text-yellow-300 font-bold md:text-[11px]">
+                    {myTurn ? "PICK" : ""}
+                  </span>
                 </div>
-                <div class="text-[11px] text-white/60">
-                  {isTurn && busy ? "thinking…" : `${hand.length} cards`}
+              </button>
+              <div
+                class="flex flex-col items-center gap-1 anim-fly-in"
+                key={top.id + String(state.discardPile.length)}
+              >
+                <CardView card={top} large />
+                <div class="flex h-6 flex-wrap justify-center gap-1">
+                  {state.pendingPenalty > 0 && (
+                    <Pill tone="red">Pick {state.pendingPenalty}</Pill>
+                  )}
+                  {state.pendingSkip > 0 && (
+                    <Pill tone="amber">SKIP ×{state.pendingSkip}</Pill>
+                  )}
+                  {(state.pendingReverse ?? 0) > 0 && (
+                    <Pill tone="amber">
+                      REVERSE ×{state.pendingReverse}
+                    </Pill>
+                  )}
+                  {state.activeSuit && (
+                    <Pill tone="green">Suit: {state.activeSuit}</Pill>
+                  )}
+                  {state.activeCardRequest && (
+                    <Pill tone="amber">
+                      Need: {state.activeCardRequest.rank}
+                      {state.activeCardRequest.suit === "hearts"
+                        ? "♥"
+                        : state.activeCardRequest.suit === "diamonds"
+                          ? "♦"
+                          : state.activeCardRequest.suit === "spades"
+                            ? "♠"
+                            : "♣"}
+                    </Pill>
+                  )}
                 </div>
               </div>
             </div>
-          );
-        })}
-      </div>
 
-      {/* center piles */}
-      <div class="flex items-center justify-center gap-6 py-4">
-        <button
-          type="button"
-          onClick={onPickPress}
-          class="flex flex-col items-center gap-1"
-          disabled={!myTurn}
-        >
-          <div
-            class={`rounded-lg border-2 border-dashed ${myTurn ? "border-yellow-400/70" : "border-white/20"} bg-black/30 w-20 h-28 flex flex-col items-center justify-center`}
-          >
-            <span class="text-2xl">🂠</span>
-            <span class="text-[11px] text-white/70 font-bold">
-              {state.drawPile.length} left
-            </span>
-            <span class="text-[10px] text-yellow-300 font-bold">
-              {myTurn ? "TAP TO PICK" : ""}
-            </span>
+            <div class="mt-2 w-full xl:hidden">
+              <EventBanner events={feed} />
+            </div>
+            <div class="mt-1 w-full xl:hidden">
+              {coachOn ? (
+                <CoachBar msg={coachMsg} />
+              ) : (
+                <p class="text-center text-xs text-white/50 mb-1">
+                  {turnLine}
+                </p>
+              )}
+            </div>
           </div>
-        </button>
-        <div
-          class="flex flex-col items-center gap-1 anim-fly-in"
-          key={top.id + String(state.discardPile.length)}
-        >
-          <CardView card={top} large />
-          <div class="flex gap-1 h-6">
-            {state.pendingPenalty > 0 && (
-              <Pill tone="red">Pick {state.pendingPenalty}</Pill>
-            )}
-            {state.pendingSkip > 0 && (
-              <Pill tone="amber">SKIP ×{state.pendingSkip}</Pill>
-            )}
-            {(state.pendingReverse ?? 0) > 0 && (
-              <Pill tone="amber">REVERSE ×{state.pendingReverse}</Pill>
-            )}
-            {state.activeSuit && (
-              <Pill tone="green">Suit: {state.activeSuit}</Pill>
-            )}
-            {state.activeCardRequest && (
-              <Pill tone="amber">
-                Need: {state.activeCardRequest.rank}
-                {state.activeCardRequest.suit === "hearts"
-                  ? "♥"
-                  : state.activeCardRequest.suit === "diamonds"
-                    ? "♦"
-                    : state.activeCardRequest.suit === "spades"
-                      ? "♠"
-                      : "♣"}
-              </Pill>
-            )}
-          </div>
-        </div>
-      </div>
-      <EventBanner events={feed} />
-      {coachOn ? (
-        <CoachBar
-          msg={turnCoach({
-            gameOver: state.gameOver,
-            winner:
-              state.winnerIndex == null
-                ? null
-                : state.winnerIndex === 0
-                  ? "You"
-                  : BOT_NAMES[
-                      (state.winnerIndex - 1 + BOT_NAMES.length) %
-                        BOT_NAMES.length
-                    ],
-            myTurn,
-            waitingOn:
-              BOT_NAMES[
-                (state.currentPlayer - 1 + BOT_NAMES.length) % BOT_NAMES.length
-              ],
-            busyThinking: busy && state.currentPlayer !== 0,
-            pendingPenalty: state.pendingPenalty,
-            pendingSkip: state.pendingSkip,
-            pendingReverse: state.pendingReverse ?? 0,
-            activeSuit: state.activeSuit,
-            prevSuit: state.lastSuitBeforeRequest ?? null,
-            request: state.activeCardRequest,
-            topLabel: cardLabel(top),
-            selectedCount: selectedCards.length,
-            comboValid: validation ? validation.ok : null,
-            invalidReason:
-              validation && !validation.ok
-                ? reasonText(
-                    validation.reason ?? null,
-                    state.activeSuit,
-                    state.pendingPenalty > 0 && topCard(state).rank === "JOKER",
-                    selectedCards.some((c) => c.rank === "JOKER"),
-                  )
-                : null,
-            legalCount: hints.size,
-            kadiReady: canDeclareKadi(state, 0) && shouldDeclareKadi(state, 0),
-          })}
-        />
-      ) : (
-        <p class="text-center text-xs text-white/50 mb-1">
-          {state.gameOver
-            ? "Game over"
-            : myTurn
-              ? "👉 Your turn"
-              : `Waiting on ${BOT_NAMES[(state.currentPlayer - 1 + BOT_NAMES.length) % BOT_NAMES.length]}…`}
-        </p>
-      )}
 
-      {/* hand */}
-      <div class="flex-1 flex min-h-0 flex-col justify-end px-4 pb-2">
-        {!state.gameOver && (
-          <div class="flex shrink-0 flex-col items-center justify-center py-2">
-            {kadiWindow && (
-              <div
-                class="mb-1 flex w-40 flex-col items-center gap-1"
-                key={state.turnNumber}
-              >
-                <div class="h-1.5 w-full overflow-hidden rounded-full bg-white/15">
-                  <div class="anim-kadi-window h-full w-full rounded-full bg-gradient-to-r from-yellow-300 to-red-500" />
-                </div>
-              </div>
-            )}
-            {kadiLate && kadiHot && (
-              <p class="mb-1 text-[11px] font-bold uppercase tracking-widest text-amber-300">
-                Late shout costs +1 — but it counts
-              </p>
-            )}
-            <KadiBuzzer urgent={kadiHot} title={kadiTitle} onPress={onKadi} />
-          </div>
-        )}
-        <div class="flex shrink-0 overflow-x-auto no-scrollbar pt-3">
-          <div class="flex" style={{ paddingLeft: 8, paddingRight: 8 }}>
-            {myHand.map((c) => (
-              <div key={c.id} class="-ml-4 first:ml-0">
-                <CardView
-                  card={c}
-                  selected={selected.includes(c.id)}
-                  order={selectedOrder.get(c.id) ?? null}
-                  hint={hints.has(c.id) && selected.length === 0}
-                  onClick={() => toggleSelect(c)}
+          {/* bottom rail: buzzer / hand / actions */}
+          <div class="flex min-h-0 flex-1 flex-col justify-end px-4 pb-2 lg:col-span-3 lg:row-start-3 lg:flex-row lg:items-end lg:justify-center lg:gap-8 lg:px-0 lg:pb-0">
+            {!state.gameOver && (
+              <div class="flex shrink-0 flex-col items-center justify-center py-2 lg:order-1 lg:w-44 lg:pb-3">
+                {kadiWindow && (
+                  <div
+                    class="mb-1 flex w-40 flex-col items-center gap-1"
+                    key={state.turnNumber}
+                  >
+                    <div class="h-1.5 w-full overflow-hidden rounded-full bg-white/15">
+                      <div class="anim-kadi-window h-full w-full rounded-full bg-gradient-to-r from-yellow-300 to-red-500" />
+                    </div>
+                  </div>
+                )}
+                {kadiLate && kadiHot && (
+                  <p class="mb-1 text-center text-[11px] font-bold uppercase tracking-widest text-amber-300">
+                    Late shout costs +1 — but it counts
+                  </p>
+                )}
+                <KadiBuzzer
+                  urgent={kadiHot}
+                  title={kadiTitle}
+                  onPress={onKadi}
                 />
               </div>
-            ))}
-            {myHand.length === 0 && (
-              <p class="text-white/60 text-sm pb-6">Cardless</p>
             )}
+
+            <div class="flex min-w-0 flex-col items-center lg:order-2 lg:flex-1">
+              <div
+                class="flex w-full shrink-0 overflow-x-auto no-scrollbar pt-3 lg:justify-center"
+                data-testid="hand"
+              >
+                <div class="flex" style={{ paddingLeft: 8, paddingRight: 8 }}>
+                  {myHand.map((c) => (
+                    <div
+                      key={c.id}
+                      class="-ml-4 first:ml-0 md:-ml-3 lg:-ml-4"
+                    >
+                      <CardView
+                        card={c}
+                        selected={selected.includes(c.id)}
+                        order={selectedOrder.get(c.id) ?? null}
+                        hint={hints.has(c.id) && selected.length === 0}
+                        onClick={() => toggleSelect(c)}
+                      />
+                    </div>
+                  ))}
+                  {myHand.length === 0 && (
+                    <p class="text-white/60 text-sm pb-6">Cardless</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div class="shrink-0 lg:order-3 lg:w-44">
+              {selectionInvalid && (
+                <p class="pb-1 text-center text-[11px] font-bold text-red-300">
+                  ⛔ {selectionReason}
+                </p>
+              )}
+              <div class="flex items-center gap-2 lg:flex-col-reverse lg:items-stretch">
+                <button
+                  type="button"
+                  onClick={onPickPress}
+                  disabled={!myTurn}
+                  data-testid="pick-button"
+                  class="flex-1 rounded-2xl bg-white/10 py-3.5 font-bold text-sm transition hover:bg-white/15 disabled:opacity-40 active:scale-95 lg:flex-none lg:w-full lg:py-4 lg:text-base"
+                >
+                  {state.pendingPenalty > 0
+                    ? `Eat +${state.pendingPenalty}`
+                    : state.pendingSkip > 0
+                      ? "Accept skip"
+                      : (state.pendingReverse ?? 0) > 0
+                        ? "Accept reverse"
+                        : "Pick"}
+                </button>
+                <button
+                  type="button"
+                  onClick={onPlayPress}
+                  disabled={
+                    !myTurn ||
+                    selectedCards.length === 0 ||
+                    (selectionInvalid && !strictOn)
+                  }
+                  data-testid="play-button"
+                  class={`flex-1 rounded-2xl py-3.5 font-black text-sm transition active:scale-95 disabled:opacity-40 lg:flex-none lg:w-full lg:py-4 lg:text-base ${
+                    selectionInvalid
+                      ? strictOn
+                        ? "bg-red-500 text-white"
+                        : "bg-red-500/40 text-white/60"
+                      : "bg-yellow-400 text-gray-900 hover:brightness-105"
+                  }`}
+                >
+                  Play{selectedCards.length > 0 ? ` ${selectedCards.length}` : ""}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* actions */}
-      {selectionInvalid && (
-        <p class="px-4 pb-1 text-center text-[11px] font-bold text-red-300">
-          ⛔ {selectionReason}
-        </p>
-      )}
-      <div class="px-4 pb-5 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onPickPress}
-          disabled={!myTurn}
-          class="flex-1 rounded-2xl bg-white/10 py-3.5 font-bold text-sm disabled:opacity-40 active:scale-95 transition"
-        >
-          {state.pendingPenalty > 0
-            ? `Eat +${state.pendingPenalty}`
-            : state.pendingSkip > 0
-              ? "Accept skip"
-              : (state.pendingReverse ?? 0) > 0
-                ? "Accept reverse"
-                : "Pick"}
-        </button>
-        <button
-          type="button"
-          onClick={onPlayPress}
-          disabled={
-            !myTurn ||
-            selectedCards.length === 0 ||
-            (selectionInvalid && !strictOn)
-          }
-          class={`flex-1 rounded-2xl py-3.5 font-black text-sm active:scale-95 transition disabled:opacity-40 ${
-            selectionInvalid
-              ? strictOn
-                ? "bg-red-500 text-white"
-                : "bg-red-500/40 text-white/60"
-              : "bg-yellow-400 text-gray-900"
-          }`}
-        >
-          Play{selectedCards.length > 0 ? ` ${selectedCards.length}` : ""}
-        </button>
-      </div>
+      {/* match log rail */}
+      <aside
+        class="hidden xl:flex xl:w-80 xl:shrink-0 xl:flex-col xl:gap-4 xl:border-l xl:border-white/10 xl:bg-black/20 xl:p-4"
+        data-testid="feed-rail"
+      >
+        <div class="flex shrink-0 items-center justify-between gap-2">
+          <p class="text-[10px] font-bold uppercase tracking-widest text-white/40">
+            Table
+          </p>
+          <Pill>{state.hands.length} players</Pill>
+        </div>
+        <div class="min-h-0 flex-1">
+          <EventBanner events={feed} variant="panel" />
+        </div>
+        <div class="shrink-0">
+          {coachOn ? (
+            <CoachBar msg={coachMsg} />
+          ) : (
+            <p class="text-center text-xs text-white/50">{turnLine}</p>
+          )}
+        </div>
+      </aside>
 
       {/* game over */}
       {state.gameOver && (
-        <div class="fixed inset-0 z-40 flex items-end justify-center bg-black/70 p-4">
-          <div class="w-full max-w-sm rounded-3xl bg-green-950 border border-yellow-400/40 p-6 text-center anim-fanfare">
+        <div class="fixed inset-0 z-40 flex items-end justify-center bg-black/70 p-4 sm:items-center">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="game-over-title"
+            data-testid="game-over"
+            class="w-full max-w-sm rounded-3xl bg-green-950 border border-yellow-400/40 p-6 text-center anim-fanfare"
+          >
             <div class="text-5xl">{state.winnerIndex === 0 ? "🏆" : "😅"}</div>
-            <h3 class="mt-2 text-2xl font-black text-yellow-300">
+            <h3
+              id="game-over-title"
+              class="mt-2 text-2xl font-black text-yellow-300"
+            >
               {state.winnerIndex === 0
                 ? "You win 🎉"
                 : `${BOT_NAMES[(state.winnerIndex ?? 1) - 1]} wins`}
@@ -1420,14 +1497,14 @@ export function App() {
             <button
               type="button"
               onClick={startGame}
-              class="mt-5 w-full rounded-2xl bg-yellow-400 py-3.5 font-black text-gray-900"
+              class="mt-5 w-full rounded-2xl bg-yellow-400 py-3.5 font-black text-gray-900 transition hover:brightness-105"
             >
               Rematch
             </button>
             <button
               type="button"
               onClick={() => quitToHome(true)}
-              class="mt-2 w-full rounded-2xl bg-white/10 py-3 text-sm font-bold"
+              class="mt-2 w-full rounded-2xl bg-white/10 py-3 text-sm font-bold transition hover:bg-white/15"
             >
               Home
             </button>

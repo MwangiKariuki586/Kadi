@@ -9,6 +9,7 @@ import {
   type RulesConfig,
 } from "../engine/rules";
 import { Section, ToggleRow } from "./settings";
+import { PageHeader, ScreenFrame } from "./layout";
 
 export interface RulesBuilderProps {
   /** Clone-from preset or the custom profile being edited. */
@@ -229,23 +230,16 @@ export function RulesBuilder({
     s === "hearts" ? "♥" : s === "diamonds" ? "♦" : s === "spades" ? "♠" : "♣";
 
   return (
-    <div class="h-dvh overflow-hidden bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col safe-top safe-bottom">
-      <div class="mx-auto flex h-full w-full max-w-md flex-col px-6 pb-4 pt-4">
-        <div class="shrink-0">
-          <button
-            type="button"
-            aria-label="Back"
-            onClick={onBack}
-            class="text-white/60 text-lg leading-none"
-          >
-            <span aria-hidden="true" class="font-black text-2xl">⬅</span>
-          </button>
-          <h2 class="mt-2 text-3xl font-black text-yellow-300">Custom rules 🃏</h2>
-          <p class="mt-0.5 text-xs text-white/60">{sourceName}. Changes apply to your next game.</p>
-        </div>
+    <ScreenFrame width="xl">
+      <PageHeader
+        title="Custom rules 🃏"
+        subtitle={`${sourceName}. Changes apply to your next game.`}
+        onBack={onBack}
+      />
 
-        <div class="mt-2 min-h-0 flex-1 overflow-y-auto no-scrollbar overscroll-contain pb-2">
-          <Section level="✏️" title="Name your rules" sub="Saved on this phone. Share with a code.">
+      <div class="mt-2 min-h-0 flex-1 overflow-y-auto no-scrollbar overscroll-contain pb-2">
+        <div class="md:grid md:grid-cols-2 md:items-start md:gap-5 md:[&>section]:mt-0">
+          <Section level="✏️" title="Name your rules" sub="Saved on this device. Share with a code.">
             <input
               type="text"
               value={name}
@@ -441,7 +435,7 @@ export function RulesBuilder({
             <Stepper title="Wrong play: draw" sub="Illegal move picks this many." value={draft.invalidPlayPickCount} min={0} max={5} onChange={(v) => set({ invalidPlayPickCount: v })} />
           </Section>
 
-          <Section level="🔗" title="Share it" sub="A code friends paste on their phones — no account, offline.">
+          <Section level="🔗" title="Share it" sub="A code friends paste on their devices — no account, offline.">
             <textarea
               readOnly
               rows={3}
@@ -486,7 +480,7 @@ export function RulesBuilder({
             </button>
           </Section>
 
-          <div class="mt-5 flex flex-col gap-2 pb-2">
+          <div class="mt-5 flex flex-col gap-2 pb-2 md:col-span-2 lg:sticky lg:bottom-0 lg:z-10 lg:bg-green-950/90 lg:pt-3 lg:backdrop-blur">
             {problems.length > 0 && (
               <p class="rounded-2xl border border-red-400/40 bg-red-400/10 p-3 text-[11px] leading-relaxed text-red-200" role="alert">
                 {problems[0]}
@@ -511,12 +505,12 @@ export function RulesBuilder({
                   confirmDelete ? "border-red-400 bg-red-400/15 text-red-200" : "border-white/10 bg-white/5"
                 }`}
               >
-                {confirmDelete ? "Tap again to delete this profile" : "🗑 Delete this profile"}
+                {confirmDelete ? "Press again to delete this profile" : "🗑 Delete this profile"}
               </button>
             )}
           </div>
         </div>
       </div>
-    </div>
+    </ScreenFrame>
   );
 }

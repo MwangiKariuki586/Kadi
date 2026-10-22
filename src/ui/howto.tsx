@@ -3,6 +3,7 @@ import type { ComponentChildren } from "preact";
 import type { Card, Suit } from "../engine/cards";
 import { passOrPick, playCombo, validateCombo } from "../engine/validator";
 import { CardView, Pill } from "./components";
+import { PageHeader, ScreenFrame } from "./layout";
 import { haptics } from "./haptics";
 import { sfx } from "./sounds";
 import { reasonText } from "./reasons";
@@ -77,7 +78,7 @@ export function TryBoard({ board }: { board: PlayBoard }) {
 
   const onPlay = () => {
     if (selected.length === 0) {
-      setResult({ tone: "bad", text: "Tap a card first, then Play." });
+      setResult({ tone: "bad", text: "Pick a card first, then Play." });
       return;
     }
     const s = buildPracticeTable(board.setup);
@@ -343,36 +344,29 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
   };
 
   return (
-    <div class="h-dvh overflow-hidden bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col safe-top safe-bottom">
-      <div class="mx-auto flex h-full w-full max-w-md flex-col px-6 pb-4 pt-4">
-        <div class="shrink-0">
-          <button
-            type="button"
-            aria-label="Back"
-            onClick={onBack}
-            class="text-white/60 text-lg leading-none"
-          >
-            <span aria-hidden="true" class="font-black text-2xl">⬅</span>
-          </button>
-          <h2 class="mt-2 text-3xl font-black text-yellow-300">How to play</h2>
-          <p class="mt-0.5 text-xs text-white/60">
-            Tap through the lessons every board is real Kadi.
-          </p>
-          <div class="mt-2 flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+    <ScreenFrame width="xl">
+      <div class="flex h-full min-h-0 flex-col lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-10">
+        <aside class="shrink-0">
+          <PageHeader
+            title="How to play"
+            subtitle="Step through the lessons — every board is real Kadi."
+            onBack={onBack}
+          />
+          <div class="mt-2 flex gap-1.5 overflow-x-auto no-scrollbar pb-1 lg:mt-6 lg:flex-col lg:items-stretch lg:overflow-visible">
             {CHIPS.map((c) => (
               <button
                 key={c.id}
                 type="button"
                 onClick={() => jump(c.id)}
-                class="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white/80 active:scale-95 transition"
+                class="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white/80 transition hover:bg-white/15 active:scale-95 lg:rounded-xl lg:px-3 lg:py-2 lg:text-left lg:text-xs"
               >
                 {c.label}
               </button>
             ))}
           </div>
-        </div>
+        </aside>
 
-        <div class="mt-2 min-h-0 flex-1 overflow-y-auto no-scrollbar overscroll-contain pb-2">
+        <div class="mt-2 min-h-0 flex-1 overflow-y-auto no-scrollbar overscroll-contain pb-2 lg:mt-0 lg:pr-2">
           <Section
             id="goal"
             title="🎯 Goal"
@@ -400,7 +394,7 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
           <Section
             id="match"
             title="🃏 Matching"
-            line="Match the top card's suit or rank. Tap cards in order the first one must match."
+            line="Match the top card's suit or rank. Select cards in order — the first one must match."
           >
             <TryBoard board={playBoard("match-one")} />
             <TryBoard board={playBoard("combo-order")} />
@@ -465,6 +459,6 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
           </Section>
         </div>
       </div>
-    </div>
+    </ScreenFrame>
   );
 }
