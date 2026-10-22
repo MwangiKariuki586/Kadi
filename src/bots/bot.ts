@@ -1,6 +1,6 @@
 import type { Card, Suit } from '../engine/cards';
 import { isJumpRank, isKickbackRank, isPenaltyRank, isWinningRank } from '../engine/rules';
-import { isAceAnswerCombo, isSuperAceCombo, comboLeavesQuestionOpen, isWinnableShape, legalSingles, validateCombo } from '../engine/validator';
+import { isAceAnswerCombo, isSuperAceCombo, comboLeavesQuestionOpen, canCallKadi, canDeclareKadi, canFinishNow, hasValidKadiCall, legalSingles, validateCombo, winningDumpOrder } from '../engine/validator';
 import { topCard, type GameState } from '../engine/state';
 
 // Re-export for single import path (validator lives in engine/validator)
@@ -105,18 +105,16 @@ function withDeclarations(
   return { declaredSuit: ace ? bestSuit(rest) : null, requestedCard: null };
 }
 
-/** A seat is a live threat once it declares with 1-3 cards left (like friends ganging up). */
+/** A seat is a live threat when it has a valid call and can finish now. */
 export function isDeclaredThreat(state: GameState, playerIndex: number): boolean {
-  if (state.gameOver) return false;
-  const hand = state.hands[playerIndex];
-  return state.kadiCalls[playerIndex] && hand.length > 0 && hand.length <= 3;
+  return canFinishNow(state, playerIndex);
 }
 
 export function shouldDeclareKadi(state: GameState, playerIndex: number): boolean {
-  if (state.kadiCalls[playerIndex]) return false;
   // Single definition of "legally winnable hand" lives in the engine so
-  // humans (tryDeclareKadi) and bots agree. Ace does NOT answer Q here.
-  return isWinnableShape(state.hands[playerIndex], state.config);
+  // humans (tryDeclareKadi) and bots agree. canDeclareKadi also covers silent
+  // tables, cardless players, and finished games.
+  return canDeclareKadi(state, playerIndex) && canCallKadi(state, playerIndex);
 }
 
 export function chooseMove(
@@ -126,6 +124,14 @@ export function chooseMove(
   random: () => number = Math.random,
 ): BotMove | null {
   const hand = state.hands[playerIndex];
+
+  // 0. A valid call plus a whole-hand winner: take the win now.
+  if (hasValidKadiCall(state, playerIndex)) {
+    const winningDump = winningDumpOrder(state, playerIndex);
+    if (winningDump) {
+      return { cards: winningDump, ...withDeclarations(state, hand, winningDump) };
+    }
+  }
 
   // 1. Penalty owed: stack (color-family gate) > block > take.
   if (state.pendingPenalty > 0) {

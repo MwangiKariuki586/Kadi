@@ -51,7 +51,7 @@ export interface RulesConfig {
   unansweredQuestionPickCount: number;
   /** Ranks that alone can finish a game. */
   winningRanks: Rank[];
-  /** Must say Niko Kadi on an earlier turn to win. */
+  /** Must say Niko Kadi before finishing; same-turn calls count. */
   mustSayNikoKadi: boolean;
   /** Someone cardless at the table blocks every win. */
   cardlessBlocksWin: boolean;
@@ -73,10 +73,8 @@ export interface RulesConfig {
   strictWrongPlay: boolean;
   /** Going out clean without a valid prior Kadi call: win denied, draw this many. */
   lateCallPickCount: number;
-  /** Calling Kadi without a legally winnable hand: call rejected, draw this many. */
+  /** Calling Kadi without a legally winnable hand: call rejected, draw this many, locked until next turn. */
   falseKadiPickCount: number;
-  /** Letting the 2s KADI call-window expire: draw this many. */
-  kadiDelayPickCount: number;
   /** Super-ace mode (lobby toggle): the special ace ALONE can demand an exact card. */
   superAceEnabled: boolean;
   /** The inherently "special" ace when superAceEnabled (usually spades). */
@@ -119,7 +117,6 @@ export const STANDARD_MAUA: RulesConfig = {
   strictWrongPlay: false,
   lateCallPickCount: 1,
   falseKadiPickCount: 1,
-  kadiDelayPickCount: 1,
   superAceEnabled: false,
   specialAceSuit: 'spades',
   superAceMinAces: 2,
@@ -201,7 +198,6 @@ export function validateRulesConfig(c: RulesConfig): string[] {
     ['unanswered question', c.unansweredQuestionPickCount],
     ['late Niko Kadi call', c.lateCallPickCount],
     ['false Kadi call', c.falseKadiPickCount],
-    ['slow Kadi call', c.kadiDelayPickCount],
     ['illegal play', c.invalidPlayPickCount],
     ['unmet exact demand', c.unmetRequestPickCount],
   ];

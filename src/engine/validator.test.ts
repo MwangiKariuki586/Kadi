@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BACKSTREET_PESA, BOM_NI_BOM, STANDARD_MAUA, migrateRules } from './rules';
-import { createGame, type GameState } from './state';
-import { canFinishNow, declareKadi, fineKadiDelay, isSuperAceCombo, isWinnableShape, legalSingles, passOrPick, playCombo, resolveWrongPlay, tryDeclareKadi, validateCombo } from './validator';
+import { advanceTurn, createGame, type GameState } from './state';
+import { canCallKadi, canDumpWinningNow, canFinishNow, declareKadi, isKadiLocked, isSuperAceCombo, legalSingles, passOrPick, playCombo, resolveWrongPlay, tryDeclareKadi, validateCombo } from './validator';
 import type { Card } from './cards';
 
 const C = (rank: Card['rank'], suit: Card['suit'] = 'hearts', id?: string): Card => ({
@@ -19,6 +19,16 @@ function rigged(hand0: Card[], top: Card, rest: Card[] = [], numPlayers = 2, con
   s.pendingSkip = 0;
   s.activeSuit = null;
   return s;
+}
+
+function callable(hand0: Card[], config = STANDARD_MAUA): boolean {
+  const s = rigged(hand0, C('9', 'hearts'), [C('4', 'clubs')], 2, config);
+  return canCallKadi(s, 0);
+}
+
+function dumpable(hand0: Card[], config = STANDARD_MAUA): boolean {
+  const s = rigged(hand0, C('9', 'hearts'), [C('4', 'clubs')], 2, config);
+  return canDumpWinningNow(s, 0);
 }
 
 describe('starter + matching', () => {
@@ -71,15 +81,15 @@ describe('question + answer', () => {
     expect(s.lastEffect).toMatch(/No call, fined \+1/);
   });
 
-  it('same-turn declaration is late: fined, not won', () => {
+  it('same-turn declaration counts when pressed before the dump', () => {
     const fin = C('5', 'hearts', 'f1');
     const s = rigged([fin, C('4', 'clubs', 'k')], C('9', 'hearts'), [C('6', 'spades')]);
-    declareKadi(s, 0); // same turn, too late
+    expect(declareKadi(s, 0)).toBe(true);
     s.hands[0] = [fin];
     const r = playCombo(s, 0, [fin]);
-    expect(r.won).toBeFalsy();
-    expect(r.fined).toBe(1);
-    expect(s.gameOver).toBe(false);
+    expect(r.won).toBe(true);
+    expect(r.fined).toBeFalsy();
+    expect(s.gameOver).toBe(true);
   });
 
   it('declared-earlier clean dump still wins with no fine', () => {
@@ -480,7 +490,7 @@ describe('jump + kickback', () => {
 });
 
 describe('winning, Niko Kadi', () => {
-  it('must declare Kadi on an earlier turn and finish on winning card', () => {
+  it('must declare Kadi before finishing on a winning card', () => {
     const fin = C('5', 'hearts', 'f1');
     const s = rigged([fin], C('9', 'hearts'), [C('4', 'clubs'), C('6', 'spades')]);
     // no Kadi call: empties hand but does NOT win (becomes cardless)
@@ -570,11 +580,12 @@ describe('canFinishNow (live KADI! threat)', () => {
     expect(canFinishNow(s, 0)).toBe(true);
   });
 
-  it('false without a declaration, or declared on the same turn', () => {
+  it('false without a declaration; true as soon as it is called same-turn', () => {
     const s = rigged([C('5', 'hearts', 'f')], C('9', 'hearts'), [C('4', 'clubs')]);
+    expect(canDumpWinningNow(s, 0)).toBe(true);
     expect(canFinishNow(s, 0)).toBe(false);
-    declareKadi(s, 0); // same turn, not yet eligible
-    expect(canFinishNow(s, 0)).toBe(false);
+    declareKadi(s, 0);
+    expect(canFinishNow(s, 0)).toBe(true);
   });
 
   it('false while a penalty, skip or reversal debt is outstanding', () => {
@@ -925,34 +936,35 @@ describe('super ace', () => {
 });
 
 describe('kadi declaration consequences', () => {
-  it('winnable shape: plain winners, same-suit Q/8 answers, and Ace answers', () => {
-    expect(isWinnableShape([C('5', 'hearts', 'a')], STANDARD_MAUA)).toBe(true);
-    expect(isWinnableShape([C('5', 'hearts', 'a'), C('6', 'spades', 'b')], STANDARD_MAUA)).toBe(true);
-    expect(
-      isWinnableShape([C('Q', 'hearts', 'q'), C('5', 'hearts', 'a')], STANDARD_MAUA),
-    ).toBe(true);
+  it('callable: real winning combos, including same-rank 4+ and Q stacks', () => {
+    expect(callable([C('5', 'hearts', 'a')])).toBe(true);
+    expect(callable([C('5', 'hearts', 'a'), C('5', 'diamonds', 'b')])).toBe(true);
+    expect(callable([C('5', 'hearts', 'a'), C('5', 'diamonds', 'b'), C('5', 'spades', 'c'), C('5', 'clubs', 'd')])).toBe(true);
+    expect(callable([C('Q', 'hearts', 'q'), C('5', 'hearts', 'a')])).toBe(true);
+    // Question stacks: the last question needs the answer; all questions may stack.
+    expect(callable([C('Q', 'hearts', 'q1'), C('Q', 'spades', 'q2'), C('5', 'spades', 'a')])).toBe(true);
     // An Ace answers any question regardless of suit, and wins ending on it.
-    expect(isWinnableShape([C('Q', 'spades', 'q'), C('A', 'diamonds', 'a')], STANDARD_MAUA)).toBe(true);
-    // Lone question, lone Ace, oversized hand, and non-closers are not declarable.
-    expect(isWinnableShape([C('Q', 'hearts', 'q')], STANDARD_MAUA)).toBe(false);
-    expect(
-      isWinnableShape(
-        [C('5', 'hearts', 'a'), C('6', 'spades', 'b'), C('7', 'clubs', 'c'), C('9', 'diamonds', 'd')],
-        STANDARD_MAUA,
-      ),
-    ).toBe(false);
-    expect(isWinnableShape([C('J', 'hearts', 'j')], STANDARD_MAUA)).toBe(false);
-    expect(isWinnableShape([C('K', 'hearts', 'k')], STANDARD_MAUA)).toBe(false);
-    expect(isWinnableShape([C('A', 'spades', 'a')], STANDARD_MAUA)).toBe(false);
-    expect(isWinnableShape([C('2', 'hearts', 't')], STANDARD_MAUA)).toBe(false);
-    expect(isWinnableShape([C('A', 'clubs', 'a'), C('10', 'diamonds', 'n')], STANDARD_MAUA)).toBe(false);
+    expect(callable([C('Q', 'spades', 'q'), C('A', 'diamonds', 'a')])).toBe(true);
+  });
+
+  it('not callable: mixed chains, mixed Aces, lone questions/penalties, oversized hands', () => {
+    // Different ranks need a same-suit chain to be one legal combo.
+    expect(callable([C('5', 'hearts', 'a'), C('6', 'spades', 'b')])).toBe(false);
+    expect(callable([C('Q', 'hearts', 'q')])).toBe(false);
+    expect(callable([C('J', 'hearts', 'j')])).toBe(false);
+    expect(callable([C('K', 'hearts', 'k')])).toBe(false);
+    expect(callable([C('A', 'spades', 'a')])).toBe(false);
+    expect(callable([C('2', 'hearts', 't')])).toBe(false);
+    expect(callable([C('A', 'clubs', 'a'), C('10', 'diamonds', 'n')])).toBe(false);
+    expect(callable([C('Q', 'hearts', 'q'), C('A', 'spades', 'a'), C('5', 'hearts', 'x')])).toBe(false);
+    expect(callable([C('Q', 'hearts', 'q'), C('A', 'spades', 'a'), C('A', 'clubs', 'b')])).toBe(false);
+    const eight = Array.from({ length: 8 }, (_, i) => C('5', 'hearts', `w${i}`));
+    expect(callable(eight)).toBe(false);
   });
 
   it('wrong-suit plain answers stay unwinnable; Ace answers ignore suit', () => {
-    expect(
-      isWinnableShape([C('Q', 'spades', 'q'), C('5', 'diamonds', 'a')], STANDARD_MAUA),
-    ).toBe(false);
-    expect(isWinnableShape([C('Q', 'spades', 'q'), C('A', 'diamonds', 'a')], STANDARD_MAUA)).toBe(true);
+    expect(callable([C('Q', 'spades', 'q'), C('5', 'diamonds', 'a')])).toBe(false);
+    expect(callable([C('Q', 'spades', 'q'), C('A', 'diamonds', 'a')])).toBe(true);
   });
 
   it('Q + Ace wins the round when declared earlier (suit auto-follows the Ace, no declaration)', () => {
@@ -993,7 +1005,7 @@ describe('kadi declaration consequences', () => {
   });
 
   it('true call sets the flag with no fine; turn does not advance', () => {
-    const s = rigged([C('5', 'hearts', 'a'), C('6', 'spades', 'b')], C('9', 'hearts'), [C('4', 'clubs')]);
+    const s = rigged([C('5', 'hearts', 'a'), C('5', 'diamonds', 'b')], C('9', 'hearts'), [C('4', 'clubs')]);
     s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
     const turn = s.turnNumber;
     const current = s.currentPlayer;
@@ -1006,7 +1018,7 @@ describe('kadi declaration consequences', () => {
     expect(s.currentPlayer).toBe(current);
   });
 
-  it('false call is fined immediately, sets no flag, keeps the turn', () => {
+  it('false call is fined once, sets no flag, and locks the button for the turn', () => {
     const s = rigged(
       [C('5', 'hearts', 'a'), C('J', 'spades', 'j'), C('4', 'clubs', 'k'), C('6', 'diamonds', 'o')],
       C('9', 'hearts'),
@@ -1017,17 +1029,32 @@ describe('kadi declaration consequences', () => {
     const r = tryDeclareKadi(s, 0);
     expect(r.ok).toBe(false);
     expect(r.falseCall).toBe(true);
+    expect(r.locked).toBe(true);
     expect(r.fined).toBe(1);
     expect(s.kadiCalls[0]).toBe(false);
     expect(s.hands[0].length).toBe(5);
     expect(s.turnNumber).toBe(turn);
     expect(s.currentPlayer).toBe(0);
+    expect(isKadiLocked(s, 0)).toBe(true);
+
+    // Mashing the buzzer cannot farm repeat fines.
+    const again = tryDeclareKadi(s, 0);
+    expect(again).toMatchObject({ ok: false, locked: true });
+    expect(again.fined).toBeFalsy();
+    expect(s.hands[0].length).toBe(5);
+
+    // The lock clears when the offender's next turn starts.
+    advanceTurn(s);
+    expect(isKadiLocked(s, 0)).toBe(true);
+    advanceTurn(s);
+    expect(s.currentPlayer).toBe(0);
+    expect(isKadiLocked(s, 0)).toBe(false);
   });
 
   it('picking up cards voids the KADI claim, stale calls cannot win later', () => {
     // Declare with a winnable hand, then eat a penalty: the call is void.
     const s = rigged(
-      [C('5', 'hearts', 'a'), C('6', 'spades', 'b')],
+      [C('5', 'hearts', 'a'), C('5', 'diamonds', 'b')],
       C('9', 'hearts'),
       [C('2', 'hearts', 't'), C('4', 'clubs', 'keeper')],
     );
@@ -1051,14 +1078,15 @@ describe('kadi declaration consequences', () => {
 
   it('playing without drawing keeps the claim; bare questions void it', () => {
     const s = rigged(
-      [C('5', 'hearts', 'a'), C('6', 'spades', 'b'), C('4', 'clubs', 'k')],
+      [C('5', 'hearts', 'a'), C('5', 'diamonds', 'b'), C('4', 'clubs', 'k')],
       C('9', 'hearts'),
       [C('4', 'spades')],
     );
     s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    s.hands[0] = [C('5', 'hearts', 'a'), C('5', 'diamonds', 'b')];
     expect(tryDeclareKadi(s, 0).ok).toBe(true);
     // Shed one card, draw nothing: claim survives.
-    s.hands[0] = [C('5', 'hearts', 'a'), C('6', 'spades', 'b'), C('4', 'clubs', 'k')];
+    s.hands[0] = [C('5', 'hearts', 'a'), C('5', 'diamonds', 'b'), C('4', 'clubs', 'k')];
     s.discardPile = [C('5', 'clubs', 'top')];
     playCombo(s, 0, [s.hands[0].find((c) => c.id === 'k')!]);
     expect(s.kadiCalls[0]).toBe(true);
@@ -1070,42 +1098,24 @@ describe('kadi declaration consequences', () => {
     expect(s.kadiCalls[0]).toBe(false);
   });
 
-  it('delay fine draws the configured count, falls back, honors zero', () => {
-    const s = rigged([C('5', 'hearts', 'a'), C('6', 'spades', 'b')], C('9', 'hearts'), [C('4', 'clubs')]);
-    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
-    expect(fineKadiDelay(s, 0)).toBe(1);
-    expect(s.hands[0].length).toBe(3);
-    expect(s.currentPlayer).toBe(0);
-
-    const cfg = { ...STANDARD_MAUA, kadiDelayPickCount: 2 };
-    const s2 = rigged([C('5', 'hearts', 'a')], C('9', 'hearts'), [C('4', 'clubs')], 2, cfg);
-    s2.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
-    expect(fineKadiDelay(s2, 0)).toBe(2);
-
-    // Old saves missing the field fall back to the false-call fine.
-    const legacy = { ...STANDARD_MAUA, kadiDelayPickCount: undefined, falseKadiPickCount: 3 } as unknown as typeof STANDARD_MAUA;
-    const s3 = rigged([C('5', 'hearts', 'a')], C('9', 'hearts'), [C('4', 'clubs')], 2, legacy);
-    s3.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
-    expect(fineKadiDelay(s3, 0)).toBe(3);
-
-    const cfg0 = { ...STANDARD_MAUA, kadiDelayPickCount: 0 };
-    const s4 = rigged([C('5', 'hearts', 'a')], C('9', 'hearts'), [C('4', 'clubs')], 2, cfg0);
-    s4.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
-    expect(fineKadiDelay(s4, 0)).toBe(0);
-    expect(s4.hands[0].length).toBe(1);
+  it('silent-finish tables need no call: no buzzer, direct dump wins', () => {
+    const silent = { ...STANDARD_MAUA, mustSayNikoKadi: false };
+    const s = rigged([C('5', 'hearts', 'a')], C('9', 'hearts'), [C('4', 'clubs')], 2, silent);
+    expect(canCallKadi(s, 0)).toBe(true);
+    expect(canFinishNow(s, 0)).toBe(true);
+    expect(tryDeclareKadi(s, 0)).toMatchObject({ ok: false });
+    const r = playCombo(s, 0, [s.hands[0][0]]);
+    expect(r.won).toBe(true);
+    expect(s.gameOver).toBe(true);
   });
 
-  it('late-press order (fine first, then declare) keeps the flag', () => {
-    // The UI fines a late shout before declaring: with no flag set yet the
-    // shared pickup rule cannot void anything, so the declaration sticks.
-    const s = rigged([C('5', 'hearts', 'a'), C('6', 'spades', 'b')], C('9', 'hearts'), [C('4', 'clubs')]);
-    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
-    expect(fineKadiDelay(s, 0)).toBe(1);
-    expect(s.kadiCalls[0]).toBe(false);
-    expect(declareKadi(s, 0)).toBe(true);
-    expect(s.kadiCalls[0]).toBe(true);
-    expect(s.hands[0].length).toBe(3);
-    expect(s.currentPlayer).toBe(0);
+  it('seven-card dump is callable; eight is beyond the exact search', () => {
+    const seven = Array.from({ length: 7 }, (_, i) => C('5', i % 2 ? 'diamonds' : 'hearts', `s${i}`));
+    expect(callable(seven)).toBe(true);
+    expect(dumpable(seven)).toBe(true);
+    const eight = Array.from({ length: 8 }, (_, i) => C('5', i % 2 ? 'diamonds' : 'hearts', `e${i}`));
+    expect(callable(eight)).toBe(false);
+    expect(dumpable(eight)).toBe(false);
   });
 
   it('custom false-call fine respected; zero means no draw but still rejected', () => {
@@ -1298,9 +1308,9 @@ describe('must end on one (single-card finish)', () => {
     expect(s.gameOver).toBe(false);
   });
 
-  it('shape and threat checks require a lone card', () => {
-    expect(isWinnableShape([C('5', 'hearts', 'a')], ONE)).toBe(true);
-    expect(isWinnableShape([C('5', 'hearts', 'a'), C('6', 'spades', 'b')], ONE)).toBe(false);
+  it('call and threat checks require a lone card', () => {
+    expect(callable([C('5', 'hearts', 'a')], ONE)).toBe(true);
+    expect(callable([C('5', 'hearts', 'a'), C('6', 'spades', 'b')], ONE)).toBe(false);
     const two = rigged(
       [C('5', 'hearts', 'a'), C('6', 'spades', 'b')],
       C('9', 'hearts'),

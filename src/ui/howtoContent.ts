@@ -188,7 +188,7 @@ export const PLAY_BOARDS: PlayBoard[] = [
   {
     kind: "play",
     id: "win-clean",
-    prompt: "You said Niko Kadi last turn. Dump both 5s and win.",
+    prompt: "You called Niko Kadi. Dump both 5s and win.",
     setup: {
       top: cs("5", "hearts"),
       hand: [cs("5", "clubs"), cs("5", "diamonds")],
@@ -228,7 +228,7 @@ export const PLAY_BOARDS: PlayBoard[] = [
       ["5-clubs", "5-diamonds"],
       ["5-diamonds", "5-clubs"],
     ],
-    winText: "No call, no win fined +1. Shout Niko Kadi a turn earlier.",
+    winText: "No call, no win fined +1. Shout Niko Kadi first, then dump in the same turn.",
     expect: "fined",
     wrongs: [],
   },
@@ -259,12 +259,12 @@ export const CHOICE_BOARDS: ChoiceBoard[] = [
       {
         label: "Shout Niko Kadi 📢",
         correct: true,
-        feedback: "Perfect! Shout now, finish next turn.",
+        feedback: "Perfect! Call first, then dump both 5s this same turn.",
       },
       {
         label: "Dump both now",
         correct: false,
-        feedback: "No call, no win you'd kula +1. Shout first, finish next turn.",
+        feedback: "No call, no win you'd kula +1. Shout first, then dump.",
       },
     ],
   },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  isWinnableShape,
+  canCallKadi,
   passOrPick,
   playCombo,
   tryDeclareKadi,
@@ -74,14 +74,14 @@ describe('how to play boards are engine-accurate', () => {
   it('kadi-shout-now: 5♣ + 5♦ is declarable', () => {
     const board = CHOICE_BOARDS.find((b) => b.id === 'kadi-shout-now')!;
     const s = buildPracticeTable({ top: board.hand[0], hand: board.hand });
-    expect(isWinnableShape(s.hands[0], s.config)).toBe(true);
+    expect(canCallKadi(s, 0)).toBe(true);
     expect(tryDeclareKadi(s, 0).ok).toBe(true);
   });
 
   it('kadi-too-early: J♣ + 5♦ is a fined false call', () => {
     const board = CHOICE_BOARDS.find((b) => b.id === 'kadi-too-early')!;
     const s = buildPracticeTable({ top: board.hand[0], hand: board.hand });
-    expect(isWinnableShape(s.hands[0], s.config)).toBe(false);
+    expect(canCallKadi(s, 0)).toBe(false);
     const r = tryDeclareKadi(s, 0);
     expect(r.ok).toBe(false);
     expect(r.falseCall).toBe(true);

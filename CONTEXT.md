@@ -57,8 +57,9 @@ Rules:
 ## 4. Rules engine & locked ruleset (Standard Maua base)
 
 Deck: 52 + 2 Jokers in Standard (Strict = Standard minus Jokers only). Deal 4 each. Starter is
-never 2/3/J/Q/8/K/A/Joker. Win = dump the whole hand in one move ending on 4/5/6/7/9/10,
-declared on a strictly earlier turn (`Niko Kadi`), no cardless blocker.
+never 2/3/J/Q/8/K/A/Joker. Win = call `Niko Kadi`, then dump the whole hand in one move
+ending on 4/5/6/7/9/10, with no cardless blocker. The call may happen on the same turn,
+but it must land before the dump.
 
 ### Decision log (each debated during build)
 
@@ -84,19 +85,23 @@ declared on a strictly earlier turn (`Niko Kadi`), no cardless blocker.
    selected cards show 1/2/3 badges. K/J stacks chain by suit-or-rank; next player follows
    the net calculation (J+J in 3P anti-clockwise returns to self; K+K restores direction).
    Bots try pairs in both orders.
-7. **KADI! badge = declared AND finishable now.** `canFinishNow` (bounded permutation search,
-   cap 7, recomputed per move) requires prior-turn declaration, no outstanding debts,
-   a legal full-hand winning dump vs the current table, and no cardless blocker. Stops
-   6-card "KADI!" ghosts. The Kadi! *button* stays free (declaring early is legal; the win
-   still requires the earlier turn) — speech act vs verified threat are separate by design.
-8. **No win without the call — late calls fined.** Clean dumps without valid prior declaration:
-   dump stands, win denied, draw `lateCallPickCount` (default 1) instead of wandering
-   cardless. Non-winning dumps keep the legacy cardless path.
+7. **KADI! badge = valid call AND finishable now.** `canFinishNow` (bounded permutation search,
+   cap 7, recomputed per move) requires a call (same-turn is enough), no outstanding debts,
+   a legal full-hand winning dump vs the current table, and no cardless blocker. `canCallKadi`
+   ignores the current table and checks the future winning dump; it allows 4+ same-rank cards
+   and question stacks, and rejects mixed Aces, penalties, bare questions, and chains that do
+   not actually go out. The button stays manual, but a false call fines and locks it until the
+   offender's next turn.
+8. **No win without the call, and no delay window.** Press KADI first, then dump; same-turn
+   works. Clean dumps with no call: dump stands, win denied, draw `lateCallPickCount` (default
+   1) instead of wandering cardless. Calling with no winnable hand: draw `falseKadiPickCount`
+   once and lock the button. The old 2s window and delay fine were removed.
 9. **Strict tables (opt-in).** Toggle (default off): illegal submissions stay tappable and are
    fined via the previously-dormant `penaliseIllegalPlay` (draw + turn passes). Casual tables
    keep protective disabled-Play + inline reason. Count reuses `invalidPlayPickCount`.
 10. **Kadi! button kept manual.** Gating/auto-declaring were rejected: timing skill must mean
     something, and auto would gut the iconic callout (esp. for future human multiplayer).
+    Silent-finish tables (`mustSayNikoKadi: false`) hide the requirement and disable the call.
 
 ## 5. Bots
 

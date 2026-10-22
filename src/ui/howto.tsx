@@ -385,7 +385,7 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
           <Section
             id="kadi"
             title="📢 Niko Kadi"
-            line="Shout Niko Kadi the turn before you finish or the win doesn't count. Early or late, you kula +1."
+            line="Shout Niko Kadi before you dump your whole hand. Same turn is fine. A false call makes you kula +1 and locks the button until your next turn."
           >
             <ChoiceBoardView board={choiceBoard("kadi-shout-now")} />
             <ChoiceBoardView board={choiceBoard("kadi-too-early")} />
@@ -450,7 +450,7 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
           <Section
             id="win"
             title="🏆 Winning"
-            line="Dump everything in one move, ending clean, with Niko Kadi said a turn earlier."
+            line="Dump everything in one move, ending clean. Shout Niko Kadi first; same turn counts."
           >
             <TryBoard board={playBoard("win-clean")} />
             <TryBoard board={playBoard("win-ace-answer")} />
