@@ -68,9 +68,15 @@ test("shortcut hints are exposed and the help dialog toggles with ?", async ({
   await expect(dialog).toBeHidden();
 });
 
-test("K declares KADI", async ({ page }) => {
+test("K declares KADI or locks a false call", async ({ page }) => {
+  const buzzer = page.getByTestId("kadi-buzzer");
+  await expect(buzzer).toHaveAttribute("aria-label", /KADI/);
+  await expect(buzzer).toBeEnabled();
+
   await page.keyboard.press("k");
   await expect(page.getByTestId("feed-panel")).toContainText(/KADI/);
+  await expect(buzzer).toHaveAttribute("data-kadi-state", /^(called|locked)$/);
+  await expect(buzzer).toBeDisabled();
 });
 
 test("D picks or accepts the pending consequence on your turn", async ({

@@ -127,12 +127,14 @@ export function describePlay(
   const labels = played.map(cardLabel).join(' + ');
   const turn = before.turn;
 
-  evts.push(mk(turn, actor, '▶', `${actor} ${v(actor, 'plays', 'play')} ${labels}`, 'play'));
-
-  // Kadi declaration landed with this turn (bots declare inside their move).
+  // Kadi declaration landed with this turn (same-turn calls count, so it
+  // narrates before the dump).
   if (after.kadiCalls[me] && !before.kadi[me]) {
-    evts.push(mk(turn, actor, '📢', `${actor} ${isVerb(actor)} KADI! One clean move to win. Stop them!`, 'kadi'));
+    const closer = actor === 'You' ? 'Go out now!' : 'One clean move to win. Stop them!';
+    evts.push(mk(turn, actor, '📢', `${actor} ${isVerb(actor)} KADI! ${closer}`, 'kadi'));
   }
+
+  evts.push(mk(turn, actor, '▶', `${actor} ${v(actor, 'plays', 'play')} ${labels}`, 'play'));
 
   // Penalty consequence: fresh, stacked, or neutralised. The debt always
   // follows the penalty cards played, never the top card's face value.
@@ -273,7 +275,8 @@ export function describePlay(
   }
 
   if (outcome.won) {
-    evts.push(mk(turn, actor, '🏆', `${actor} ${v(actor, 'finishes', 'finish')} clean. Niko Kadi wins the round!`, 'win'));
+    const winNote = after.config.mustSayNikoKadi === false ? 'Round won!' : 'Niko Kadi wins the round!';
+    evts.push(mk(turn, actor, '🏆', `${actor} ${v(actor, 'finishes', 'finish')} clean. ${winNote}`, 'win'));
   } else if (outcome.fined) {
     evts.push(mk(turn, actor, '📢', `${actor} ${v(actor, 'goes', 'go')} out without the call, fined +${outcome.fined}`, 'penalty'));
   } else if (outcome.cardless) {
@@ -290,23 +293,29 @@ export function describePick(
   names: string[],
   picked: number,
   skipped: boolean,
+  kadiVoided = false,
 ): FeedEvent[] {
   const actor = names[me] ?? `Player ${me + 1}`;
   const turn = before.turn;
+  const evts: FeedEvent[] = [];
   if (skipped) {
     if (before.pendingReverse > 0) {
-      return [mk(turn, actor, '↺', `${actor} ${v(actor, 'sits', 'sit')} out the reversal`, 'reverse')];
+      evts.push(mk(turn, actor, '↺', `${actor} ${v(actor, 'sits', 'sit')} out the reversal`, 'reverse'));
+    } else {
+      evts.push(mk(turn, actor, '⏭', `${actor} ${v(actor, 'sits', 'sit')} out the jump`, 'skip'));
     }
-    return [mk(turn, actor, '⏭', `${actor} ${v(actor, 'sits', 'sit')} out the jump`, 'skip')];
-  }
-  if (before.pendingPenalty > 0) {
-    return [mk(turn, actor, '🔥', `${actor} ${v(actor, 'eats', 'eat')} +${picked}`, 'penalty')];
-  }
-  if (before.activeCardRequest) {
+  } else if (before.pendingPenalty > 0) {
+    evts.push(mk(turn, actor, '🔥', `${actor} ${v(actor, 'eats', 'eat')} +${picked}`, 'penalty'));
+  } else if (before.activeCardRequest) {
     const req = before.activeCardRequest;
-    return [mk(turn, actor, '⚡', `No ${req.rank}, ${actor} ${v(actor, 'picks', 'pick')} ${picked}`, 'demand')];
+    evts.push(mk(turn, actor, '⚡', `No ${req.rank}, ${actor} ${v(actor, 'picks', 'pick')} ${picked}`, 'demand'));
+  } else {
+    evts.push(mk(turn, actor, '🃏', `${actor} ${v(actor, 'picks', 'pick')} a card`, 'draw'));
   }
-  return [mk(turn, actor, '🃏', `${actor} ${v(actor, 'picks', 'pick')} a card`, 'draw')];
+  if (kadiVoided) {
+    evts.push(mk(turn, actor, '📢', `${actor} ${v(actor, 'drew', 'draw')} and voided the KADI call`, 'kadi'));
+  }
+  return evts;
 }
 
 export function describeWrongPlay(actor: string, played: Card[], fined: number, turn = 0): FeedEvent {
@@ -320,7 +329,8 @@ export function describeWrongPlay(actor: string, played: Card[], fined: number, 
 }
 
 export function describeKadi(name: string, turn = 0): FeedEvent {
-  return mk(turn, name, '📢', `${name} ${name === 'You' ? 'are' : 'is'} KADI! One clean move to win. Stop them!`, 'kadi');
+  const closer = name === 'You' ? 'Go out now!' : 'One clean move to win. Stop them!';
+  return mk(turn, name, '📢', `${name} ${name === 'You' ? 'are' : 'is'} KADI! ${closer}`, 'kadi');
 }
 
 export function describeFalseKadi(name: string, fined: number, turn = 0): FeedEvent {
@@ -328,17 +338,7 @@ export function describeFalseKadi(name: string, fined: number, turn = 0): FeedEv
     turn,
     name,
     '⛔',
-    `${name} ${v(name, 'calls', 'call')} KADI too early, no winnable hand, fined +${fined}`,
-    'penalty',
-  );
-}
-
-export function describeDelayKadi(name: string, fined: number, turn = 0): FeedEvent {
-  return mk(
-    turn,
-    name,
-    '⏱',
-    `${name} slept on KADI, shouted too late, fined +${fined}`,
+    `${name} ${v(name, 'calls', 'call')} KADI too early, no winnable hand, fined +${fined}, locked until next turn`,
     'penalty',
   );
 }
@@ -444,11 +444,11 @@ export function turnCoach(i: CoachInput): CoachMsg {
   if (i.selectedCount > 0 && !i.comboValid) {
     return { icon: '⛔', text: i.invalidReason ?? 'That combo is not legal', tone: 'bad' };
   }
+  if (i.kadiReady) {
+    return { icon: '📢', text: 'Say KADI before your winning dump!', tone: 'ok' };
+  }
   if (i.legalCount === 0) {
     return { icon: '🃏', text: 'No playable card. Pick from the pile', tone: 'action' };
-  }
-  if (i.kadiReady) {
-    return { icon: '📢', text: 'Say KADI, you can finish next turn!', tone: 'ok' };
   }
   if (i.activeSuit) {
     const was = i.prevSuit ? ` (was ${suitName(i.prevSuit)})` : '';

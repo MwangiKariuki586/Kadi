@@ -827,11 +827,13 @@ export function KadiBuzzer({
   urgent,
   disabled,
   title,
+  stateLabel = "ready",
   onPress,
 }: {
   urgent: boolean;
   disabled?: boolean;
   title: string;
+  stateLabel?: "ready" | "urgent" | "called" | "locked" | "off";
   onPress: () => void;
 }) {
   const off = disabled === true;
@@ -840,10 +842,11 @@ export function KadiBuzzer({
       type="button"
       onClick={onPress}
       disabled={off}
-      aria-label="Declare Kadi"
+      aria-label={title}
       aria-keyshortcuts="K"
       title={`${title} (K)`}
       data-testid="kadi-buzzer"
+      data-kadi-state={stateLabel}
       class={`kadi-buzzer ${urgent && !off ? "kadi-buzzer-urgent" : "kadi-buzzer-idle"}${off ? " kadi-buzzer-disabled" : ""}`}
     >
       <span class="kadi-buzzer-shadow" aria-hidden="true" />

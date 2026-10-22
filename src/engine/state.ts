@@ -25,6 +25,8 @@ export interface GameState {
   pendingReverse: number;
   kadiCalls: boolean[];
   kadiCallTurn: number[];
+  /** Players locked out of another KADI press until their next turn. */
+  kadiFalseCalls: boolean[];
   turnNumber: number;
   gameOver: boolean;
   winnerIndex: number | null;
@@ -79,6 +81,7 @@ export function createGame({ numPlayers, config = STANDARD_MAUA, random = Math.r
     pendingReverse: 0,
     kadiCalls: Array(numPlayers).fill(false),
     kadiCallTurn: Array(numPlayers).fill(-1),
+    kadiFalseCalls: Array(numPlayers).fill(false),
     turnNumber: 0,
     gameOver: false,
     winnerIndex: null,
@@ -97,6 +100,8 @@ export function advanceTurn(state: GameState, opts?: { steps?: number; keepSkip?
   }
   state.currentPlayer = next;
   state.turnNumber += 1;
+  // A false call locks only until the offender's next turn starts.
+  if (state.kadiFalseCalls?.[next]) state.kadiFalseCalls[next] = false;
 }
 
 /** Replenish draw pile from discards (keep top). No-op if impossible. */
@@ -117,8 +122,8 @@ export function drawCards(state: GameState, playerIndex: number, count: number):
     drawn.push(c);
   }
   // Picking up cards voids a stale KADI claim: you said you would finish,
-  // then your hand grew, declare again when truly finishing. The late-call
-  // fine path and false-call fine path draw with no flag set (no-op).
+  // then your hand grew, declare again when truly finishing. A false-call
+  // fine draws with no flag set, so this is a no-op there.
   if (drawn.length > 0 && state.kadiCalls[playerIndex]) {
     state.kadiCalls[playerIndex] = false;
     state.kadiCallTurn[playerIndex] = -1;

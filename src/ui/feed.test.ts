@@ -4,7 +4,7 @@ import { STANDARD_MAUA } from '../engine/rules';
 import { createGame, type GameState } from '../engine/state';
 import { passOrPick, playCombo } from '../engine/validator';
 import {
-  describeDeal, describeDelayKadi, describeFalseKadi, describeKadi, describeNotice, describePick, describePlay, describeResume, describeWrongPlay, groupFeed, snapshotState, turnCoach,
+  describeDeal, describeFalseKadi, describeKadi, describeNotice, describePick, describePlay, describeResume, describeWrongPlay, groupFeed, snapshotState, turnCoach,
   type CoachInput,
 } from './feed';
 
@@ -136,18 +136,30 @@ describe('feed', () => {
     expect(text).toMatch(/go(es)? out without the call, fined \+1/);
   });
 
+  it('silent-finish win does not claim a Niko Kadi call', () => {
+    const s = table([C('5', 'hearts', 'f')], C('9', 'hearts'), [C('4', 'clubs')]);
+    s.config = { ...s.config, mustSayNikoKadi: false };
+    const before = snapshotState(s, 0);
+    const r = playCombo(s, 0, [s.hands[0][0]]);
+    const text = describePlay(before, s, 0, NAMES, [C('5', 'hearts', 'f')], { won: r.won })
+      .map((e) => e.text)
+      .join(' | ');
+    expect(text).toMatch(/You finish clean\. Round won!/);
+    expect(text).not.toMatch(/Niko Kadi/);
+  });
+
   it('deal event opens with the starter', () => {
     const s = createGame({ numPlayers: 2, random: () => 0.5 });
     const top = s.discardPile[0];
     expect(describeDeal(top).text).toContain('opens the pile');
   });
 
-  it('kadi call warns the table; false call names the fine', () => {
-    expect(describeKadi('You').text).toMatch(/Stop them/);
+  it('kadi call points the caller at the dump; false call names the fine and lock', () => {
+    expect(describeKadi('You').text).toMatch(/Go out now/);
     expect(describeKadi('You').text).toMatch(/You are KADI/);
-    expect(describeFalseKadi('You', 1).text).toBe('You call KADI too early, no winnable hand, fined +1');
-    expect(describeFalseKadi('Jabari', 1).text).toBe('Jabari calls KADI too early, no winnable hand, fined +1');
-    expect(describeDelayKadi('You', 1).text).toBe('You slept on KADI, shouted too late, fined +1');
+    expect(describeKadi('Jabari').text).toMatch(/Stop them/);
+    expect(describeFalseKadi('You', 1).text).toBe('You call KADI too early, no winnable hand, fined +1, locked until next turn');
+    expect(describeFalseKadi('Jabari', 1).text).toBe('Jabari calls KADI too early, no winnable hand, fined +1, locked until next turn');
   });
 
   it('ace answering a question narrates the follow, never a call', () => {

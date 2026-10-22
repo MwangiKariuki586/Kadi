@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BOM_NI_BOM, STANDARD_MAUA } from '../engine/rules';
 import { createGame } from '../engine/state';
-import { playCombo } from '../engine/validator';
+import { declareKadi, playCombo } from '../engine/validator';
 import { bestSuit, chooseMove, chooseRequestCard, isDeclaredThreat, shouldDeclareKadi } from './bot';
 
 describe('bots', () => {
@@ -71,10 +71,39 @@ describe('bots', () => {
   it('declares Kadi with a winnable hand', () => {
     const s = createGame({ numPlayers: 2, random: () => 0.1 });
     s.hands[0] = [
+      { id: 'q-hearts', suit: 'hearts', rank: 'Q' },
       { id: '5-hearts', suit: 'hearts', rank: '5' },
-      { id: '6-spades', suit: 'spades', rank: '6' },
     ];
     expect(shouldDeclareKadi(s, 0)).toBe(true);
+  });
+
+  it('does not declare when the table allows silent finishes', () => {
+    const s = createGame({
+      numPlayers: 2,
+      config: { ...STANDARD_MAUA, mustSayNikoKadi: false },
+      random: () => 0.1,
+    });
+    s.hands[0] = [
+      { id: 'q-hearts', suit: 'hearts', rank: 'Q' },
+      { id: '5-hearts', suit: 'hearts', rank: '5' },
+    ];
+    expect(shouldDeclareKadi(s, 0)).toBe(false);
+  });
+
+  it('takes the same-turn winning dump after declaring', () => {
+    const s = createGame({ numPlayers: 2, random: () => 0.1 });
+    s.discardPile = [{ id: '9-hearts-top', suit: 'hearts', rank: '9' }];
+    s.hands[0] = [
+      { id: '5-hearts', suit: 'hearts', rank: '5' },
+      { id: '5-diamonds', suit: 'diamonds', rank: '5' },
+    ];
+    s.hands[1] = [{ id: '4-clubs', suit: 'clubs', rank: '4' }];
+    s.currentPlayer = 0;
+    expect(declareKadi(s, 0)).toBe(true);
+    const move = chooseMove(s, 0, 'hard', () => 0.1);
+    expect(move?.cards).toHaveLength(2);
+    const r = playCombo(s, 0, move!.cards, move!.declaredSuit, move!.requestedCard ?? null);
+    expect(r.won).toBe(true);
   });
 
   it('bestSuit picks the majority suit', () => {
@@ -196,8 +225,8 @@ describe('bots', () => {
     s.discardPile = [{ id: '10-hearts-top', suit: 'hearts', rank: '10' }];
     s.hands[0] = [
       { id: '5-hearts', suit: 'hearts', rank: '5' },
-      { id: '6-hearts', suit: 'hearts', rank: '6' },
-      { id: '7-hearts', suit: 'hearts', rank: '7' },
+      { id: '5-diamonds', suit: 'diamonds', rank: '5' },
+      { id: '5-spades', suit: 'spades', rank: '5' },
     ];
     s.hands[1] = [
       { id: '2-hearts', suit: 'hearts', rank: '2' },

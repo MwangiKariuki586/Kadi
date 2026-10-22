@@ -465,36 +465,53 @@ function eachPermutation<T>(arr: T[], visit: (order: T[]) => boolean): void {
   }
 }
 
-/** Largest hand that gets an exact finish search (7! = 5040 checks worst case). */
+/** Largest hand that gets an exact finish/call search (7! = 5040 checks worst case). */
 const FINISH_SEARCH_CAP = 7;
 
+export function kadiRequired(config: RulesConfig): boolean {
+  return config.mustSayNikoKadi !== false;
+}
+
+/** The call itself is valid; a same-turn call is enough (the dump follows it). */
+export function hasValidKadiCall(state: GameState, playerIndex: number): boolean {
+  return !kadiRequired(state.config) || state.kadiCalls[playerIndex] === true;
+}
+
+export function isKadiLocked(state: GameState, playerIndex: number): boolean {
+  return state.kadiFalseCalls?.[playerIndex] === true;
+}
+
 /**
- * Live threat check for the KADI! badge: the player declared on an earlier
- * turn AND can dump their entire hand in one legal, winning-only combo
- * against the current table. Anything else (debt to answer, undeclared,
- * cardless blocker, oversized hand) reads as not-finishable.
+ * A structurally legal winning dump for a future table: the whole hand can
+ * be ordered into one winning-only combo, ignoring the current top card.
+ * Questions may stack; a stacked question only needs its final answer.
  */
-export function canFinishNow(state: GameState, playerIndex: number): boolean {
+function structurallyWinning(cards: Card[], state: GameState): boolean {
+  if (cards.length === 0) return false;
   const { config } = state;
+  if (config.winningDumpMustBeSingle && cards.length !== 1) return false;
+  if (mixesAceWithNonAce(cards, state)) return false;
+  if (mixesPenaltyWithNormal(cards, config)) return false;
+  if (checkComboShape(cards, state)) return false;
+  if (!validateChainLinks(cards).ok) return false;
+  if (comboLeavesQuestionOpen(cards, state)) return false;
+  return comboIsWinningOnly(cards, state);
+}
+
+/**
+ * Can this hand be declared? This is the false-call check and the early-call
+ * check: it answers "could these cards ever go out in one legal winning move"
+ * without looking at the current table. The current-table win uses
+ * `canDumpWinningNow` instead.
+ */
+export function canCallKadi(state: GameState, playerIndex: number): boolean {
   if (state.gameOver) return false;
   const hand = state.hands[playerIndex];
-  if (hand.length === 0 || hand.length > FINISH_SEARCH_CAP) return false;
-  // Penalty/skip/reversal debts must be answered first, and their answers can never close.
-  if (state.pendingPenalty > 0 || state.pendingSkip > 0 || (state.pendingReverse ?? 0) > 0) return false;
-  // Must have said Kadi on a strictly earlier turn (same rule as the win itself).
-  if (!state.kadiCalls[playerIndex] || !(state.kadiCallTurn[playerIndex] < state.turnNumber)) return false;
-  if (config.cardlessBlocksWin && state.hands.some((h, i) => i !== playerIndex && h.length === 0)) return false;
-  // Must-end-on-one tables only win from a lone last card.
-  if (config.winningDumpMustBeSingle && hand.length !== 1) return false;
-  // The closer must be a winning rank or an Ace-answering-question.
-  if (!hand.some((c) => isWinningRank(c.rank, config) || isAceAnswer(c, config))) return false;
-
+  if (!hand || hand.length === 0 || hand.length > FINISH_SEARCH_CAP) return false;
+  if (state.config.winningDumpMustBeSingle && hand.length !== 1) return false;
   let capable = false;
   eachPermutation(hand, (perm) => {
-    const last = perm[perm.length - 1];
-    const closerOk = isWinningRank(last.rank, config) || isAceAnswer(last, config);
-    if (!closerOk) return false;
-    if (validateVsTable(perm, state).ok && comboIsWinningOnly(perm, state)) {
+    if (structurallyWinning(perm, state)) {
       capable = true;
       return true;
     }
@@ -503,50 +520,66 @@ export function canFinishNow(state: GameState, playerIndex: number): boolean {
   return capable;
 }
 
-export function canDeclareKadi(state: GameState, playerIndex: number): boolean {
-  if (state.gameOver || state.hands[playerIndex].length === 0) return false;
-  return !state.kadiCalls[playerIndex];
+/**
+ * Find an order that dumps the entire hand in one winning move against the
+ * current table, ignoring whether the player called. Used by bots to take
+ * the same-turn win and by the pre-call finish cue; `canFinishNow` adds the
+ * call requirement for the live threat badge.
+ */
+export function winningDumpOrder(state: GameState, playerIndex: number): Card[] | null {
+  const { config } = state;
+  if (state.gameOver) return null;
+  const hand = state.hands[playerIndex];
+  if (!hand || hand.length === 0 || hand.length > FINISH_SEARCH_CAP) return null;
+  // Penalty/skip/reversal debts must be answered first, and their answers can never close.
+  if (state.pendingPenalty > 0 || state.pendingSkip > 0 || (state.pendingReverse ?? 0) > 0) return null;
+  if (config.cardlessBlocksWin && state.hands.some((h, i) => i !== playerIndex && h.length === 0)) return null;
+  // Must-end-on-one tables only win from a lone last card.
+  if (config.winningDumpMustBeSingle && hand.length !== 1) return null;
+  // The closer must be a winning rank or an Ace-answering-question.
+  if (!hand.some((c) => isWinningRank(c.rank, config) || isAceAnswer(c, config))) return null;
+
+  let found: Card[] | null = null;
+  eachPermutation(hand, (perm) => {
+    const last = perm[perm.length - 1];
+    const closerOk = isWinningRank(last.rank, config) || isAceAnswer(last, config);
+    if (!closerOk) return false;
+    if (!validateVsTable(perm, state).ok) return false;
+    if (comboLeavesQuestionOpen(perm, state)) return false;
+    if (comboIsWinningOnly(perm, state)) {
+      found = [...perm];
+      return true;
+    }
+    return false;
+  });
+  return found;
+}
+
+export function canDumpWinningNow(state: GameState, playerIndex: number): boolean {
+  return winningDumpOrder(state, playerIndex) !== null;
 }
 
 /**
- * Winnable-shape check for a Kadi call (table-independent).
- * True only when the hand could legally dump in one winning move on a
- * future turn: 1-3 cards, every card a winning rank (4/5/6/7/9/10), a
- * question (Q/8) with an answer present, or an Ace answering a question.
- * Must-end-on-one tables (`winningDumpMustBeSingle`) additionally require
- * a lone single card.
- *
- * An Ace answers any open question regardless of suit (Q♠ + A♦ is winnable
- * and wins ending on the Ace). A lone Ace, J/K, 2/3/Joker, or lone Q/8
- * without its answer is NOT declarable. Disable via
- * `aceAnswersQuestion: false` in a future custom mode.
+ * Live threat check for the KADI! badge: the player has a valid call and can
+ * dump their entire hand in one legal, winning-only combo against the current
+ * table. Anything else (debt to answer, undeclared on a call table, cardless
+ * blocker, oversized hand) reads as not-finishable.
  */
-export function isWinnableShape(hand: Card[], config: RulesConfig): boolean {
-  if (hand.length === 0 || hand.length > 3) return false;
-  // Must-end-on-one tables only declare (and win) holding a lone card.
-  if (config.winningDumpMustBeSingle && hand.length !== 1) return false;
-  const aceAllowed = config.aceAnswersQuestion !== false;
-  const hasQuestion = hand.some((c) => isQuestionRank(c.rank, config));
-  const answerable = (q: Card): boolean =>
-    hand.some(
-      (a) =>
-        a.id !== q.id &&
-        (isAceAnswer(a, config) ||
-          (isWinningRank(a.rank, config) && a.suit === q.suit)),
-    );
-  return hand.every((c) => {
-    if (isWinningRank(c.rank, config)) return true;
-    if (isQuestionRank(c.rank, config)) return answerable(c);
-    if (aceAllowed && c.rank === 'A') return hasQuestion;
-    return false;
-  });
+export function canFinishNow(state: GameState, playerIndex: number): boolean {
+  return hasValidKadiCall(state, playerIndex) && canDumpWinningNow(state, playerIndex);
+}
+
+export function canDeclareKadi(state: GameState, playerIndex: number): boolean {
+  if (!kadiRequired(state.config)) return false;
+  if (state.gameOver || state.hands[playerIndex].length === 0) return false;
+  return !state.kadiCalls[playerIndex];
 }
 
 export function declareKadi(state: GameState, playerIndex: number): boolean {
   if (!canDeclareKadi(state, playerIndex)) return false;
   state.kadiCalls[playerIndex] = true;
   state.kadiCallTurn[playerIndex] = state.turnNumber;
-  state.lastEffect = `${playerIndex === 0 ? 'You are' : `Player ${playerIndex + 1} is`} KADI! Stop them!`;
+  state.lastEffect = playerIndex === 0 ? 'You are KADI! Go out now!' : `Player ${playerIndex + 1} is KADI! Stop them!`;
   return true;
 }
 
@@ -556,53 +589,35 @@ export interface DeclareResult {
   fined?: number;
   /** True when the press was a mistimed call with no winnable hand. */
   falseCall?: boolean;
+  /** True when this press is refused because a false call locked the player. */
+  locked?: boolean;
 }
 
 /**
  * Checked Kadi declaration for UI use (bots keep using
- * shouldDeclareKadi + declareKadi, which is already shape-checked).
+ * shouldDeclareKadi + declareKadi, which is already capability-checked).
  * The buzzer stays pressable anytime, but a press without a legally
- * winnable hand is a false call: no flag is set (so the win stays
- * impossible until a proper declaration), the player is fined
- * `falseKadiPickCount` immediately, and the turn does NOT advance
- * (calling is a speech act, not a move).
+ * winnable hand is a false call: no flag is set, the player is fined
+ * `falseKadiPickCount` immediately, and the buzzer is locked until their
+ * next turn. The turn does NOT advance (calling is a speech act, not a move).
  */
 export function tryDeclareKadi(state: GameState, playerIndex: number): DeclareResult {
   if (!canDeclareKadi(state, playerIndex)) return { ok: false };
-  const hand = state.hands[playerIndex];
-  if (isWinnableShape(hand, state.config)) {
+  if (isKadiLocked(state, playerIndex)) return { ok: false, locked: true };
+  if (canCallKadi(state, playerIndex)) {
     declareKadi(state, playerIndex);
     return { ok: true };
   }
+  if (!state.kadiFalseCalls) state.kadiFalseCalls = Array(state.hands.length).fill(false);
+  state.kadiFalseCalls[playerIndex] = true;
   const owed = state.config.falseKadiPickCount ?? state.config.lateCallPickCount ?? 1;
   if (owed > 0) {
     const drawn = drawCards(state, playerIndex, owed);
     state.lastEffect =
       (state.lastEffect ? state.lastEffect + ' • ' : '') + `False KADI, fined +${drawn.length}`;
-    return { ok: false, fined: drawn.length, falseCall: true };
+    return { ok: false, fined: drawn.length, falseCall: true, locked: true };
   }
-  return { ok: false, falseCall: true };
-}
-
-/**
- * Fine for letting the KADI call-window expire without shouting: draws
- * `kadiDelayPickCount` (falling back to the other call fines). The UI only
- * fires this while undeclared, so a late press afterwards still declares.
- * The turn does NOT advance (the fine is not a move). Like any pickup, the
- * draw itself voids a stale claim via the shared pickup rule.
- */
-export function fineKadiDelay(state: GameState, playerIndex: number): number {
-  const owed = state.config.kadiDelayPickCount
-    ?? state.config.falseKadiPickCount
-    ?? state.config.lateCallPickCount
-    ?? 1;
-  if (owed <= 0 || state.gameOver) return 0;
-  const drawn = drawCards(state, playerIndex, owed);
-  if (drawn.length > 0) {
-    state.lastEffect =
-      (state.lastEffect ? state.lastEffect + ' • ' : '') + `Slow KADI, fined +${drawn.length}`;
-  }
-  return drawn.length;
+  return { ok: false, falseCall: true, locked: true };
 }
 
 function winsBlockedByCardless(state: GameState, playerIndex: number): boolean {
@@ -838,11 +853,11 @@ export function playCombo(
     }
   }
 
-  // Win check: hand empty AND final combo is winning-only AND Kadi declared earlier AND no cardless blocker.
+  // Win check: hand empty AND final combo is winning-only AND Kadi was called
+  // (a same-turn call counts: the press must come before the dump) AND no
+  // cardless blocker.
   if (hand.length === 0) {
-    const kadiOk =
-      !config.mustSayNikoKadi ||
-      (state.kadiCalls[playerIndex] && state.kadiCallTurn[playerIndex] < state.turnNumber);
+    const kadiOk = hasValidKadiCall(state, playerIndex);
     const winningCombo = comboIsWinningOnly(cards, state);
     const blocked = winsBlockedByCardless(state, playerIndex);
     if (kadiOk && winningCombo && !blocked) {
@@ -852,7 +867,7 @@ export function playCombo(
     }
     // Clean dump without a valid prior call: win denied, fined instead of
     // wandering cardless. (Rule off entirely → kadiOk above, unaffected.)
-    if (config.mustSayNikoKadi && winningCombo && !blocked && !kadiOk) {
+    if (kadiRequired(config) && winningCombo && !blocked && !kadiOk) {
       const owed = config.lateCallPickCount;
       if (owed > 0) {
         const drawn = drawCards(state, playerIndex, owed);

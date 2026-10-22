@@ -221,21 +221,6 @@ textarea,
     transform: scale(1.05);
   }
 }
-/* Call-window countdown — drains once over the shout window */
-@keyframes kadi-window-drain {
-  from {
-    transform: scaleX(1);
-  }
-  to {
-    transform: scaleX(0);
-  }
-}
-.anim-kadi-window {
-  transform-origin: left center;
-  /* keep duration in sync with KADI_WINDOW_MS in app.tsx */
-  animation: kadi-window-drain 2s linear forwards;
-}
-
 .anim-fly-in {
   animation: kadi-fly-in 280ms ease-out;
 }
@@ -382,7 +367,6 @@ textarea,
   .anim-kadi-glow,
   .anim-shake,
   .anim-fanfare,
-  .anim-kadi-window,
   .kadi-buzzer-urgent .kadi-buzzer-base,
   .kadi-buzzer-urgent .kadi-buzzer-dome {
     animation: none;
@@ -394,7 +378,6 @@ textarea,
 [data-motion="reduced"] .anim-kadi-glow,
 [data-motion="reduced"] .anim-shake,
 [data-motion="reduced"] .anim-fanfare,
-[data-motion="reduced"] .anim-kadi-window,
 [data-motion="reduced"] .kadi-buzzer-urgent .kadi-buzzer-base,
 [data-motion="reduced"] .kadi-buzzer-urgent .kadi-buzzer-dome {
   animation: none;
