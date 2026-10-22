@@ -47,7 +47,7 @@ describe('feed', () => {
     playCombo(s, 1, [s.hands[1][0]]);
     const evts = describePlay(before, s, 1, NAMES, [C('2', 'spades', 's2')]);
     const text = evts.map((e) => e.text).join(' | ');
-    expect(text).toMatch(/answers with 2♠ — Pick 2 on You/);
+    expect(text).toMatch(/answers with 2♠\. Pick 2 on You/);
   });
 
   it('eating and blocking are narrated with counts', () => {
@@ -63,7 +63,7 @@ describe('feed', () => {
     playCombo(s2, 1, [s2.hands[1][0]], 'clubs');
     const evts = describePlay(b2, s2, 1, NAMES, [C('A', 'clubs', 'a')]);
     expect(evts.map((e) => e.text).join(' | ')).toMatch(/neutralizes the \+2.*no one picks/);
-    // Pure block preserves hearts — never narrated as a fresh suit call.
+    // Pure block preserves hearts, never narrated as a fresh suit call.
     expect(s2.activeSuit).toBe('hearts');
     expect(evts.map((e) => e.text).join(' | ')).not.toMatch(/calls/);
   });
@@ -81,7 +81,7 @@ describe('feed', () => {
     const before = snapshotState(s, 0);
     playCombo(s, 0, [s.hands[0][0]]);
     const evts = describePlay(before, s, 0, NAMES, [C('Q', 'hearts', 'q')]);
-    expect(evts.map((e) => e.text).join(' | ')).toMatch(/asks? without an answer — picks? 1/);
+    expect(evts.map((e) => e.text).join(' | ')).toMatch(/asks? without an answer, picks? 1/);
   });
 
   it('jump and reversal defer to the victim; refusal keeps the turn', () => {
@@ -95,11 +95,11 @@ describe('feed', () => {
     playCombo(s, 0, [s.hands[0][0]]);
     expect(s.pendingSkip).toBe(1);
     expect(describePlay(before, s, 0, NAMES, [C('J', 'hearts', 'jh')]).map((e) => e.text).join(' | '))
-      .toMatch(/on Jabari — J to refuse or sit out/);
+      .toMatch(/on Jabari, J to refuse or sit out/);
     const b2 = snapshotState(s, 1);
     playCombo(s, 1, [s.hands[1][0]]);
     expect(describePlay(b2, s, 1, NAMES, [C('J', 'spades', 'js')]).map((e) => e.text).join(' | '))
-      .toMatch(/refuses the jump — plays on/);
+      .toMatch(/refuses the jump, plays on/);
 
     const s2 = table([C('K', 'hearts', 'kh'), C('4', 'clubs', 'k')], C('9', 'hearts'), [C('5', 'spades')], 3);
     const c2 = snapshotState(s2, 0);
@@ -107,7 +107,7 @@ describe('feed', () => {
     expect(s2.pendingReverse).toBe(1);
     expect(s2.direction).toBe(1);
     expect(describePlay(c2, s2, 0, NAMES, [C('K', 'hearts', 'kh')]).map((e) => e.text).join(' | '))
-      .toMatch(/on Jabari — K to refuse or sit out/);
+      .toMatch(/on Jabari, K to refuse or sit out/);
   });
 
   it('lone-ace lift keeps the demanded suit in the narration', () => {
@@ -123,7 +123,7 @@ describe('feed', () => {
 
   it('wrong-play fine names the cards and the count', () => {
     const text = describeWrongPlay('You', [C('K', 'diamonds', 'k')], 1).text;
-    expect(text).toBe('You play wrong (K♦) — fined +1');
+    expect(text).toBe('You play wrong (K♦), fined +1');
   });
 
   it('late win attempt narrates the fine', () => {
@@ -133,7 +133,7 @@ describe('feed', () => {
     const r = playCombo(s, 0, [fin]);
     expect(r.fined).toBe(1);
     const text = describePlay(before, s, 0, NAMES, [fin], { fined: r.fined }).map((e) => e.text).join(' | ');
-    expect(text).toMatch(/go(es)? out without the call — fined \+1/);
+    expect(text).toMatch(/go(es)? out without the call, fined \+1/);
   });
 
   it('deal event opens with the starter', () => {
@@ -143,11 +143,11 @@ describe('feed', () => {
   });
 
   it('kadi call warns the table; false call names the fine', () => {
-    expect(describeKadi('You').text).toMatch(/stop them/);
+    expect(describeKadi('You').text).toMatch(/Stop them/);
     expect(describeKadi('You').text).toMatch(/You are KADI/);
-    expect(describeFalseKadi('You', 1).text).toBe('You call KADI too early — no winnable hand, fined +1');
-    expect(describeFalseKadi('Jabari', 1).text).toBe('Jabari calls KADI too early — no winnable hand, fined +1');
-    expect(describeDelayKadi('You', 1).text).toBe('You slept on KADI — shouted too late, fined +1');
+    expect(describeFalseKadi('You', 1).text).toBe('You call KADI too early, no winnable hand, fined +1');
+    expect(describeFalseKadi('Jabari', 1).text).toBe('Jabari calls KADI too early, no winnable hand, fined +1');
+    expect(describeDelayKadi('You', 1).text).toBe('You slept on KADI, shouted too late, fined +1');
   });
 
   it('ace answering a question narrates the follow, never a call', () => {
@@ -157,7 +157,7 @@ describe('feed', () => {
     const before = snapshotState(s, 0);
     playCombo(s, 0, [q, ace], null);
     const text = describePlay(before, s, 0, NAMES, [q, ace]).map((e) => e.text).join(' | ');
-    expect(text).toMatch(/answers? with A♠ — follow Spades/);
+    expect(text).toMatch(/answers? with A♠, follow Spades/);
     expect(text).not.toMatch(/calls/);
   });
 
@@ -195,13 +195,13 @@ describe('feed', () => {
   });
 
   it('resume no longer claims your move', () => {
-    expect(describeResume(0, NAMES, 3).text).toBe('Back at the table — you to play');
-    expect(describeResume(1, NAMES, 3).text).toBe('Back at the table — Jabari to play');
+    expect(describeResume(0, NAMES, 3).text).toBe('Back at the table, you to play');
+    expect(describeResume(1, NAMES, 3).text).toBe('Back at the table, Jabari to play');
   });
 
   it('dead-tap notices are info events that group with the same turn+actor', () => {
     const a = describeNotice('You', 'Wait for your turn…', 5);
-    const b = describeNotice('You', 'KADI already called — go out and finish!', 5);
+    const b = describeNotice('You', 'KADI already called, go out and finish!', 5);
     expect(a.tone).toBe('info');
     expect(a.actor).toBe('You');
     expect(a.turn).toBe(5);
@@ -210,7 +210,7 @@ describe('feed', () => {
     expect(groups).toHaveLength(1);
     expect(groups[0].events.map((e) => e.text)).toEqual([
       'Wait for your turn…',
-      'KADI already called — go out and finish!',
+      'KADI already called, go out and finish!',
     ]);
   });
 });
@@ -261,12 +261,12 @@ describe('turnCoach', () => {
     expect(turnCoach({ ...base, kadiReady: true }).text).toMatch(/KADI/);
     expect(turnCoach({ ...base, activeSuit: 'spades', prevSuit: 'hearts', legalCount: 2 }).text)
       .toMatch(/Follow Spades.*was Hearts.*2 playable/);
-    expect(turnCoach(base).text).toMatch(/Match 10♥ — 3 playable/);
+    expect(turnCoach(base).text).toMatch(/Match 10♥, 3 playable/);
   });
 
   it('waiting names the owed action and thinking', () => {
     expect(turnCoach({ ...base, myTurn: false, pendingPenalty: 4 }).text)
-      .toMatch(/Waiting on Jabari — owes \+4/);
+      .toMatch(/Waiting on Jabari, owes \+4/);
     expect(turnCoach({ ...base, myTurn: false, busyThinking: true }).text)
       .toMatch(/Waiting on Jabari…/);
     expect(turnCoach({ ...base, myTurn: false, request: { rank: 'Q', suit: 'spades' } }).text)

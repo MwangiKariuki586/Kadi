@@ -8,12 +8,7 @@ import {
 import { chooseMove, shouldDeclareKadi, type Difficulty } from "./bots/bot";
 import type { Card, Rank, Suit } from "./engine/cards";
 import { cardLabel } from "./engine/cards";
-import {
-  PRESETS,
-  STANDARD_MAUA,
-  describeRules,
-  type RulesConfig,
-} from "./engine/rules";
+import { PRESETS, STANDARD_MAUA, type RulesConfig } from "./engine/rules";
 import { createGame, topCard, type GameState } from "./engine/state";
 import {
   canDeclareKadi,
@@ -36,6 +31,7 @@ import {
   type Settings,
   type Stats,
 } from "./store/local";
+import { createMatchId, type MatchRecord } from "./store/history";
 import {
   CardRequestPicker,
   CardView,
@@ -51,12 +47,12 @@ import {
 import { SettingsScreen } from "./ui/settings";
 import { RulesBuilder } from "./ui/rulesBuilder";
 import { HowToScreen } from "./ui/howto";
-import {
-  PageHeader,
-  SEAT_SLOT_CLASS,
-  ScreenFrame,
-  seatPlacement,
-} from "./ui/layout";
+import { HomeScreen, ChallengeFriendsModal } from "./ui/home";
+import { LobbyScreen } from "./ui/lobby";
+import { MyGamesScreen } from "./ui/records";
+import { BOT_NAMES, PLAYER_NAMES } from "./ui/players";
+import { BrandMark, PageBackdrop, StatsCard } from "./ui/theme";
+import { Icon } from "./ui/icons";
 import { reasonText } from "./ui/reasons";
 import {
   describeDeal,
@@ -77,10 +73,16 @@ import { haptics, isHapticsEnabled, setHapticsEnabled } from "./ui/haptics";
 import { isMuted, setMuted, sfx } from "./ui/sounds";
 import { applyMotionPreference } from "./ui/motion";
 
-type Screen = "home" | "lobby" | "game" | "settings" | "rules" | "howto";
+type Screen =
+  | "home"
+  | "lobby"
+  | "game"
+  | "settings"
+  | "rules"
+  | "howto"
+  | "games";
 
-const BOT_NAMES = ["Jabari", "Amani", "Zawadi", "Neema"];
-const NAMES = ["You", ...BOT_NAMES];
+const NAMES = [...PLAYER_NAMES];
 
 /**
  * Call-window: when your turn starts with a clean, winnable hand and no
@@ -108,6 +110,8 @@ export function App() {
     bestStreak: 0,
     streak: 0,
   });
+  const [history, setHistory] = useState<MatchRecord[]>([]);
+  const [challengeOpen, setChallengeOpen] = useState(false);
 
   const [tick, setTick] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
@@ -126,7 +130,7 @@ export function App() {
   const [animationsOn, setAnimationsOn] = useState(true);
   const [settingsOrigin, setSettingsOrigin] = useState<"home" | "game">("home");
   const customsRef = useRef<RulesConfig[]>([]);
-  /** True when the active table is a saved custom — its flags stand alone. */
+  /** True when the active table is a saved custom, its flags stand alone. */
   const isCustomActive = !PRESETS.some((p) => p.name === preset.name);
 
   const pushFeed = useCallback((...evts: FeedEvent[]) => {
@@ -190,7 +194,7 @@ export function App() {
 
   /**
    * Expire a call-window: mark the turn as missed and hide the bar.
-   * Sitting out is free — the delay fine lands only if the player presses
+   * Sitting out is free, the delay fine lands only if the player presses
    * late afterwards. Idempotent per turn.
    */
   const expireKadiWindow = useCallback(() => {
@@ -385,6 +389,7 @@ export function App() {
   // ---- boot: customs, settings, stats, then auto-resume a live match (no taps) ----
   useEffect(() => {
     void store.getStats().then(setStats);
+    void store.getMatchHistory().then(setHistory);
     void store
       .getCustomRules()
       .then((cs) => {
@@ -418,7 +423,7 @@ export function App() {
 
   // ---- bot loop: any non-human turn advances after a thinking delay ----
   // A refusal keeps the turn, so the bot may act several times in a row
-  // (bounded — a kept turn that keeps nothing eventually picks).
+  // (bounded, a kept turn that keeps nothing eventually picks).
   const currentPlayer = state?.currentPlayer ?? 0;
   const gameOver = state?.gameOver ?? false;
   useEffect(() => {
@@ -479,7 +484,7 @@ export function App() {
           else sfx.play();
           keepGoing = r.keptTurn === true && !r.won;
         } else {
-          // Should never happen (moves are pre-validated) — narrate instead
+          // Should never happen (moves are pre-validated), narrate instead
           // of silently swallowing so ghosts leave evidence, not confusion.
           pushFeed(
             describeStall(
@@ -508,7 +513,7 @@ export function App() {
   // ---- KADI call-window: shout within 2s of a clean, winnable turn start ----
   // Opens once per human turn (undeclared + winnable shape + no debts/demands
   // to answer). Acting, pressing, or the turn moving on closes it quietly;
-  // expiry only marks the turn missed — sitting out is free. A late press
+  // expiry only marks the turn missed, sitting out is free. A late press
   // afterwards still declares, but pays the delay fine.
   useEffect(() => {
     const s = stateRef.current;
@@ -579,8 +584,19 @@ export function App() {
         sfx.lose();
       }
       void store.recordResult(won).then(setStats);
+      void store
+        .recordMatch({
+          id: createMatchId(),
+          at: Date.now(),
+          playerNames: NAMES.slice(0, state.hands.length),
+          winnerIndex: state.winnerIndex ?? 0,
+          difficulty,
+          presetName: preset.name,
+          turns: state.turnNumber,
+        })
+        .then(setHistory);
     }
-  }, [screen, state?.gameOver, state?.winnerIndex]);
+  }, [screen, state?.gameOver, state?.winnerIndex, difficulty, preset.name]);
 
   // ---- persist the live match every committed change ----
   useEffect(() => {
@@ -607,7 +623,7 @@ export function App() {
 
   // Live KADI! threat per seat: declared AND finishable in one move right now.
   // Recomputed per committed move (tick), not per tap/selection render.
-  // (state identity is stable — contents are read fresh on each tick.)
+  // (state identity is stable, contents are read fresh on each tick.)
   const threats = useMemo(
     () => (state ? state.hands.map((_, i) => canFinishNow(state, i)) : []),
     [tick],
@@ -615,260 +631,94 @@ export function App() {
 
   if (!booted) {
     return (
-      <div class="min-h-dvh bg-green-950 text-white flex flex-col items-center justify-center gap-2">
-        <div class="text-5xl">🂡</div>
-        <p class="text-yellow-300 font-black tracking-wide">KADI</p>
+      <div class="kadi-shell flex min-h-dvh flex-col items-center justify-center gap-3 text-white">
+        <BrandMark />
+        <p class="kadi-label">Dealing the table…</p>
       </div>
     );
   }
 
   if (screen === "home") {
     return (
-      <div class="min-h-dvh bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col safe-top safe-bottom">
+      <>
         <Toast message={toast} />
-        <div class="flex justify-end px-4 pt-3 md:px-8">
-          <button
-            type="button"
-            aria-label="Open settings"
-            onClick={() => openSettings("home")}
-            class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl px-3 py-2 text-lg transition hover:bg-white/10 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-300"
-          >
-            <span aria-hidden="true">⚙️</span>
-          </button>
-        </div>
-        <div class="flex flex-1 flex-col items-center justify-center px-6 pb-6 text-center md:px-8">
-          <div class="w-full max-w-md md:max-w-2xl lg:grid lg:max-w-5xl lg:grid-cols-[1.15fr_0.85fr] lg:items-center lg:gap-16 lg:text-left">
-            <div class="flex flex-col items-center lg:items-start">
-              <div class="text-6xl mb-2 md:text-7xl lg:text-8xl">🂡</div>
-              <h1 class="text-5xl font-black tracking-tight text-yellow-300 md:text-6xl lg:text-7xl">
-                KADI
-              </h1>
-              <p class="mt-1 text-white/70 text-sm md:text-base">
-                Kenyan card game • plays offline
-              </p>
-              <div class="mt-4 flex gap-2 md:mt-5">
-                <Pill>{stats.games} games</Pill>
-                <Pill tone="amber">{stats.wins} wins</Pill>
-                <Pill tone="green">🔥 Best {stats.bestStreak}</Pill>
-              </div>
-            </div>
-            <div class="mt-8 flex w-full max-w-xs flex-col items-stretch lg:mt-0 lg:max-w-sm">
-              <button
-                type="button"
-                onClick={() => setScreen("lobby")}
-                class="w-full rounded-2xl bg-yellow-400 py-4 text-xl font-black text-gray-900 shadow-xl transition hover:brightness-105 active:scale-95 md:py-5 md:text-2xl"
-              >
-                ▶ &nbsp;Play
-              </button>
-              {resumable && (
-                <button
-                  type="button"
-                  onClick={() => restoreSave(resumable)}
-                  class="mt-3 w-full rounded-2xl border border-yellow-400/60 bg-yellow-400/10 py-3 text-sm font-black text-yellow-200 transition hover:bg-yellow-400/20 active:scale-95"
-                >
-                  ⏸ Continue • {resumable.state.hands.length} players •{" "}
-                  {resumable.state.currentPlayer === 0
-                    ? "your turn"
-                    : "bot turn"}{" "}
-                  • {resumable.state.hands[0].length} cards
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setScreen("howto")}
-                class="mt-3 w-full rounded-2xl bg-white/10 py-3 text-sm font-bold text-white transition hover:bg-white/15 active:scale-95"
-              >
-                How to play
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+        <HomeScreen
+          stats={stats}
+          history={history}
+          numBots={numBots}
+          resumable={resumable}
+          onPlay={() => setScreen("lobby")}
+          onSelectMode={(bots) => {
+            setNumBots(bots);
+            setScreen("lobby");
+            haptics.tap();
+          }}
+          onContinue={() => {
+            if (resumable) restoreSave(resumable);
+          }}
+          onHowTo={() => setScreen("howto")}
+          onSettings={() => openSettings("home")}
+          onViewGames={() => setScreen("games")}
+          onCreateRoom={() => setChallengeOpen(true)}
+        />
+        {challengeOpen && (
+          <ChallengeFriendsModal
+            onClose={() => setChallengeOpen(false)}
+            onPlay={() => {
+              setChallengeOpen(false);
+              setScreen("lobby");
+            }}
+          />
+        )}
+      </>
     );
+  }
+
+  if (screen === "games") {
+    return <MyGamesScreen history={history} onBack={() => setScreen("home")} onPlay={() => setScreen("lobby")} />;
   }
 
   if (screen === "lobby") {
     return (
-      <ScreenFrame width="lg">
-        <PageHeader
-          title="New Game"
-          onBack={() => setScreen("home")}
-          right={
-            <button
-              type="button"
-              aria-label="Open settings"
-              onClick={() => openSettings("home")}
-              class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-white/60 transition hover:text-white"
-            >
-              <span aria-hidden="true">⚙️</span>
-            </button>
-          }
-        />
-
-        <div class="mt-4 min-h-0 flex-1 overflow-y-auto no-scrollbar overscroll-contain pb-1 lg:grid lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:items-start lg:gap-8">
-          <div>
-            <p class="text-xs font-bold uppercase tracking-widest text-white/50">
-              Players
-            </p>
-            <div class="mt-2 grid grid-cols-3 gap-2">
-              {[1, 2, 3].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setNumBots(n)}
-                  class={`rounded-2xl py-3 font-black transition hover:brightness-110 md:py-4 ${numBots === n ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"}`}
-                >
-                  {n + 1}P
-                  <span class="block text-[10px] font-normal">
-                    you + {n} 🤖
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            <p class="mt-5 text-xs font-bold uppercase tracking-widest text-white/50">
-              Table options
-            </p>
-            <div class="mt-2 flex w-full items-center gap-3">
-              <span class="min-w-0 flex-1 text-left">
-                <span class="text-sm font-bold">Jokers</span>
-                <span class="mt-0.5 block text-[11px] text-white/60">
-                  {jokersOn
-                    ? "Kula tano 💀"
-                    : "No Jokers — only 2s and 3s make you kula."}
-                </span>
-              </span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={jokersOn}
-                aria-label="Jokers"
-                onClick={() => {
-                  savePatch({ jokersEnabled: !jokersOn });
-                  haptics.tap();
-                }}
-                class={`relative h-8 w-14 shrink-0 rounded-full border bg-black/60 transition-colors duration-200 active:scale-95 ${
-                  jokersOn ? "border-yellow-400/70" : "border-white/20"
-                }`}
-              >
-                <span
-                  aria-hidden="true"
-                  class={`switch-knob absolute left-1 top-1/2 block h-6 w-6 -translate-y-1/2 rounded-full border-[3px] transition-all duration-200 ${
-                    jokersOn
-                      ? "translate-x-6 border-yellow-300 bg-black"
-                      : "translate-x-0 border-white/25 bg-black/80"
-                  }`}
-                />
-              </button>
-            </div>
-          </div>
-
-          <div class="mt-6 lg:mt-0">
-            <p class="text-xs font-bold uppercase tracking-widest text-white/50">
-              Game rules
-            </p>
-            <div class="mt-2 grid gap-2 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-              {PRESETS.map((p) => (
-                <button
-                  key={p.name}
-                  type="button"
-                  aria-pressed={preset.name === p.name}
-                  onClick={() => savePatch({ presetName: p.name })}
-                  class={`w-full rounded-2xl border p-3 text-left transition hover:border-white/25 hover:bg-white/10 active:scale-[0.99] relative ${
-                    preset.name === p.name
-                      ? "border-yellow-400 bg-yellow-400/10"
-                      : "border-white/10 bg-white/5"
-                  }`}
-                >
-                  <span class="flex items-center gap-1.5">
-                    {p.jokersEnabled
-                      ? p.penaltyMatchMode === "any"
-                        ? "💣"
-                        : "🃏"
-                      : "🚫"}
-                    <span class="text-sm font-bold">{p.name}</span>
-                  </span>
-                  <span class="mt-0.5 block text-[11px] text-white/60">
-                    {p.description ?? describeRules(p)}
-                  </span>
-                </button>
-              ))}
-              {customs.map((c) => (
-                <button
-                  key={c.name}
-                  type="button"
-                  aria-pressed={preset.name === c.name}
-                  onClick={() => savePatch({ presetName: c.name })}
-                  class={`w-full rounded-2xl border p-3 text-left transition hover:border-white/25 hover:bg-white/10 active:scale-[0.99] relative ${
-                    preset.name === c.name
-                      ? "border-yellow-400 bg-yellow-400/10"
-                      : "border-white/10 bg-white/5"
-                  }`}
-                >
-                  <span class="flex items-center gap-1.5">
-                    {c.jokersEnabled
-                      ? c.penaltyMatchMode === "any"
-                        ? "💣"
-                        : "🃏"
-                      : "🚫"}
-                    <span class="text-sm font-bold">{c.name}</span>
-                  </span>
-                  <span class="mt-0.5 block text-[11px] text-white/60">
-                    {c.description ?? describeRules(c)}
-                  </span>
-                  {preset.name === c.name && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setBuilderInit({
-                          initial: { ...c },
-                          sourceName: c.name,
-                          editingName: c.name,
-                        });
-                        setScreen("rules");
-                        haptics.tap();
-                      }}
-                      class="absolute right-3 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-white/70 hover:bg-white/20 active:scale-95 transition"
-                      aria-label={`Customize ${c.name}`}
-                    >
-                      <span class="text-[11px]">✏️</span>
-                    </button>
-                  )}
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => {
-                  setBuilderInit({
-                    initial: { ...STANDARD_MAUA },
-                    sourceName: `Cloned from ${STANDARD_MAUA.name}`,
-                    editingName: null,
-                  });
-                  setScreen("rules");
-                  haptics.tap();
-                }}
-                class="w-full rounded-2xl border border-dashed border-white/20 bg-transparent p-3 text-left transition hover:border-white/40 hover:bg-white/5 active:scale-[0.99] md:col-span-2"
-              >
-                <span class="text-sm font-bold">＋ Custom rules</span>
-                <span class="mt-0.5 block text-[11px] text-white/60">
-                  Build your own rules from Standard Maua.
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="shrink-0 border-t border-white/10 pt-3 md:pt-4">
-          <button
-            type="button"
-            onClick={startGame}
-            class="w-full rounded-2xl bg-yellow-400 py-4 text-xl font-black text-gray-900 shadow-xl transition hover:brightness-105 active:scale-95 md:py-5 md:text-2xl"
-          >
-            Deal me in 🂡
-          </button>
-        </div>
-      </ScreenFrame>
+      <LobbyScreen
+        numBots={numBots}
+        presetName={preset.name}
+        customs={customs}
+        jokersOn={jokersOn}
+        onSelectBots={(bots) => {
+          setNumBots(bots);
+          haptics.tap();
+        }}
+        onToggleJokers={() => {
+          savePatch({ jokersEnabled: !jokersOn });
+          haptics.tap();
+        }}
+        onSelectPreset={(name) => {
+          savePatch({ presetName: name });
+          haptics.tap();
+        }}
+        onEditCustom={(custom) => {
+          setBuilderInit({
+            initial: { ...custom },
+            sourceName: custom.name,
+            editingName: custom.name,
+          });
+          setScreen("rules");
+          haptics.tap();
+        }}
+        onNewCustom={() => {
+          setBuilderInit({
+            initial: { ...STANDARD_MAUA },
+            sourceName: `Cloned from ${STANDARD_MAUA.name}`,
+            editingName: null,
+          });
+          setScreen("rules");
+          haptics.tap();
+        }}
+        onDeal={startGame}
+        onBack={() => setScreen("home")}
+        onSettings={() => openSettings("home")}
+      />
     );
   }
 
@@ -899,6 +749,12 @@ export function App() {
           onSave={(patch) => {
             savePatch(patch);
             haptics.tap();
+          }}
+          onClearHistory={() => {
+            void store.clearMatchHistory().then(() => {
+              setHistory([]);
+              flash("Match history cleared");
+            });
           }}
           onResetStats={() => {
             void store.resetStats().then((s) => {
@@ -950,11 +806,11 @@ export function App() {
   // ---- game screen ----
   if (!state) {
     return (
-      <div class="min-h-dvh bg-green-950 text-white flex items-center justify-center">
+      <div class="kadi-shell flex min-h-dvh items-center justify-center text-white">
         <button
           type="button"
           onClick={startGame}
-          class="rounded-2xl bg-yellow-400 px-6 py-3 font-black text-gray-900"
+          class="kadi-gold-button rounded-2xl px-6 py-3 font-black"
         >
           Start
         </button>
@@ -965,34 +821,34 @@ export function App() {
   const top = topCard(state);
   const myHand = state.hands[0];
   const myTurn = state.currentPlayer === 0 && !state.gameOver;
-  // Buzzer is always live and clickable while the game runs — even with an
+  // Buzzer is always live and clickable while the game runs, even with an
   // unwinnable hand or on a bot's turn. Shouting early is the player's risk:
   // a press without a legally winnable hand is fined immediately (no flag
   // set, so the win stays impossible until a proper declaration).
   const kadiHot = shouldDeclareKadi(state, 0);
   // Late cue: this turn's window expired unpressed, but the hand is still
-  // ready — shouting now still declares, at the delay fine.
+  // ready, shouting now still declares, at the delay fine.
   const kadiLate =
     !state.kadiCalls[0] &&
     myHand.length > 0 &&
     kadiWindowRef.current.turn === state.turnNumber &&
     kadiWindowRef.current.missed;
   const kadiTitle = state.kadiCalls[0]
-    ? "KADI already called — go out and finish!"
+    ? "KADI already called, go out and finish!"
     : myHand.length === 0
-      ? "Cardless — nothing to declare with"
+      ? "Cardless, nothing to declare with"
       : kadiHot && kadiLate
-        ? `Late KADI — still counts, but fined +${state.config.kadiDelayPickCount ?? 1}`
+        ? `Late KADI, still counts, but fined +${state.config.kadiDelayPickCount ?? 1}`
         : kadiHot
           ? "Niko Kadi! Press to declare"
-          : `Say KADI anytime — a wrong call is fined +${state.config.falseKadiPickCount} on the spot`;
+          : `Say KADI anytime, a wrong call is fined +${state.config.falseKadiPickCount} on the spot`;
   const selectedCards = selected.flatMap(
     (id) => myHand.find((c) => c.id === id) ?? [],
   );
   const selectedOrder = new Map(selected.map((id, i) => [id, i + 1]));
   const validation =
     selectedCards.length > 0 ? validateCombo(selectedCards, state, 0) : null;
-  // An illegal selection disables Play upfront — no tap needed to find out.
+  // An illegal selection disables Play upfront, no tap needed to find out.
   const selectionInvalid = validation != null && !validation.ok;
   const selectionReason = selectionInvalid
     ? reasonText(
@@ -1029,7 +885,7 @@ export function App() {
       sfx.error();
       haptics.penalty();
       // Strict tables fine the attempt (draw + turn passes); casual rejects free.
-      // The reason is already shown inline + in the coach line — no toast: the
+      // The reason is already shown inline + in the coach line, no toast: the
       // feed (strict fine) is the only panel entry.
       const fined = resolveWrongPlay(state, 0);
       if (fined > 0) {
@@ -1054,7 +910,7 @@ export function App() {
     if (r.won) {
       // win sfx handled by effect
     } else if (r.fined) {
-      // Narrated by the describePlay fined event above — no toast.
+      // Narrated by the describePlay fined event above, no toast.
       sfx.penalty();
     } else if (r.becameCardless) {
       sfx.penalty();
@@ -1067,7 +923,7 @@ export function App() {
 
   const onPlayPress = () => {
     if (selectedCards.length === 0 || !myTurn) return;
-    // Answering a penalty with aces is a pure block — no suit/super picker.
+    // Answering a penalty with aces is a pure block, no suit/super picker.
     if (
       state.pendingPenalty === 0 &&
       isSuperAceCombo(selectedCards, state) &&
@@ -1106,11 +962,11 @@ export function App() {
   const onKadi = () => {
     if (state.gameOver) return;
     if (state.kadiCalls[0]) {
-      pushNotice("KADI already called — go out and finish!", state.turnNumber);
+      pushNotice("KADI already called, go out and finish!", state.turnNumber);
       return;
     }
     if (myHand.length === 0) {
-      pushNotice("Cardless — nothing to declare with.", state.turnNumber);
+      pushNotice("Cardless, nothing to declare with.", state.turnNumber);
       return;
     }
     const latePress =
@@ -1145,7 +1001,7 @@ export function App() {
       bump();
     } else if (r.falseCall) {
       sfx.error();
-      pushNotice("False KADI — no winnable hand.", state.turnNumber);
+      pushNotice("False KADI, no winnable hand.", state.turnNumber);
       bump();
     }
   };
@@ -1193,7 +1049,8 @@ export function App() {
       : `Waiting on ${waitingOn}…`;
 
   return (
-    <div class="min-h-dvh bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col safe-top safe-bottom lg:h-dvh lg:flex-row lg:overflow-hidden">
+    <div class="kadi-shell relative flex h-dvh flex-col overflow-hidden text-white safe-top safe-bottom">
+      <PageBackdrop />
       {suitPickerFor && (
         <SuitPicker
           onCancel={() => setSuitPickerFor(null)}
@@ -1215,141 +1072,169 @@ export function App() {
         />
       )}
 
-      <div class="flex min-w-0 flex-1 flex-col lg:h-full">
-        {/* top bar */}
-        <div
-          class="flex items-center justify-between px-4 pt-3 lg:px-6"
-          data-testid="game-topbar"
-        >
-          <button
-            type="button"
-            onClick={() => setConfirmQuit(true)}
-            aria-label="Quit"
-            class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-white/60 transition hover:bg-white/10 hover:text-white"
+      <div class="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row">
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* top bar */}
+          <div
+            class="flex shrink-0 items-center justify-between gap-3 px-3 pt-2 md:px-6 md:pt-3"
+            data-testid="game-topbar"
           >
-            <span aria-hidden="true" class="text-lg">
-              ⏻
-            </span>
-          </button>
-          <div class="flex items-center gap-2">
-            <Pill>
-              {state.direction === 1 ? "↻ clockwise" : "↺ anti-clockwise"}
-            </Pill>
-            {threats.some(Boolean) && <Pill tone="amber">KADI!</Pill>}
-          </div>
-          <button
-            type="button"
-            aria-label="Open settings"
-            onClick={() => openSettings("game")}
-            class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-white/60 transition hover:bg-white/10 hover:text-white"
-          >
-            <span aria-hidden="true">⚙️</span>
-          </button>
-        </div>
-
-        {/* table */}
-        <div
-          class="relative flex min-h-0 flex-1 flex-col px-4 pb-2 lg:grid lg:grid-cols-[minmax(8rem,11rem)_minmax(0,1fr)_minmax(8rem,11rem)] lg:grid-rows-[auto_minmax(0,1fr)_auto] lg:gap-x-4 lg:px-6 lg:pb-4"
-          data-testid="game-table"
-        >
-          {/* bots */}
-          <div class="flex justify-center gap-3 pt-2 lg:contents">
-            {state.hands.map((hand, i) => {
-              if (i === 0) return null;
-              const slot = seatPlacement(i - 1, state.hands.length - 1);
-              const isTurn = state.currentPlayer === i && !state.gameOver;
-              return (
-                <OpponentSeat
-                  key={i}
-                  name={BOT_NAMES[(i - 1) % BOT_NAMES.length]}
-                  cards={hand.length}
-                  isTurn={isTurn}
-                  thinking={isTurn && busy}
-                  kadi={Boolean(state.kadiCalls[i] && threats[i])}
-                  slot={slot}
-                  className={SEAT_SLOT_CLASS[slot]}
-                />
-              );
-            })}
-          </div>
-
-          {/* center */}
-          <div class="flex min-h-0 flex-col items-center justify-center py-4 lg:col-start-2 lg:row-start-2 lg:py-0">
-            <div class="flex items-center justify-center gap-6">
+            <div class="flex min-w-0 items-center gap-2.5">
+              <BrandMark compact />
+              <span class="hidden h-6 w-px bg-white/10 sm:block" />
+              <div class="hidden items-center gap-1.5 sm:flex">
+                <Pill>{state.hands.length}P</Pill>
+                <Pill>
+                  {state.direction === 1 ? "↻ clockwise" : "↺ anti-clockwise"}
+                </Pill>
+              </div>
+            </div>
+            <div class="flex items-center gap-1.5">
+              {threats.some(Boolean) && <Pill tone="amber">KADI!</Pill>}
               <button
                 type="button"
-                onClick={onPickPress}
-                class="flex flex-col items-center gap-1 rounded-xl transition hover:bg-white/5 disabled:cursor-not-allowed"
-                disabled={!myTurn}
-                aria-label={`Pick a card (${state.drawPile.length} left)`}
-                data-testid="draw-pile"
+                onClick={() => setConfirmQuit(true)}
+                aria-label="Quit"
+                class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-white/55 transition hover:bg-white/5 hover:text-white"
               >
-                <div
-                  class={`rounded-lg border-2 border-dashed ${myTurn ? "border-yellow-400/70" : "border-white/20"} bg-black/30 w-20 h-28 md:w-24 md:h-32 lg:w-28 lg:h-40 flex flex-col items-center justify-center`}
-                >
-                  <span class="text-2xl md:text-3xl lg:text-4xl">🂠</span>
-                  <span class="text-[11px] text-white/70 font-bold md:text-xs">
-                    {state.drawPile.length} left
-                  </span>
-                  <span class="text-[10px] text-yellow-300 font-bold md:text-[11px]">
-                    {myTurn ? "PICK" : ""}
-                  </span>
-                </div>
+                <Icon name="pause" class="h-5 w-5" />
               </button>
-              <div
-                class="flex flex-col items-center gap-1 anim-fly-in"
-                key={top.id + String(state.discardPile.length)}
+              <button
+                type="button"
+                aria-label="Open settings"
+                onClick={() => openSettings("game")}
+                class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-white/55 transition hover:bg-white/5 hover:text-white"
               >
-                <CardView card={top} large />
-                <div class="flex h-6 flex-wrap justify-center gap-1">
-                  {state.pendingPenalty > 0 && (
-                    <Pill tone="red">Pick {state.pendingPenalty}</Pill>
-                  )}
-                  {state.pendingSkip > 0 && (
-                    <Pill tone="amber">SKIP ×{state.pendingSkip}</Pill>
-                  )}
-                  {(state.pendingReverse ?? 0) > 0 && (
-                    <Pill tone="amber">
-                      REVERSE ×{state.pendingReverse}
-                    </Pill>
-                  )}
-                  {state.activeSuit && (
-                    <Pill tone="green">Suit: {state.activeSuit}</Pill>
-                  )}
-                  {state.activeCardRequest && (
-                    <Pill tone="amber">
-                      Need: {state.activeCardRequest.rank}
-                      {state.activeCardRequest.suit === "hearts"
-                        ? "♥"
-                        : state.activeCardRequest.suit === "diamonds"
-                          ? "♦"
-                          : state.activeCardRequest.suit === "spades"
-                            ? "♠"
-                            : "♣"}
-                    </Pill>
-                  )}
+                <Icon name="settings" class="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* table */}
+          <div
+            class="flex min-h-0 min-w-0 flex-1 flex-col px-2.5 pb-2 md:px-5 md:pb-3"
+            data-testid="game-table"
+          >
+            {/* bots */}
+            <div class="flex shrink-0 justify-center gap-2 pt-2 md:gap-3">
+              {state.hands.map((hand, i) => {
+                if (i === 0) return null;
+                const slot: "left" | "top" | "right" =
+                  i === 1 ? "left" : i === 2 ? "top" : "right";
+                const isTurn = state.currentPlayer === i && !state.gameOver;
+                return (
+                  <OpponentSeat
+                    key={i}
+                    name={BOT_NAMES[(i - 1) % BOT_NAMES.length]}
+                    cards={hand.length}
+                    isTurn={isTurn}
+                    thinking={isTurn && busy}
+                    kadi={Boolean(state.kadiCalls[i] && threats[i])}
+                    slot={slot}
+                    className="lg:max-w-[13rem]"
+                  />
+                );
+              })}
+            </div>
+
+            {/* center felt */}
+            <div class="relative mt-2 flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden rounded-[2rem] border border-kadi-line/35 bg-[radial-gradient(ellipse_at_center,rgba(20,74,53,0.55),rgba(4,22,16,0.3)_68%)] px-3 py-3 md:mt-3 md:px-6 md:py-4">
+              <div class="pointer-events-none absolute inset-3 rounded-[1.6rem] border border-white/4" />
+              <div class="relative flex items-center justify-center gap-6 md:gap-9">
+                <button
+                  type="button"
+                  onClick={onPickPress}
+                  class="flex flex-col items-center gap-2 rounded-xl transition hover:bg-white/5 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                  disabled={!myTurn}
+                  aria-label={`Pick a card (${state.drawPile.length} left)`}
+                  data-testid="draw-pile"
+                >
+                  <div
+                    class={`flex w-[4.5rem] flex-col items-center justify-center rounded-xl border ${
+                      myTurn
+                        ? "border-kadi-gold/70 bg-kadi-gold/5 shadow-[0_0_24px_rgba(245,197,24,0.1)]"
+                        : "border-kadi-line/50 bg-black/20"
+                    } py-2 md:w-24 md:py-3`}
+                  >
+                    <CardView
+                      card={{ id: "draw-back", rank: "A", suit: "spades" }}
+                      faceDown
+                    />
+                    <span class="mt-1.5 text-[10px] font-bold text-white/65 md:text-[11px]">
+                      {state.drawPile.length} left
+                    </span>
+                    <span
+                      class={`text-[9px] font-black tracking-widest md:text-[10px] ${
+                        myTurn ? "text-kadi-gold" : "text-white/25"
+                      }`}
+                    >
+                      {myTurn ? "PICK" : "DECK"}
+                    </span>
+                  </div>
+                </button>
+                <div
+                  class="anim-fly-in flex flex-col items-center gap-1.5"
+                  key={top.id + String(state.discardPile.length)}
+                >
+                  <CardView card={top} large />
+                  <div class="flex min-h-6 flex-wrap justify-center gap-1">
+                    {state.pendingPenalty > 0 && (
+                      <Pill tone="red">Pick {state.pendingPenalty}</Pill>
+                    )}
+                    {state.pendingSkip > 0 && (
+                      <Pill tone="amber">SKIP ×{state.pendingSkip}</Pill>
+                    )}
+                    {(state.pendingReverse ?? 0) > 0 && (
+                      <Pill tone="amber">
+                        REVERSE ×{state.pendingReverse}
+                      </Pill>
+                    )}
+                    {state.activeSuit && (
+                      <Pill tone="green">Suit: {state.activeSuit}</Pill>
+                    )}
+                    {state.activeCardRequest && (
+                      <Pill tone="amber">
+                        Need: {state.activeCardRequest.rank}
+                        {state.activeCardRequest.suit === "hearts"
+                          ? "♥"
+                          : state.activeCardRequest.suit === "diamonds"
+                            ? "♦"
+                            : state.activeCardRequest.suit === "spades"
+                              ? "♠"
+                              : "♣"}
+                      </Pill>
+                    )}
+                  </div>
                 </div>
+              </div>
+
+              <div class="relative mt-3 w-full max-w-xl xl:hidden">
+                <EventBanner events={feed} />
+              </div>
+              <div
+                class="relative mt-1.5 w-full max-w-xl"
+                aria-live="polite"
+              >
+                {coachOn ? (
+                  <CoachBar msg={coachMsg} />
+                ) : (
+                  <p
+                    class={`mb-1 text-center text-xs font-bold ${
+                      myTurn && !state.gameOver
+                        ? "text-kadi-gold"
+                        : "text-white/50"
+                    }`}
+                  >
+                    {turnLine}
+                  </p>
+                )}
               </div>
             </div>
 
-            <div class="mt-2 w-full xl:hidden">
-              <EventBanner events={feed} />
-            </div>
-            <div class="mt-1 w-full xl:hidden">
-              {coachOn ? (
-                <CoachBar msg={coachMsg} />
-              ) : (
-                <p class="text-center text-xs text-white/50 mb-1">
-                  {turnLine}
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* bottom rail: buzzer / hand / actions */}
-          <div class="flex min-h-0 flex-1 flex-col justify-end px-4 pb-2 lg:col-span-3 lg:row-start-3 lg:flex-row lg:items-end lg:justify-center lg:gap-8 lg:px-0 lg:pb-0">
+            {/* bottom rail: buzzer / hand / actions */}
+          <div class="flex min-w-0 shrink-0 flex-col justify-end px-1 pb-1 pt-1 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-end lg:gap-8 lg:px-0 lg:pb-0 [@media(max-height:520px)]:pb-0 [@media(max-height:520px)]:pt-0">
             {!state.gameOver && (
-              <div class="flex shrink-0 flex-col items-center justify-center py-2 lg:order-1 lg:w-44 lg:pb-3">
+              <div class="flex shrink-0 flex-col items-center justify-center py-2 lg:order-2 lg:w-40 lg:justify-self-center lg:pb-3 [@media(max-height:520px)]:py-0">
                 {kadiWindow && (
                   <div
                     class="mb-1 flex w-40 flex-col items-center gap-1"
@@ -1362,7 +1247,7 @@ export function App() {
                 )}
                 {kadiLate && kadiHot && (
                   <p class="mb-1 text-center text-[11px] font-bold uppercase tracking-widest text-amber-300">
-                    Late shout costs +1 — but it counts
+                    Late shout costs +1, but it counts
                   </p>
                 )}
                 <KadiBuzzer
@@ -1373,12 +1258,15 @@ export function App() {
               </div>
             )}
 
-            <div class="flex min-w-0 flex-col items-center lg:order-2 lg:flex-1">
+            <div class="flex min-w-0 flex-col items-center lg:order-1">
               <div
-                class="flex w-full shrink-0 overflow-x-auto no-scrollbar pt-3 lg:justify-center"
+                class="flex w-full min-w-0 shrink-0 overflow-x-auto no-scrollbar pt-3 [@media(max-height:520px)]:pt-1"
                 data-testid="hand"
               >
-                <div class="flex" style={{ paddingLeft: 8, paddingRight: 8 }}>
+                <div
+                  class="mx-auto flex w-max"
+                  style={{ paddingLeft: 8, paddingRight: 8 }}
+                >
                   {myHand.map((c) => (
                     <div
                       key={c.id}
@@ -1400,7 +1288,10 @@ export function App() {
               </div>
             </div>
 
-            <div class="shrink-0 lg:order-3 lg:w-44">
+            <div
+              class="mt-3 shrink-0 lg:order-3 lg:mt-0 lg:w-44 lg:justify-self-end [@media(max-height:520px)]:mt-1"
+              data-testid="actions"
+            >
               {selectionInvalid && (
                 <p class="pb-1 text-center text-[11px] font-bold text-red-300">
                   ⛔ {selectionReason}
@@ -1412,7 +1303,7 @@ export function App() {
                   onClick={onPickPress}
                   disabled={!myTurn}
                   data-testid="pick-button"
-                  class="flex-1 rounded-2xl bg-white/10 py-3.5 font-bold text-sm transition hover:bg-white/15 disabled:opacity-40 active:scale-95 lg:flex-none lg:w-full lg:py-4 lg:text-base"
+                  class="kadi-ghost-button flex-1 rounded-2xl py-3.5 text-sm font-bold disabled:opacity-40 active:scale-95 lg:w-full lg:flex-none lg:py-4 lg:text-base [@media(max-height:520px)]:py-2"
                 >
                   {state.pendingPenalty > 0
                     ? `Eat +${state.pendingPenalty}`
@@ -1431,12 +1322,12 @@ export function App() {
                     (selectionInvalid && !strictOn)
                   }
                   data-testid="play-button"
-                  class={`flex-1 rounded-2xl py-3.5 font-black text-sm transition active:scale-95 disabled:opacity-40 lg:flex-none lg:w-full lg:py-4 lg:text-base ${
+                  class={`flex-1 rounded-2xl py-3.5 text-sm font-black transition active:scale-95 disabled:opacity-40 lg:w-full lg:flex-none lg:py-4 lg:text-base [@media(max-height:520px)]:py-2 ${
                     selectionInvalid
                       ? strictOn
                         ? "bg-red-500 text-white"
                         : "bg-red-500/40 text-white/60"
-                      : "bg-yellow-400 text-gray-900 hover:brightness-105"
+                      : "kadi-gold-button"
                   }`}
                 >
                   Play{selectedCards.length > 0 ? ` ${selectedCards.length}` : ""}
@@ -1449,41 +1340,30 @@ export function App() {
 
       {/* match log rail */}
       <aside
-        class="hidden xl:flex xl:w-80 xl:shrink-0 xl:flex-col xl:gap-4 xl:border-l xl:border-white/10 xl:bg-black/20 xl:p-4"
+        class="hidden xl:flex xl:w-80 xl:shrink-0 xl:flex-col xl:gap-3 xl:border-l xl:border-white/8 xl:bg-kadi-ink/45 xl:p-4 xl:backdrop-blur-sm"
         data-testid="feed-rail"
       >
-        <div class="flex shrink-0 items-center justify-between gap-2">
-          <p class="text-[10px] font-bold uppercase tracking-widest text-white/40">
-            Table
-          </p>
-          <Pill>{state.hands.length} players</Pill>
-        </div>
+        <StatsCard stats={stats} />
         <div class="min-h-0 flex-1">
           <EventBanner events={feed} variant="panel" />
         </div>
-        <div class="shrink-0">
-          {coachOn ? (
-            <CoachBar msg={coachMsg} />
-          ) : (
-            <p class="text-center text-xs text-white/50">{turnLine}</p>
-          )}
-        </div>
       </aside>
+      </div>
 
       {/* game over */}
       {state.gameOver && (
-        <div class="fixed inset-0 z-40 flex items-end justify-center bg-black/70 p-4 sm:items-center">
+        <div class="fixed inset-0 z-40 flex items-end justify-center bg-kadi-ink/80 p-4 backdrop-blur-sm sm:items-center">
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="game-over-title"
             data-testid="game-over"
-            class="w-full max-w-sm rounded-3xl bg-green-950 border border-yellow-400/40 p-6 text-center anim-fanfare"
+            class="kadi-panel-strong anim-fanfare w-full max-w-sm rounded-3xl p-6 text-center"
           >
             <div class="text-5xl">{state.winnerIndex === 0 ? "🏆" : "😅"}</div>
             <h3
               id="game-over-title"
-              class="mt-2 text-2xl font-black text-yellow-300"
+              class="mt-2 text-2xl font-black text-kadi-gold"
             >
               {state.winnerIndex === 0
                 ? "You win 🎉"
@@ -1497,14 +1377,14 @@ export function App() {
             <button
               type="button"
               onClick={startGame}
-              class="mt-5 w-full rounded-2xl bg-yellow-400 py-3.5 font-black text-gray-900 transition hover:brightness-105"
+              class="kadi-gold-button mt-5 w-full rounded-2xl py-3.5 font-black"
             >
               Rematch
             </button>
             <button
               type="button"
               onClick={() => quitToHome(true)}
-              class="mt-2 w-full rounded-2xl bg-white/10 py-3 text-sm font-bold transition hover:bg-white/15"
+              class="kadi-ghost-button mt-2 w-full rounded-2xl py-3 text-sm font-bold"
             >
               Home
             </button>

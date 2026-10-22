@@ -7,7 +7,7 @@ async function gotoHome(page: Page) {
 
 async function openLobby(page: Page) {
   await gotoHome(page);
-  await page.getByRole("button", { name: /Play/ }).click();
+  await page.getByRole("button", { name: "Play Now" }).click();
   await expect(page.getByRole("heading", { name: "New Game" })).toBeVisible();
 }
 
@@ -25,20 +25,23 @@ function viewport(page: Page) {
   return size;
 }
 
-test("home keeps the CTA beside the hero at lg and below it on smaller screens", async ({
+test("home keeps the CTA beneath the hero without overflow", async ({
   page,
 }) => {
   await gotoHome(page);
   const hero = await page.getByRole("heading", { name: "KADI" }).boundingBox();
-  const play = await page.getByRole("button", { name: /Play/ }).boundingBox();
+  const play = await page.getByRole("button", { name: /Play Now/ }).boundingBox();
   expect(hero).not.toBeNull();
   expect(play).not.toBeNull();
 
-  if (viewport(page).width >= 1024) {
-    expect(play!.x).toBeGreaterThan(hero!.x + hero!.width);
-  } else {
-    expect(play!.y).toBeGreaterThan(hero!.y + hero!.height);
-  }
+  expect(play!.y).toBeGreaterThan(hero!.y + hero!.height);
+  const { width } = viewport(page);
+  expect(play!.x).toBeGreaterThanOrEqual(0);
+  expect(play!.x + play!.width).toBeLessThanOrEqual(width + 1);
+  const scrollWidth = await page.evaluate(
+    () => document.documentElement.scrollWidth,
+  );
+  expect(scrollWidth).toBeLessThanOrEqual(width + 1);
 });
 
 test("lobby switches to two columns at lg", async ({ page }) => {
@@ -59,7 +62,7 @@ test("lobby switches to two columns at lg", async ({ page }) => {
 test("settings and rules builder use two columns from md", async ({ page }) => {
   await gotoHome(page);
   await page.getByRole("button", { name: "Open settings" }).click();
-  await expect(page.getByRole("heading", { name: "Settings ⚙️" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
 
   const sound = await page.getByText("Sound & help", { exact: true }).boundingBox();
   const rules = await page.getByText("Game rules", { exact: true }).boundingBox();
@@ -74,10 +77,10 @@ test("settings and rules builder use two columns from md", async ({ page }) => {
   }
 
   await page.getByRole("button", { name: "Back" }).click();
-  await page.getByRole("button", { name: /Play/ }).click();
+  await page.getByRole("button", { name: "Play Now" }).click();
   await page.getByRole("button", { name: /Custom rules/ }).click();
   await expect(
-    page.getByRole("heading", { name: "Custom rules 🃏" }),
+    page.getByRole("heading", { name: "Custom rules" }),
   ).toBeVisible();
 
   const name = await page.getByText("Name your rules", { exact: true }).boundingBox();
@@ -100,7 +103,10 @@ test("settings and rules builder use two columns from md", async ({ page }) => {
 
 test("how-to sidebar sits beside lessons at lg", async ({ page }) => {
   await gotoHome(page);
-  await page.getByRole("button", { name: "How to play" }).click();
+  const howTo = page
+    .getByRole("main")
+    .getByRole("button", { name: "How to play" });
+  await howTo.click();
   await expect(
     page.getByRole("heading", { name: "How to play" }),
   ).toBeVisible();
@@ -117,7 +123,7 @@ test("how-to sidebar sits beside lessons at lg", async ({ page }) => {
   }
 });
 
-test("game table builds a seat ring, bottom rail, and feed rail", async ({
+test("game table builds a top seat row, bottom rail, and feed rail", async ({
   page,
 }) => {
   await startFourPlayerGame(page);
@@ -144,8 +150,8 @@ test("game table builds a seat ring, bottom rail, and feed rail", async ({
   if (width >= 1024) {
     expect(left!.x).toBeLessThan(top!.x);
     expect(top!.x).toBeLessThan(right!.x);
-    expect(top!.y).toBeLessThan(left!.y);
-    expect(top!.y).toBeLessThan(right!.y);
+    expect(Math.abs(top!.y - left!.y)).toBeLessThan(2);
+    expect(Math.abs(top!.y - right!.y)).toBeLessThan(2);
 
     const handBox = await hand.boundingBox();
     const playBox = await play.boundingBox();
@@ -155,6 +161,16 @@ test("game table builds a seat ring, bottom rail, and feed rail", async ({
     expect(playBox!.y + playBox!.height).toBeLessThanOrEqual(height + 1);
     expect(handBox!.x).toBeGreaterThanOrEqual(0);
     expect(handBox!.x + handBox!.width).toBeLessThanOrEqual(width + 1);
+  } else {
+    const handBox = await hand.boundingBox();
+    const actionsBox = await page.getByTestId("actions").boundingBox();
+    expect(handBox).not.toBeNull();
+    expect(actionsBox).not.toBeNull();
+    const minGap = height >= 600 ? 8 : 2;
+    expect(handBox!.y + handBox!.height + minGap).toBeLessThanOrEqual(
+      actionsBox!.y + 0.5,
+    );
+    expect(actionsBox!.y + actionsBox!.height).toBeLessThanOrEqual(height + 1);
   }
 
   if (width >= 1280) {
@@ -167,13 +183,44 @@ test("game table builds a seat ring, bottom rail, and feed rail", async ({
   }
 });
 
+test("a full hand scrolls without widening the table", async ({ page }) => {
+  await startFourPlayerGame(page);
+  await page.evaluate(() => {
+    const strip = document.querySelector('[data-testid="hand"] > div');
+    const first = strip?.firstElementChild;
+    if (!strip || !first) throw new Error("hand strip unavailable");
+    for (let i = 0; i < 20; i += 1) strip.append(first.cloneNode(true));
+  });
+
+  const width = viewport(page).width;
+  const hand = await page.getByTestId("hand").boundingBox();
+  const play = await page.getByTestId("play-button").boundingBox();
+  expect(hand).not.toBeNull();
+  expect(play).not.toBeNull();
+  expect(hand!.x).toBeGreaterThanOrEqual(0);
+  expect(hand!.x + hand!.width).toBeLessThanOrEqual(width + 1);
+  expect(play!.x + play!.width).toBeLessThanOrEqual(width + 1);
+
+  await page.getByTestId("hand").evaluate((el) => {
+    el.scrollLeft = 0;
+  });
+  const first = await page
+    .locator('[data-testid="hand"] > div > div')
+    .first()
+    .boundingBox();
+  expect(first).not.toBeNull();
+  expect(first!.x).toBeGreaterThanOrEqual(hand!.x - 1);
+});
+
 test("keyboard focus shows a visible ring on the primary action", async ({
   page,
 }) => {
   await gotoHome(page);
-  await page.keyboard.press("Tab");
-  await page.keyboard.press("Tab");
-  const play = page.getByRole("button", { name: /Play/ });
+  const play = page.getByRole("button", { name: /Play Now/ });
+  for (let i = 0; i < 6; i += 1) {
+    await page.keyboard.press("Tab");
+    if (await play.evaluate((el) => el === document.activeElement)) break;
+  }
   await expect(play).toBeFocused();
 
   const outline = await play.evaluate((el) => {

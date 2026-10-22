@@ -103,7 +103,7 @@ export const PLAY_BOARDS: PlayBoard[] = [
     prompt: "Top is 9♥. Play a card that matches suit or rank.",
     setup: { top: cs("9", "hearts"), hand: [cs("7", "spades"), cs("K", "hearts")] },
     solutions: [["K-hearts"]],
-    winText: "Sawa! K♥ follows hearts.",
+    winText: "Perfect! K♥ follows hearts.",
     wrongs: [{ cards: ["7-spades"], reason: "NO_MATCH" }],
   },
   {
@@ -112,7 +112,7 @@ export const PLAY_BOARDS: PlayBoard[] = [
     prompt: "Top is K♣. Dump both 7s tap in order, first must match top.",
     setup: { top: cs("K", "clubs"), hand: [cs("7", "clubs"), cs("7", "hearts")] },
     solutions: [["7-clubs", "7-hearts"]],
-    winText: "Sawa! 7♣ matches clubs, 7♥ chains by rank.",
+    winText: "Perfect! 7♣ matches clubs, 7♥ chains by rank.",
     wrongs: [{ cards: ["7-hearts", "7-clubs"], reason: "NO_MATCH" }],
   },
   {
@@ -127,7 +127,7 @@ export const PLAY_BOARDS: PlayBoard[] = [
       ["Q-spades", "5-spades"],
       ["Q-spades", "A-diamonds"],
     ],
-    winText: "Sawa! Same-suit 5♠ or any Ace closes the question.",
+    winText: "Perfect! Same-suit 5♠ or any Ace closes the question.",
     almostText: "Legal, but a bare Q makes you kula +1. Add 5♠ or an Ace.",
     wrongs: [{ cards: ["7-clubs"], reason: "NO_MATCH" }],
   },
@@ -141,7 +141,7 @@ export const PLAY_BOARDS: PlayBoard[] = [
       pendingSkip: 1,
     },
     solutions: [["J-spades"]],
-    winText: "Sawa! One J refuses the jump play on.",
+    winText: "Perfect! One J refuses the jump play on.",
     wrongs: [{ cards: ["7-hearts"], reason: "SKIP_MUST_COUNTER_OR_ACCEPT" }],
   },
   {
@@ -154,7 +154,7 @@ export const PLAY_BOARDS: PlayBoard[] = [
       pendingPenalty: 2,
     },
     solutions: [["A-clubs"]],
-    winText: "Sawa! Ace fungas the +2 no one picks, no suit called.",
+    winText: "Perfect! Ace fungas the +2 no one picks, no suit called.",
     wrongs: [{ cards: ["7-hearts"], reason: "PENALTY_MUST_STACK_OR_BLOCK" }],
   },
   {
@@ -167,7 +167,7 @@ export const PLAY_BOARDS: PlayBoard[] = [
       pendingPenalty: 2,
     },
     solutions: [["2-spades"], ["3-hearts"]],
-    winText: "Sawa! Same rank or same suit answers latest count stands.",
+    winText: "Perfect! Same rank or same suit answers latest count stands.",
     wrongs: [{ cards: ["7-diamonds"], reason: "PENALTY_MUST_STACK_OR_BLOCK" }],
     kula: { label: "Kula +2", winText: "You kula +2. Next time you hold the answer, play it." },
   },
@@ -181,7 +181,7 @@ export const PLAY_BOARDS: PlayBoard[] = [
       request: { rank: "5", suit: "hearts" },
     },
     solutions: [["5-hearts"], ["A-diamonds"]],
-    winText: "Sawa! Exact card or any Ace to lift the demand.",
+    winText: "Perfect! Exact card or any Ace to lift the demand.",
     wrongs: [{ cards: ["7-clubs"], reason: "UNMET_REQUEST" }],
     kula: { label: "Kula +1", winText: "You kula +1. Demanding what you hold is unanswerable remember that." },
   },
@@ -259,7 +259,7 @@ export const CHOICE_BOARDS: ChoiceBoard[] = [
       {
         label: "Shout Niko Kadi 📢",
         correct: true,
-        feedback: "Sawa! Shout now, finish next turn.",
+        feedback: "Perfect! Shout now, finish next turn.",
       },
       {
         label: "Dump both now",
@@ -282,7 +282,7 @@ export const CHOICE_BOARDS: ChoiceBoard[] = [
       {
         label: "Keep playing",
         correct: true,
-        feedback: "Sawa! Only shout when every card can dump clean.",
+        feedback: "Perfect! Only shout when every card can dump clean.",
       },
     ],
   },

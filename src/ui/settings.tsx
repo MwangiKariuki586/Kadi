@@ -18,6 +18,7 @@ export interface SettingsScreenProps {
   onResetStats: () => void;
   onClearSave: () => void;
   onClearCustoms: () => void;
+  onClearHistory: () => void;
 }
 
 export function Section({
@@ -35,9 +36,9 @@ export function Section({
     <section class="mt-5">
       <div class="flex items-center gap-2">
         <Pill tone="amber">{level}</Pill>
-        <h3 class="text-sm font-black text-yellow-200">{title}</h3>
+        <h3 class="text-sm font-black text-white">{title}</h3>
       </div>
-      <p class="mt-1 text-[11px] text-white/55">{sub}</p>
+      <p class="mt-1 text-[11px] text-white/45">{sub}</p>
       <div class="mt-2 flex flex-col gap-2">{children}</div>
     </section>
   );
@@ -63,25 +64,27 @@ export function ToggleRow({
       type="button"
       aria-pressed={on}
       onClick={onPress}
-      class={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition hover:border-white/25 active:scale-[0.99] ${
-        on ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-white/5"
+      class={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition active:scale-[0.99] ${
+        on
+          ? "border-kadi-gold/60 bg-kadi-gold/10 hover:border-kadi-gold"
+          : "border-kadi-line/45 bg-kadi-deep/30 hover:border-white/25"
       }`}
     >
-      <span class="text-2xl" aria-hidden="true">
+      <span class="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-lg" aria-hidden="true">
         {icon}
       </span>
       <span class="min-w-0 flex-1">
-        <span class="flex items-center gap-2 text-sm font-bold">
+        <span class="flex items-center gap-2 text-sm font-bold text-white">
           {title}
           <span
             class={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-widest ${
-              on ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white/60"
+              on ? "bg-kadi-gold text-kadi-ink" : "bg-white/10 text-white/60"
             }`}
           >
             {badge ?? (on ? "on" : "off")}
           </span>
         </span>
-        <span class="mt-0.5 block text-[11px] leading-snug text-white/60">
+        <span class="mt-0.5 block text-[11px] leading-snug text-white/50">
           {sub}
         </span>
       </span>
@@ -113,16 +116,18 @@ export function SettingsScreen({
   onResetStats,
   onClearSave,
   onClearCustoms,
+  onClearHistory,
 }: SettingsScreenProps) {
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmCustomsClear, setConfirmCustomsClear] = useState(false);
+  const [confirmHistoryClear, setConfirmHistoryClear] = useState(false);
   const rulesLocked = origin === "game";
 
   return (
     <ScreenFrame width="lg">
       <PageHeader
-        title="Settings ⚙️"
+        title="Settings"
         subtitle={
           rulesLocked
             ? "Sound and hints only during a match."
@@ -177,7 +182,7 @@ export function SettingsScreen({
               title="Game setup is locked"
               sub="Finish this game to change it."
             >
-              <div class="rounded-2xl border border-white/10 bg-black/30 p-3 text-[11px] leading-relaxed text-white/60">
+              <div class="rounded-2xl border border-kadi-line/45 bg-kadi-deep/30 p-3 text-[11px] leading-relaxed text-white/55">
                 Change it when you start the next game.
               </div>
             </Section>
@@ -197,10 +202,10 @@ export function SettingsScreen({
                     type="button"
                     aria-pressed={settings.difficulty === d.id}
                     onClick={() => onSave({ difficulty: d.id })}
-                    class={`rounded-2xl py-3 font-bold capitalize transition active:scale-95 ${
+                    class={`rounded-2xl border py-3 font-bold capitalize transition active:scale-95 ${
                       settings.difficulty === d.id
-                        ? "bg-yellow-400 text-gray-900"
-                        : "bg-white/10 text-white"
+                        ? "border-kadi-gold bg-kadi-gold text-kadi-ink"
+                        : "border-kadi-line/45 bg-kadi-deep/30 text-white hover:border-kadi-gold/40"
                     }`}
                   >
                     {d.emoji} {d.label}
@@ -213,20 +218,20 @@ export function SettingsScreen({
                   <button
                     type="button"
                     onClick={onEditCustom}
-                    class="w-full rounded-2xl border border-yellow-400/50 bg-yellow-400/10 p-3 text-left transition active:scale-[0.99]"
+                    class="w-full rounded-2xl border border-kadi-gold/50 bg-kadi-gold/10 p-3 text-left transition active:scale-[0.99]"
                   >
                     <span class="text-sm font-bold">✏️ Edit rules</span>
-                    <span class="mt-0.5 block text-[11px] text-white/60">
+                    <span class="mt-0.5 block text-[11px] text-white/50">
                       Babu, strict and everything else live inside your rules.
                     </span>
                   </button>
                   <button
                     type="button"
                     onClick={onNewCustom}
-                    class="w-full rounded-2xl border border-dashed border-white/20 bg-transparent p-3 text-left transition active:scale-[0.99]"
+                    class="w-full rounded-2xl border border-dashed border-kadi-line/60 bg-transparent p-3 text-left transition hover:border-kadi-gold/40 active:scale-[0.99]"
                   >
                     <span class="text-sm font-bold">＋ Custom rules</span>
-                    <span class="mt-0.5 block text-[11px] text-white/60">
+                    <span class="mt-0.5 block text-[11px] text-white/50">
                       Copy these rules, customize everything, share with friends.
                     </span>
                   </button>
@@ -250,10 +255,10 @@ export function SettingsScreen({
                   <button
                     type="button"
                     onClick={onNewCustom}
-                    class="w-full rounded-2xl border border-dashed border-white/20 bg-transparent p-3 text-left transition active:scale-[0.99]"
+                    class="w-full rounded-2xl border border-dashed border-kadi-line/60 bg-transparent p-3 text-left transition hover:border-kadi-gold/40 active:scale-[0.99]"
                   >
                     <span class="text-sm font-bold">＋ Custom rules</span>
-                    <span class="mt-0.5 block text-[11px] text-white/60">
+                    <span class="mt-0.5 block text-[11px] text-white/50">
                       Copy the current rules, customize everything, share with friends.
                     </span>
                   </button>
@@ -267,7 +272,7 @@ export function SettingsScreen({
             title="Your scores"
             sub="Stored on this device only."
           >
-            <div class="flex items-center gap-2 rounded-2xl border border-white/10 bg-black/30 px-3 py-2.5">
+            <div class="flex items-center gap-2 rounded-2xl border border-kadi-line/45 bg-kadi-deep/30 px-3 py-2.5">
               <span class="text-xl" aria-hidden="true">
                 🏆
               </span>
@@ -290,14 +295,39 @@ export function SettingsScreen({
               class={`w-full rounded-2xl border p-3 text-left transition active:scale-[0.99] ${
                 confirmReset
                   ? "border-red-400 bg-red-400/15"
-                  : "border-white/10 bg-white/5"
+                  : "border-kadi-line/45 bg-kadi-deep/30 hover:border-white/25"
               }`}
             >
               <span class="text-sm font-bold">
                 {confirmReset ? "Press again to clear" : "🧹 Reset stats"}
               </span>
-              <span class="mt-0.5 block text-[11px] text-white/60">
+              <span class="mt-0.5 block text-[11px] text-white/50">
                 Clear all wins and streaks.
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (confirmHistoryClear) {
+                  setConfirmHistoryClear(false);
+                  onClearHistory();
+                } else {
+                  setConfirmHistoryClear(true);
+                }
+              }}
+              class={`w-full rounded-2xl border p-3 text-left transition active:scale-[0.99] ${
+                confirmHistoryClear
+                  ? "border-red-400 bg-red-400/15"
+                  : "border-kadi-line/45 bg-kadi-deep/30 hover:border-white/25"
+              }`}
+            >
+              <span class="text-sm font-bold">
+                {confirmHistoryClear
+                  ? "Press again to delete"
+                  : "🗂 Clear match history"}
+              </span>
+              <span class="mt-0.5 block text-[11px] text-white/50">
+                Removes saved results and the local leaderboard.
               </span>
             </button>
             {hasSave && (
@@ -314,7 +344,7 @@ export function SettingsScreen({
                 class={`w-full rounded-2xl border p-3 text-left transition active:scale-[0.99] ${
                   confirmClear
                     ? "border-red-400 bg-red-400/15"
-                    : "border-white/10 bg-white/5"
+                    : "border-kadi-line/45 bg-kadi-deep/30 hover:border-white/25"
                 }`}
               >
                 <span class="text-sm font-bold">
@@ -322,7 +352,7 @@ export function SettingsScreen({
                     ? "Press again to remove"
                     : "⏸ Forfeit saved match"}
                 </span>
-                <span class="mt-0.5 block text-[11px] text-white/60">
+                <span class="mt-0.5 block text-[11px] text-white/50">
                   Remove your saved game.
                 </span>
               </button>
@@ -346,11 +376,11 @@ export function SettingsScreen({
               <span class="text-sm font-bold">
                 {confirmCustomsClear ? "Press again to delete" : "🗑 Clear all custom rules"}
               </span>
-              <span class="mt-0.5 block text-[11px] text-white/60">
+              <span class="mt-0.5 block text-[11px] text-white/50">
                 Removes duplicate/broken profiles created during setup.
               </span>
             </button>
-            <div class="rounded-2xl border border-white/10 bg-black/30 p-3 text-[11px] leading-relaxed text-white/60">
+            <div class="rounded-2xl border border-kadi-line/45 bg-kadi-deep/30 p-3 text-[11px] leading-relaxed text-white/45">
               Kadi • plays offline • no account needed.
             </div>
           </Section>

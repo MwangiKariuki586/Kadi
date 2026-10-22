@@ -1,14 +1,32 @@
 @import "tailwindcss";
 
-:root {
-  color-scheme: dark;
+@theme {
+  --color-kadi-bg: #05251a;
+  --color-kadi-deep: #031910;
+  --color-kadi-surface: #0a3323;
+  --color-kadi-surface-2: #0d3f2b;
+  --color-kadi-surface-3: #114b34;
+  --color-kadi-line: #1c5a40;
+  --color-kadi-gold: #f5c518;
+  --color-kadi-gold-bright: #ffe066;
+  --color-kadi-gold-deep: #c99700;
+  --color-kadi-cream: #f8f1de;
+  --color-kadi-cream-line: #e7dcc2;
+  --color-kadi-red: #d92d2d;
+  --color-kadi-ink: #0b1f17;
 }
 
-html, body {
+:root {
+  color-scheme: dark;
+  --kadi-gold-rgb: 245, 197, 24;
+}
+
+html,
+body {
   margin: 0;
   overscroll-behavior: none;
-  background: #052e16;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  background: #031910;
+  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
   -webkit-user-select: none;
@@ -26,7 +44,7 @@ button:not(:disabled) {
 }
 
 :focus-visible {
-  outline: 2px solid #facc15;
+  outline: 2px solid #f5c518;
   outline-offset: 2px;
 }
 
@@ -37,37 +55,180 @@ textarea,
   -webkit-user-select: text;
 }
 
-/* Card play / pick animations — GPU-friendly transforms only */
+/* ---- Shared theme surfaces ------------------------------------------- */
+
+.kadi-shell {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(900px 520px at 82% -8%, rgba(245, 197, 24, 0.09), transparent 62%),
+    radial-gradient(760px 520px at 8% 2%, rgba(31, 122, 82, 0.22), transparent 66%),
+    linear-gradient(165deg, #072d1f 0%, #05251a 46%, #031910 100%);
+}
+
+.kadi-panel {
+  border: 1px solid rgba(76, 143, 108, 0.28);
+  background:
+    linear-gradient(160deg, rgba(18, 71, 49, 0.78), rgba(7, 41, 29, 0.92));
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
+}
+
+.kadi-panel-strong {
+  border: 1px solid rgba(76, 143, 108, 0.38);
+  background:
+    linear-gradient(160deg, rgba(21, 81, 56, 0.94), rgba(6, 35, 25, 0.98));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.32);
+}
+
+.kadi-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  color: rgba(232, 244, 236, 0.56);
+}
+
+.kadi-gold-button {
+  position: relative;
+  border: 1px solid rgba(255, 224, 102, 0.9);
+  background: linear-gradient(180deg, #ffe066 0%, #f5c518 48%, #e2ae08 100%);
+  color: #102418;
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(120, 84, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  transition: filter 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+}
+
+.kadi-gold-button:not(:disabled):hover {
+  filter: brightness(1.05);
+  box-shadow:
+    0 14px 32px rgba(0, 0, 0, 0.3),
+    0 0 22px rgba(245, 197, 24, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.kadi-gold-button:not(:disabled):active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.kadi-gold-button:disabled {
+  filter: saturate(0.35) brightness(0.72);
+}
+
+.kadi-ghost-button {
+  border: 1px solid rgba(111, 171, 137, 0.3);
+  background: linear-gradient(160deg, rgba(18, 71, 49, 0.82), rgba(8, 43, 30, 0.88));
+  color: #eef7f0;
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.kadi-ghost-button:not(:disabled):hover {
+  border-color: rgba(245, 197, 24, 0.42);
+  background: linear-gradient(160deg, rgba(26, 90, 62, 0.9), rgba(10, 51, 36, 0.94));
+}
+
+.kadi-ghost-button:not(:disabled):active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.kadi-card-face {
+  background-color: #f8f1de;
+  background-image:
+    radial-gradient(circle at 22% 0%, rgba(255, 255, 255, 0.75), transparent 42%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.5), rgba(198, 181, 145, 0.16));
+  border-color: #e7dcc2;
+}
+
+.kadi-card-back {
+  background-color: #0b3a29;
+  background-image:
+    repeating-linear-gradient(45deg, rgba(245, 197, 24, 0.1) 0 1px, transparent 1px 7px),
+    repeating-linear-gradient(-45deg, rgba(245, 197, 24, 0.1) 0 1px, transparent 1px 7px),
+    radial-gradient(circle at 50% 40%, rgba(245, 197, 24, 0.18), transparent 62%);
+  border: 2px solid rgba(245, 197, 24, 0.55);
+}
+
+.kadi-chevron {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='8' viewBox='0 0 20 8'%3E%3Cpath d='M0 7 L5 1 L10 7 L15 1 L20 7' fill='none' stroke='%23f5c518' stroke-opacity='.38' stroke-width='1.2'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  background-size: 20px 8px;
+}
+
+.kadi-gold-text {
+  color: #f5c518;
+}
+
+/* ---- Card play / pick animations — GPU-friendly transforms only ------ */
+
 @keyframes kadi-fly-in {
-  from { transform: translateY(24px) scale(0.92); opacity: 0; }
-  to { transform: translateY(0) scale(1); opacity: 1; }
+  from {
+    transform: translateY(24px) scale(0.92);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
 }
 @keyframes kadi-pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.55); }
-  50% { box-shadow: 0 0 0 10px rgba(250, 204, 21, 0); }
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 197, 24, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(245, 197, 24, 0);
+  }
 }
 @keyframes kadi-shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-4px); }
-  75% { transform: translateX(4px); }
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
 }
 @keyframes kadi-fanfare {
-  0% { transform: scale(0.9); }
-  50% { transform: scale(1.04); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(0.9);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 @keyframes kadi-buzzer-pulse {
-  0%, 100% { box-shadow: 0 6px 14px rgba(0, 0, 0, 0.55), 0 0 0 0 rgba(239, 43, 32, 0.55); }
-  50% { box-shadow: 0 6px 14px rgba(0, 0, 0, 0.55), 0 0 0 12px rgba(239, 43, 32, 0); }
+  0%,
+  100% {
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.55), 0 0 0 0 rgba(245, 197, 24, 0.6);
+  }
+  50% {
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.55), 0 0 0 12px rgba(245, 197, 24, 0);
+  }
 }
 @keyframes kadi-buzzer-breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
 }
 /* Call-window countdown — drains once over the shout window */
 @keyframes kadi-window-drain {
-  from { transform: scaleX(1); }
-  to { transform: scaleX(0); }
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
 }
 .anim-kadi-window {
   transform-origin: left center;
@@ -75,12 +236,20 @@ textarea,
   animation: kadi-window-drain 2s linear forwards;
 }
 
-.anim-fly-in { animation: kadi-fly-in 280ms ease-out; }
-.anim-kadi-glow { animation: kadi-pulse-glow 1.6s ease-in-out infinite; }
-.anim-shake { animation: kadi-shake 220ms ease-in-out 2; }
-.anim-fanfare { animation: kadi-fanfare 350ms ease-out; }
+.anim-fly-in {
+  animation: kadi-fly-in 280ms ease-out;
+}
+.anim-kadi-glow {
+  animation: kadi-pulse-glow 1.6s ease-in-out infinite;
+}
+.anim-shake {
+  animation: kadi-shake 220ms ease-in-out 2;
+}
+.anim-fanfare {
+  animation: kadi-fanfare 350ms ease-out;
+}
 
-/* Arcade buzzer — chrome base ring, glossy red dome, floor reflection */
+/* Arcade buzzer — gold ring, glossy dome, floor reflection */
 .kadi-buzzer {
   position: relative;
   width: 76px;
@@ -95,11 +264,15 @@ textarea,
   -webkit-tap-highlight-color: transparent;
 }
 .kadi-buzzer:focus-visible {
-  outline: 3px solid #facc15;
+  outline: 3px solid #ffe066;
   outline-offset: 3px;
 }
-.kadi-buzzer:active { transform: translateY(3px) scale(0.97); }
-.kadi-buzzer:active .kadi-buzzer-dome { filter: brightness(0.82); }
+.kadi-buzzer:active {
+  transform: translateY(3px) scale(0.97);
+}
+.kadi-buzzer:active .kadi-buzzer-dome {
+  filter: brightness(0.82);
+}
 .kadi-buzzer-shadow {
   position: absolute;
   left: 8%;
@@ -107,15 +280,16 @@ textarea,
   bottom: -7px;
   height: 14px;
   border-radius: 9999px;
-  background: radial-gradient(ellipse at center, rgba(239, 43, 32, 0.45), rgba(0, 0, 0, 0.5) 70%);
+  background: radial-gradient(ellipse at center, rgba(245, 197, 24, 0.4), rgba(0, 0, 0, 0.5) 70%);
   filter: blur(3px);
 }
 .kadi-buzzer-base {
   position: absolute;
   inset: 0;
   border-radius: 9999px;
-  background: conic-gradient(from 210deg, #f8fafc, #94a3b8, #e2e8f0, #64748b, #f1f5f9, #94a3b8, #f8fafc);
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.55), inset 0 2px 3px rgba(255, 255, 255, 0.8), inset 0 -3px 6px rgba(0, 0, 0, 0.45);
+  background: conic-gradient(from 210deg, #fff7d6, #b98d12, #ffe89a, #8a6708, #fff7d6, #b98d12, #fff7d6);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.55), inset 0 2px 3px rgba(255, 255, 255, 0.8),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -125,19 +299,33 @@ textarea,
   width: 58px;
   height: 58px;
   border-radius: 9999px;
-  background: radial-gradient(circle at 35% 28%, #ffc9c2 0%, #ff6b5e 18%, #ef2b20 42%, #b0140c 72%, #7a0d08 100%);
-  box-shadow: inset 0 -6px 10px rgba(0, 0, 0, 0.45), inset 0 4px 8px rgba(255, 255, 255, 0.45), 0 3px 6px rgba(0, 0, 0, 0.5);
+  background: radial-gradient(circle at 35% 28%, #fff6c2 0%, #ffe066 20%, #f5c518 44%, #c08d00 74%, #6f4d00 100%);
+  box-shadow: inset 0 -6px 10px rgba(0, 0, 0, 0.45), inset 0 4px 8px rgba(255, 255, 255, 0.5),
+    0 3px 6px rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
 }
-.kadi-buzzer-idle .kadi-buzzer-dome { filter: saturate(0.55) brightness(0.8); }
-.kadi-buzzer-disabled { cursor: not-allowed; }
-.kadi-buzzer-disabled:active { transform: none; }
-.kadi-buzzer-disabled .kadi-buzzer-dome { filter: saturate(0.2) brightness(0.6); animation: none; }
-.kadi-buzzer-urgent .kadi-buzzer-base { animation: kadi-buzzer-pulse 1.6s ease-in-out infinite; }
-.kadi-buzzer-urgent .kadi-buzzer-dome { animation: kadi-buzzer-breathe 1.6s ease-in-out infinite; }
+.kadi-buzzer-idle .kadi-buzzer-dome {
+  filter: saturate(0.6) brightness(0.82);
+}
+.kadi-buzzer-disabled {
+  cursor: not-allowed;
+}
+.kadi-buzzer-disabled:active {
+  transform: none;
+}
+.kadi-buzzer-disabled .kadi-buzzer-dome {
+  filter: saturate(0.2) brightness(0.6);
+  animation: none;
+}
+.kadi-buzzer-urgent .kadi-buzzer-base {
+  animation: kadi-buzzer-pulse 1.6s ease-in-out infinite;
+}
+.kadi-buzzer-urgent .kadi-buzzer-dome {
+  animation: kadi-buzzer-breathe 1.6s ease-in-out infinite;
+}
 .kadi-buzzer-gloss {
   position: absolute;
   top: 5%;
@@ -156,8 +344,8 @@ textarea,
   font-size: 15px;
   font-weight: 900;
   letter-spacing: 0.04em;
-  color: #fff;
-  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.65);
+  color: #142418;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
   pointer-events: none;
 }
 
@@ -190,8 +378,13 @@ textarea,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .anim-fly-in, .anim-kadi-glow, .anim-shake, .anim-fanfare, .anim-kadi-window,
-  .kadi-buzzer-urgent .kadi-buzzer-base, .kadi-buzzer-urgent .kadi-buzzer-dome {
+  .anim-fly-in,
+  .anim-kadi-glow,
+  .anim-shake,
+  .anim-fanfare,
+  .anim-kadi-window,
+  .kadi-buzzer-urgent .kadi-buzzer-base,
+  .kadi-buzzer-urgent .kadi-buzzer-dome {
     animation: none;
   }
 }
@@ -214,16 +407,26 @@ textarea,
 
 /* Short viewports: compact the buzzer so it never crowds the hand's tap zone */
 @media (max-height: 700px) {
-  .kadi-buzzer { width: 60px; height: 60px; }
-  .kadi-buzzer-dome { width: 44px; height: 44px; }
-  .kadi-buzzer-label { font-size: 12px; }
+  .kadi-buzzer {
+    width: 60px;
+    height: 60px;
+  }
+  .kadi-buzzer-dome {
+    width: 44px;
+    height: 44px;
+  }
+  .kadi-buzzer-label {
+    font-size: 12px;
+  }
 }
 
 .card-btn {
   touch-action: manipulation;
-  transition: transform 140ms ease-out;
+  transition: transform 140ms ease-out, box-shadow 140ms ease-out;
 }
-.card-btn:active { transform: translateY(2px) scale(0.98); }
+.card-btn:active {
+  transform: translateY(2px) scale(0.98);
+}
 
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -232,8 +435,7 @@ textarea,
   padding-top: env(safe-area-inset-top, 0px);
 }
 
-/* App-like panes scroll by swipe — the OS scrollbar only adds noise
-   (cut-off chips and cards already hint there's more). */
+/* App-like panes scroll by swipe — the OS scrollbar only adds noise. */
 .no-scrollbar {
   scrollbar-width: none;
   -ms-overflow-style: none;
