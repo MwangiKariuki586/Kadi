@@ -4,7 +4,8 @@
 **Why:** No working Kadi app exists for Kenyan youth; existing ones are broken. Goals: (1) a new
 challenge when alone, (2) playable with no friends around (bots simulate 1–3 opponents).
 **Status:** Playable v1 on `http://localhost:5173` (dev, HMR) and LAN `http://192.168.100.8:5173`.
-Verified: **91/91 Vitest green, `tsc -b` clean, production build ~91 KB precached.**
+Responsive from phone through wide desktop. Verified: **195/195 Vitest green,
+`tsc -b` clean, production build green, Playwright smoke across six viewports.**
 
 ---
 
@@ -25,12 +26,13 @@ need no server.
 
 * **Vite 8 + TypeScript + Preact 10 + Tailwind 4** — Preact is API-identical React at ~3 KB;
   production JS is ~16 KB gzip. No game engine: DOM + CSS transforms only.
-* **PWA** via `vite-plugin-pwa` (Workbox, auto-update, standalone portrait, offline precache).
-  Capacitor-ready for a future store wrapper (Capacitor itself is free/MIT).
+* **PWA** via `vite-plugin-pwa` (Workbox, auto-update, standalone, any orientation, offline
+  precache). Capacitor-ready for a future store wrapper (Capacitor itself is free/MIT).
 * **Zero-asset media:** WebAudio-synthesized SFX (no mp3s), inline-SVG cards incl. a red/black
   Jester illustration, `navigator.vibrate` haptics. Total precache stays < 100 KB.
 * **Storage:** `idb-keyval` (stats, settings, custom rules, live-game saves).
-* **Tests:** Vitest (`npm test`), strict `tsc -b` on every build.
+* **Tests:** Vitest (`npm test`) for logic, Playwright (`npm run test:e2e`) for responsive
+  smoke coverage; strict `tsc -b` on every build.
 
 ## 3. Architecture
 
@@ -38,8 +40,10 @@ need no server.
 src/engine/  cards.ts, rules.ts (RulesConfig), state.ts, validator.ts   ← pure TS, UI-free
 src/bots/    bot.ts (easy/medium/hard), bot.test.ts
 src/store/   local.ts (GameStore interface + LocalStore, idb-keyval)
-src/ui/      components.tsx, feed.ts (narration), sounds.ts, haptics.ts
+src/ui/      components.tsx, layout.tsx (page shells + seat placement), feed.ts (narration),
+             sounds.ts, haptics.ts
 src/app.tsx  screens + table + wiring (only stateful/impure layer)
+e2e/         Playwright responsive smoke tests
 ```
 
 Rules:
@@ -125,8 +129,12 @@ declared on a strictly earlier turn (`Niko Kadi`), no cardless blocker.
 * **Joker face:** inline-SVG jester in currentColor — red/black per Joker color, `+5` badge.
 * **Super-ace picker** highlights held ranks/suits (★ + counts) since demanding what you hold
   is unanswerable; also used for the lone-special-ace mode.
-* Portrait-first, thumb-reach layout, dark battery-saving theme, Sheng-flavored copy,
-  `prefers-reduced-motion` respected, 48dp targets, safe-area insets.
+* **Responsive layout:** phones keep the thumb-first stack; `md` centres pages and splits
+  settings/rules into two columns; `lg` turns the table into a fixed seat ring with a bottom
+  action rail (buzzer / hand / Play-Pick); `xl` adds the live match-log rail. Modals centre
+  from `sm+`. Hover, visible `:focus-visible` rings, and native keyboard activation are
+  supported; copy stays pointer-neutral ("Press", "Pick"). Dark battery-saving theme,
+  Sheng-flavored copy, `prefers-reduced-motion` respected, 48dp targets, safe-area insets.
 
 ## 7. Backend plan (v2, not built)
 
@@ -136,10 +144,12 @@ channels (~1 write/move for turn-based). Leaderboards/coins only on demand.
 
 ## 8. Verification
 
-* 91 Vitest tests across 5 files (engine 58: 57 validator incl. an exhaustive proof that
-  a broken chain fails in 5,000+ table states; bots 10 incl. 600-decision legality fuzz;
-  feed 16 narration + coach; store 7 resume-guard + defaults). `tsc -b` strict-clean.
-  `npm run build` green.
+* 195 Vitest tests across 9 files, including the validator's exhaustive proof that a broken
+  chain fails in 5,000+ table states, bot legality fuzz, feed narration/coach, store resume
+  guards, and responsive seat placement. `tsc -b` strict-clean. `npm run build` green.
+* Playwright smoke suite across six viewports (390×844, 844×390, 768×1024, 1024×768,
+  1366×768, 1440×900) asserts page breakpoints, seat-ring geometry, bottom-rail containment,
+  feed-rail visibility, and keyboard focus rings. Run with `npm run test:e2e`.
 * Manual: dev on :5173, LAN-tested on phone via `--host` (needs one admin firewall rule —
   see below). Preview smoke-tested HTTP 200.
 

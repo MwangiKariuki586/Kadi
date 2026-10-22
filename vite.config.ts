@@ -12,13 +12,13 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icons/*.svg'],
       manifest: {
-        name: 'Kadi — Kenyan Card Game',
+        name: 'Kadi: Kenyan Card Game',
         short_name: 'Kadi',
         description: 'Lightweight offline Kadi vs smart bots. Niko Kadi!',
-        theme_color: '#052e16',
-        background_color: '#052e16',
+        theme_color: '#05251a',
+        background_color: '#05251a',
         display: 'standalone',
-        orientation: 'portrait',
+        orientation: 'any',
         scope: '/',
         start_url: '/',
         icons: [

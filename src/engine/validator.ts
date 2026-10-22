@@ -18,20 +18,20 @@ export interface ComboCheck {
 
 /**
  * Single card matches top? Handles Ace-declared suit.
- * A Joker is never a free play — only a pending 2/3 (or Joker) takes it
+ * A Joker is never a free play, only a pending 2/3 (or Joker) takes it
  * (see validateVsTable). A Joker on top with no live debt and no active
  * suit (legacy saves only) still lets anything through to avoid deadlock.
  */
 export function singleMatchesTop(card: Card, state: GameState): boolean {
   const top = topCard(state);
-  // Ace / Joker-eat declared a suit: follow it (or re-Ace) — even under a Joker top.
+  // Ace / Joker-eat declared a suit: follow it (or re-Ace), even under a Joker top.
   if (state.activeSuit) {
     if (card.rank === 'A') return true;
     return card.suit === state.activeSuit;
   }
   // After a Joker with no suit to follow, anything goes (prevents deadlock).
   if (top.rank === 'JOKER') return true;
-  // Ace is wild (request) — always playable.
+  // Ace is wild (request), always playable.
   if (card.rank === 'A') return true;
   return card.suit === top.suit || card.rank === top.rank;
 }
@@ -88,7 +88,7 @@ export function isSuperAceCombo(cards: Card[], state: GameState): boolean {
  * - 'any' (Bom ni Bom): any penalty answers any other, no suit/rank check.
  * - 'sameRank': same rank only (2♣ on 2♥, JOKER on JOKER).
  * - 'family' (default): a Joker answers any 2/3, unrestricted by suit or
- *   color; a Joker on top is relaxed only by another Joker or an Ace — even
+ *   color; a Joker on top is relaxed only by another Joker or an Ace, even
  *   a same-suit 2/3 is illegal, eat or block; 2/3 on 2/3: same rank any
  *   suit, or same suit any penalty rank.
  * rememberedSuit is kept for post-eat suit continuation (eat a Joker and
@@ -130,7 +130,7 @@ export function isAceAnswer(card: Card, config: RulesConfig): boolean {
 /**
  * True when the combo uses an Ace to answer a question (Q/8 or 2P J/K):
  * it holds a question and an Ace, and every Ace closes an open question.
- * All-Ace stacks (super demands) never count — answering never affects
+ * All-Ace stacks (super demands) never count, answering never affects
  * the 2-ace combination rules.
  */
 export function isAceAnswerCombo(cards: Card[], state: GameState): boolean {
@@ -141,7 +141,7 @@ export function isAceAnswerCombo(cards: Card[], state: GameState): boolean {
 }
 
 /**
- * An Ace plays solo or stacks only with other Aces — except as a
+ * An Ace plays solo or stacks only with other Aces, except as a
  * question answer: every Ace must close an open question (Q/8 or 2P J/K).
  * Q + A (any suit) is legal; A + 10 and lone-A-after-answer mixes stay illegal.
  */
@@ -171,7 +171,7 @@ function mixesAceWithNonAce(cards: Card[], state: GameState): boolean {
 
 /**
  * Free-play combo shape: every card shares one rank (first matches the top,
- * rest match rank, any suit) — J stacks only with J, K only with K, and a
+ * rest match rank, any suit), J stacks only with J, K only with K, and a
  * question opens a Q/8 chain: questions may stack on questions, winning
  * answers (4 5 6 7 9 10) close the currently open question and must match
  * its suit, while an Ace closes any open question regardless of suit.
@@ -214,7 +214,7 @@ function checkComboShape(cards: Card[], state: GameState): ComboCheck | null {
 /**
  * Bom ni Bom dodge: a single J or K played onto a pending penalty passes the
  * unchanged debt onward. Never a penalty, never adds picks, never stacks.
- * J/K stay jump/reverse cards — they never count as penalties.
+ * J/K stay jump/reverse cards, they never count as penalties.
  */
 export function isPenaltyDodge(cards: Card[], state: GameState): boolean {
   const { config } = state;
@@ -253,7 +253,7 @@ function findOpenQuestion(cards: Card[], state: GameState): Card | null {
       }
       const isAnswer = isWinningRank(c.rank, config);
       if (!isAnswer) {
-        // stacking another question is fine — still open
+        // stacking another question is fine, still open
         if (rankNeedsAnswer(c.rank, state)) {
           openQuestion = c;
           continue;
@@ -273,7 +273,7 @@ function findOpenQuestion(cards: Card[], state: GameState): Card | null {
 
 /**
  * True when the combo asks a question without closing it with an answer.
- * Always legal to play — the obligation is to draw, enforced in playCombo.
+ * Always legal to play, the obligation is to draw, enforced in playCombo.
  */
 export function comboLeavesQuestionOpen(cards: Card[], state: GameState): boolean {
   return findOpenQuestion(cards, state) != null;
@@ -334,7 +334,7 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
       return { ok: true };
     }
     if (cards.length === 0) return { ok: false, reason: 'CARD_NOT_IN_HAND' };
-    // Dodge passes the unchanged debt onward — no penalty semantics.
+    // Dodge passes the unchanged debt onward, no penalty semantics.
     if (isPenaltyDodge(cards, state)) return { ok: true };
     if (!isPenaltyRank(cards[0].rank, config) || !penaltyAnswerOk(cards[0], table, config, state.pendingPenaltySuit)) {
       return { ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' };
@@ -346,7 +346,7 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
       if (!links.ok) return links;
       return { ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' };
     }
-    // All-penalty stacks chain per the active match mode — except 'any'
+    // All-penalty stacks chain per the active match mode, except 'any'
     // (Bom ni Bom), which accepts cross-rank/cross-suit stacks outright.
     // Other modes keep the generic chain check first so rejection reasons
     // match the pre-mode behavior, then enforce the mode per card.
@@ -379,7 +379,7 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
     if (shapeReq) return shapeReq;
     const links = validateChainLinks(cards);
     if (!links.ok) return links;
-    // An unanswered question here is legal too — draw obligation applies.
+    // An unanswered question here is legal too, draw obligation applies.
     return { ok: true };
   }
 
@@ -398,12 +398,12 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
     return { ok: true };
   }
 
-  // An Ace plays solo or with Aces only — except as a question answer
+  // An Ace plays solo or with Aces only, except as a question answer
   // (Q + A any suit is legal). A + 10 is never a combo, even suited.
   if (mixesAceWithNonAce(cards, state)) {
     return { ok: false, reason: 'ACE_ONLY_STACKS_WITH_ACE' };
   }
-  // A penalty card only stacks with other penalties — never with normal cards,
+  // A penalty card only stacks with other penalties, never with normal cards,
   // even when the suits connect. Eat the debt first, then resume normal play.
   if (mixesPenaltyWithNormal(cards, config)) {
     return { ok: false, reason: 'PENALTY_MUST_STACK_OR_BLOCK' };
@@ -413,7 +413,7 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
   if (shape) return shape;
   const links = validateChainLinks(cards);
   if (!links.ok) return links;
-  // An unanswered question is legal — the obligation is to draw (see playCombo),
+  // An unanswered question is legal, the obligation is to draw (see playCombo),
   // never a blocked move.
   return { ok: true };
 }
@@ -479,7 +479,7 @@ export function canFinishNow(state: GameState, playerIndex: number): boolean {
   if (state.gameOver) return false;
   const hand = state.hands[playerIndex];
   if (hand.length === 0 || hand.length > FINISH_SEARCH_CAP) return false;
-  // Penalty/skip/reversal debts must be answered first — and their answers can never close.
+  // Penalty/skip/reversal debts must be answered first, and their answers can never close.
   if (state.pendingPenalty > 0 || state.pendingSkip > 0 || (state.pendingReverse ?? 0) > 0) return false;
   // Must have said Kadi on a strictly earlier turn (same rule as the win itself).
   if (!state.kadiCalls[playerIndex] || !(state.kadiCallTurn[playerIndex] < state.turnNumber)) return false;
@@ -578,7 +578,7 @@ export function tryDeclareKadi(state: GameState, playerIndex: number): DeclareRe
   if (owed > 0) {
     const drawn = drawCards(state, playerIndex, owed);
     state.lastEffect =
-      (state.lastEffect ? state.lastEffect + ' • ' : '') + `False KADI — fined +${drawn.length}`;
+      (state.lastEffect ? state.lastEffect + ' • ' : '') + `False KADI, fined +${drawn.length}`;
     return { ok: false, fined: drawn.length, falseCall: true };
   }
   return { ok: false, falseCall: true };
@@ -600,7 +600,7 @@ export function fineKadiDelay(state: GameState, playerIndex: number): number {
   const drawn = drawCards(state, playerIndex, owed);
   if (drawn.length > 0) {
     state.lastEffect =
-      (state.lastEffect ? state.lastEffect + ' • ' : '') + `Slow KADI — fined +${drawn.length}`;
+      (state.lastEffect ? state.lastEffect + ' • ' : '') + `Slow KADI, fined +${drawn.length}`;
   }
   return drawn.length;
 }
@@ -637,13 +637,13 @@ export function playCombo(
   if (satisfiedRequest) state.activeCardRequest = null;
 
   const isSuper = isSuperAceCombo(cards, state);
-  // Top card BEFORE this combo lands — remembers the suit an Ace overrides.
+  // Top card BEFORE this combo lands, remembers the suit an Ace overrides.
   const prevTop = topCard(state);
 
   // A Joker takes the suit played before it for post-eat continuation:
   // the card ahead of the first Joker in this combo, else the previous
   // top (Joker chains keep memory). The suit no longer gates answers —
-  // only Joker/Ace relax a Joker — but eating still follows it.
+  // only Joker/Ace relax a Joker, but eating still follows it.
   const firstJoker = cards.findIndex((c) => c.rank === 'JOKER');
   if (firstJoker !== -1) {
     const before = firstJoker > 0 ? cards[firstJoker - 1].suit : prevTop.suit;
@@ -661,7 +661,7 @@ export function playCombo(
   const { config } = state;
   let effect: string | null = null;
   // A combo played while a penalty is pending answers it (validate guarantees
-  // aces-only here) — a pure block that calls nothing further.
+  // aces-only here), a pure block that calls nothing further.
   const answersPenalty = state.pendingPenalty > 0;
   // Bom ni Bom dodge: single J/K passes the unchanged debt onward (no picks added).
   const dodgesPenalty = answersPenalty && isPenaltyDodge(cards, state);
@@ -709,7 +709,7 @@ export function playCombo(
       // Live demand (null once satisfied or cleared earlier in this combo).
       const liveDemand = state.activeCardRequest;
       if (answersPenalty) {
-        // Pure block: neutralise the penalty and call nothing — no suit,
+        // Pure block: neutralise the penalty and call nothing, no suit,
         // no exact-card demand, even from a super ace. Preserve the suit in
         // force so the Ace's own suit does NOT take over (estate rule): keep
         // a prior request, else the penalty suit, else the last suited
@@ -740,11 +740,11 @@ export function playCombo(
         effect = `Bring ${requested.rank}${suitGlyph(requested.suit)}!`;
       } else if (liveDemand) {
         // Lift: a lone Ace answers a super demand by dropping the rank only.
-        // The demanded suit persists — the responder calls nothing.
+        // The demanded suit persists, the responder calls nothing.
         state.activeCardRequest = null;
         state.activeSuit = liveDemand.suit;
         state.lastSuitBeforeRequest = null;
-        effect = `Rank lifted — follow ${liveDemand.suit} ${suitGlyph(liveDemand.suit)}`;
+        effect = `Rank lifted, follow ${liveDemand.suit} ${suitGlyph(liveDemand.suit)}`;
       } else {
         // Normal ace on free play or against a suit request: declares —
         // unless it answers a question, in which case it never declares:
@@ -760,7 +760,7 @@ export function playCombo(
           state.lastSuitBeforeRequest = state.activeSuit ?? suitOrNull(prevTop.suit);
           state.activeSuit = (c.suit === 'none' ? null : (c.suit as Suit));
           effect = autoFollow && state.activeSuit
-            ? `Answer — follow ${state.activeSuit}`
+            ? `Answer, follow ${state.activeSuit}`
             : state.activeSuit ? `Request ${state.activeSuit}` : null;
         }
         // Silent variant (aceCallsSuit=false): Ace only blocks, suit follows top.
@@ -791,7 +791,7 @@ export function playCombo(
     ? []
     : cards.filter((c) => isKickbackRank(c.rank, config) && !kickbackActsAsQuestion(state));
   // Refusal (validator guarantees exactly one card): clear the live debt and
-  // keep the turn — the victim plays on.
+  // keep the turn, the victim plays on.
   let keptTurn = false;
   if (skipBefore > 0 && jumps.length === 1 && kicks.length === 0) {
     state.pendingSkip = 0;
@@ -822,12 +822,12 @@ export function playCombo(
   state.lastEffect = effect;
 
   // A fresh J/K debt defers to the victim (advance one step, debt stays live)
-  // on every exit — even when the hand empties below. Refusal already kept
+  // on every exit, even when the hand empties below. Refusal already kept
   // the turn above, so no advance at all in that case.
   const freshDebt =
     state.pendingSkip > skipBefore || (state.pendingReverse ?? 0) > revBefore;
 
-  // Asked without an answer: the obligation is to draw — never a blocked move.
+  // Asked without an answer: the obligation is to draw, never a blocked move.
   // Drawn before the win check so an emptied hand refills and play continues.
   // Dodge is never a question (it takes precedence even in 2P question mode).
   if (!dodgesPenalty && comboLeavesQuestionOpen(cards, state)) {
@@ -856,7 +856,7 @@ export function playCombo(
       const owed = config.lateCallPickCount;
       if (owed > 0) {
         const drawn = drawCards(state, playerIndex, owed);
-        state.lastEffect = (state.lastEffect ? state.lastEffect + ' • ' : '') + `No call — fined +${drawn.length}`;
+        state.lastEffect = (state.lastEffect ? state.lastEffect + ' • ' : '') + `No call, fined +${drawn.length}`;
         if (freshDebt) advanceTurn(state, { steps: 1, keepSkip: true });
         else advanceTurn(state);
         return { ok: true, fined: drawn.length };
@@ -864,7 +864,7 @@ export function playCombo(
       // owed 0 → legacy cardless path below.
     }
     // Emptied hand with a non-finisher (or no Kadi call): cardless, game continues.
-    state.lastEffect = (state.lastEffect ? state.lastEffect + ' • ' : '') + 'Cardless — keep playing';
+    state.lastEffect = (state.lastEffect ? state.lastEffect + ' • ' : '') + 'Cardless, keep playing';
     if (freshDebt) advanceTurn(state, { steps: 1, keepSkip: true });
     else advanceTurn(state);
     return { ok: true, becameCardless: true };
@@ -894,7 +894,7 @@ export function passOrPick(state: GameState, playerIndex: number): { picked: num
     state.pendingReverse = 0;
     if (r % 2 === 1) state.direction = (state.direction * -1) as 1 | -1;
     advanceTurn(state);
-    state.lastEffect = 'Reversal accepted — turn passes';
+    state.lastEffect = 'Reversal accepted, turn passes';
     return { picked: 0, skipped: true };
   }
   // Eat penalty
@@ -906,11 +906,11 @@ export function passOrPick(state: GameState, playerIndex: number): { picked: num
     state.pendingPenaltyRank = null;
     state.pendingPenaltySuit = null;
     const drawn = drawCards(state, playerIndex, n);
-    // Eating a Joker continues with the suit before it — the next player
+    // Eating a Joker continues with the suit before it, the next player
     // must follow it. Legacy saves with no memory stay free-play.
     if (wasJokerTop && remembered) {
       state.activeSuit = remembered;
-      state.lastEffect = `Picked ${drawn.length} — follow ${remembered}`;
+      state.lastEffect = `Picked ${drawn.length}, follow ${remembered}`;
     } else {
       state.lastEffect = `Picked ${drawn.length}`;
     }
@@ -922,7 +922,7 @@ export function passOrPick(state: GameState, playerIndex: number): { picked: num
     const req = state.activeCardRequest;
     state.activeCardRequest = null;
     const drawn = drawCards(state, playerIndex, state.config.unmetRequestPickCount);
-    state.lastEffect = `No ${req.rank}${suitGlyph(req.suit)} — picked ${drawn.length}`;
+    state.lastEffect = `No ${req.rank}${suitGlyph(req.suit)}, picked ${drawn.length}`;
     advanceTurn(state);
     return { picked: drawn.length, skipped: false };
   }
@@ -936,7 +936,7 @@ export function passOrPick(state: GameState, playerIndex: number): { picked: num
 export function penaliseIllegalPlay(state: GameState, playerIndex: number): number {
   const n = state.config.invalidPlayPickCount;
   drawCards(state, playerIndex, n);
-  // NOTE: caller keeps turn order — we advance to match table rules.
+  // NOTE: caller keeps turn order, we advance to match table rules.
   if (playerIndex === state.currentPlayer) advanceTurn(state);
   return n;
 }

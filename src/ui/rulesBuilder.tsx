@@ -9,6 +9,7 @@ import {
   type RulesConfig,
 } from "../engine/rules";
 import { Section, ToggleRow } from "./settings";
+import { PageHeader, ScreenFrame } from "./layout";
 
 export interface RulesBuilderProps {
   /** Clone-from preset or the custom profile being edited. */
@@ -50,8 +51,10 @@ function Radio<T extends string>({
             type="button"
             aria-pressed={value === o.value}
             onClick={() => onPick(o.value)}
-            class={`rounded-2xl py-2.5 font-bold transition active:scale-95 ${
-              value === o.value ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"
+            class={`rounded-2xl border py-2.5 font-bold transition active:scale-95 ${
+              value === o.value
+                ? "border-kadi-gold bg-kadi-gold text-kadi-ink"
+                : "border-kadi-line/45 bg-kadi-deep/30 text-white hover:border-kadi-gold/40"
             }`}
           >
             {o.label}
@@ -79,17 +82,17 @@ function Stepper({
   onChange: (v: number) => void;
 }) {
   const btn =
-    "flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-xl font-black transition active:scale-95 disabled:opacity-30";
+    "flex h-11 w-11 items-center justify-center rounded-xl border border-kadi-line/45 bg-kadi-deep/40 text-xl font-black text-white transition active:scale-95 disabled:opacity-30";
   return (
-    <div class="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+    <div class="flex w-full items-center gap-3 rounded-2xl border border-kadi-line/40 bg-kadi-deep/30 p-3">
       <span class="min-w-0 flex-1">
         <span class="block text-sm font-bold">{title}</span>
-        <span class="mt-0.5 block text-[11px] leading-snug text-white/60">{sub}</span>
+        <span class="mt-0.5 block text-[11px] leading-snug text-white/50">{sub}</span>
       </span>
       <button type="button" aria-label={`Decrease ${title}`} class={btn} disabled={value <= min} onClick={() => onChange(value - 1)}>
         −
       </button>
-      <span class="w-8 text-center text-lg font-black text-yellow-300" aria-live="polite">
+      <span class="w-8 text-center text-lg font-black text-kadi-gold" aria-live="polite">
         {value}
       </span>
       <button type="button" aria-label={`Increase ${title}`} class={btn} disabled={value >= max} onClick={() => onChange(value + 1)}>
@@ -124,8 +127,10 @@ function ChipRow<T extends string>({
               type="button"
               aria-pressed={on}
               onClick={() => onToggle(o)}
-              class={`min-h-11 min-w-11 rounded-xl px-3 py-2 text-sm font-black transition active:scale-95 ${
-                on ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"
+              class={`min-h-11 min-w-11 rounded-xl border px-3 py-2 text-sm font-black transition active:scale-95 ${
+                on
+                  ? "border-kadi-gold bg-kadi-gold text-kadi-ink"
+                  : "border-kadi-line/45 bg-kadi-deep/30 text-white"
               }`}
             >
               {render ? render(o) : o}
@@ -142,7 +147,7 @@ async function copyText(t: string): Promise<boolean> {
     await navigator.clipboard.writeText(t);
     return true;
   } catch {
-    /* clipboard API unavailable — fall through to execCommand */
+    /* clipboard API unavailable, fall through to execCommand */
   }
   try {
     const ta = document.createElement("textarea");
@@ -192,10 +197,10 @@ export function RulesBuilder({
   const problems = useMemo(() => {
     const out = validateRulesConfig({ ...draft, name: trimmed });
     if (trimmed !== "" && PRESET_NAMES.includes(trimmed) && trimmed !== editingName) {
-      out.push("That name is taken by a built-in table — pick another.");
+      out.push("That name is taken by a built-in table, pick another.");
     }
     if (trimmed !== "" && customNames.includes(trimmed) && trimmed !== editingName) {
-      out.push("You already saved a profile with that name — pick another.");
+      out.push("You already saved a profile with that name, pick another.");
     }
     return out;
   }, [draft, trimmed, customNames, editingName]);
@@ -229,23 +234,17 @@ export function RulesBuilder({
     s === "hearts" ? "♥" : s === "diamonds" ? "♦" : s === "spades" ? "♠" : "♣";
 
   return (
-    <div class="h-dvh overflow-hidden bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col safe-top safe-bottom">
-      <div class="mx-auto flex h-full w-full max-w-md flex-col px-6 pb-4 pt-4">
-        <div class="shrink-0">
-          <button
-            type="button"
-            aria-label="Back"
-            onClick={onBack}
-            class="text-white/60 text-lg leading-none"
-          >
-            <span aria-hidden="true" class="font-black text-2xl">⬅</span>
-          </button>
-          <h2 class="mt-2 text-3xl font-black text-yellow-300">Custom rules 🃏</h2>
-          <p class="mt-0.5 text-xs text-white/60">{sourceName}. Changes apply to your next game.</p>
-        </div>
+    <ScreenFrame width="xl">
+      <PageHeader
+        title="Custom"
+        accent="rules"
+        subtitle={`${sourceName}. Changes apply to your next game.`}
+        onBack={onBack}
+      />
 
-        <div class="mt-2 min-h-0 flex-1 overflow-y-auto no-scrollbar overscroll-contain pb-2">
-          <Section level="✏️" title="Name your rules" sub="Saved on this phone. Share with a code.">
+      <div class="mt-2 min-h-0 flex-1 overflow-y-auto no-scrollbar overscroll-contain pb-2">
+        <div class="md:grid md:grid-cols-2 md:items-start md:gap-5 md:[&>section]:mt-0">
+          <Section level="✏️" title="Name your rules" sub="Saved on this device. Share with a code.">
             <input
               type="text"
               value={name}
@@ -253,7 +252,7 @@ export function RulesBuilder({
               placeholder="Estate Sunday"
               aria-label="Rules name"
               onInput={(e) => setName((e.target as HTMLInputElement).value)}
-              class="w-full rounded-2xl border border-white/10 bg-white/5 p-3 text-sm font-bold text-white placeholder:text-white/30 focus:border-yellow-400 focus:outline-none"
+              class="w-full rounded-2xl border border-kadi-line/45 bg-kadi-deep/30 p-3 text-sm font-bold text-white placeholder:text-white/30 focus:border-kadi-gold focus:outline-none"
             />
           </Section>
           <Section level="📝" title="Short description" sub="Shown in the rules picker. One sentence.">
@@ -264,7 +263,7 @@ export function RulesBuilder({
               placeholder="Family penalties, latest replaces, Jokers hit hard."
               aria-label="Rules description"
               onInput={(e) => set({ description: (e.target as HTMLInputElement).value })}
-              class="w-full rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white placeholder:text-white/30 focus:border-yellow-400 focus:outline-none"
+              class="w-full rounded-2xl border border-kadi-line/45 bg-kadi-deep/30 p-3 text-sm text-white placeholder:text-white/30 focus:border-kadi-gold focus:outline-none"
             />
           </Section>
 
@@ -362,7 +361,7 @@ export function RulesBuilder({
             <ToggleRow
               icon="1️⃣"
               title="Must play one card to win"
-              sub="Only a lone single card can win — no multi-card dumps."
+              sub="Only a lone single card can win, no multi-card dumps."
               on={draft.winningDumpMustBeSingle}
               onPress={() => set({ winningDumpMustBeSingle: !draft.winningDumpMustBeSingle })}
             />
@@ -441,14 +440,14 @@ export function RulesBuilder({
             <Stepper title="Wrong play: draw" sub="Illegal move picks this many." value={draft.invalidPlayPickCount} min={0} max={5} onChange={(v) => set({ invalidPlayPickCount: v })} />
           </Section>
 
-          <Section level="🔗" title="Share it" sub="A code friends paste on their phones — no account, offline.">
+          <Section level="🔗" title="Share it" sub="A code friends paste on their devices, no account, offline.">
             <textarea
               readOnly
               rows={3}
               value={shareCode}
               aria-label="Share code"
               onFocus={(e) => (e.target as HTMLTextAreaElement).select()}
-              class="w-full rounded-2xl border border-white/10 bg-black/30 p-3 font-mono text-[10px] break-all text-white/70 focus:border-yellow-400 focus:outline-none"
+              class="w-full rounded-2xl border border-kadi-line/45 bg-kadi-deep/40 p-3 font-mono text-[10px] break-all text-white/70 focus:border-kadi-gold focus:outline-none"
             />
             <button
               type="button"
@@ -458,7 +457,7 @@ export function RulesBuilder({
                   if (ok) window.setTimeout(() => setCopied(false), 2000);
                 });
               }}
-              class="w-full rounded-2xl bg-white/10 p-3 text-sm font-bold transition active:scale-[0.99]"
+              class="kadi-ghost-button w-full rounded-2xl p-3 text-sm font-bold active:scale-[0.99]"
             >
               {copied ? "✅ Copied!" : "📋 Copy share code"}
             </button>
@@ -471,7 +470,7 @@ export function RulesBuilder({
                 setImportCode((e.target as HTMLTextAreaElement).value);
                 setImportError(null);
               }}
-              class="w-full rounded-2xl border border-white/10 bg-white/5 p-3 font-mono text-[10px] text-white placeholder:text-white/30 focus:border-yellow-400 focus:outline-none"
+              class="w-full rounded-2xl border border-kadi-line/45 bg-kadi-deep/30 p-3 font-mono text-[10px] text-white placeholder:text-white/30 focus:border-kadi-gold focus:outline-none"
             />
             {importError && (
               <p class="rounded-2xl border border-red-400/40 bg-red-400/10 p-3 text-[11px] text-red-200">{importError}</p>
@@ -480,13 +479,13 @@ export function RulesBuilder({
               type="button"
               disabled={importCode.trim() === ""}
               onClick={handleImport}
-              class="w-full rounded-2xl bg-white/10 p-3 text-sm font-bold transition active:scale-[0.99] disabled:opacity-40"
+              class="kadi-ghost-button w-full rounded-2xl p-3 text-sm font-bold active:scale-[0.99] disabled:opacity-40"
             >
               📥 Load from code
             </button>
           </Section>
 
-          <div class="mt-5 flex flex-col gap-2 pb-2">
+          <div class="mt-5 flex flex-col gap-2 pb-2 md:col-span-2 lg:sticky lg:bottom-0 lg:z-10 lg:bg-kadi-bg/90 lg:pt-3 lg:backdrop-blur">
             {problems.length > 0 && (
               <p class="rounded-2xl border border-red-400/40 bg-red-400/10 p-3 text-[11px] leading-relaxed text-red-200" role="alert">
                 {problems[0]}
@@ -496,7 +495,7 @@ export function RulesBuilder({
               type="button"
               disabled={problems.length > 0}
               onClick={handleSave}
-              class="w-full rounded-2xl bg-yellow-400 p-4 text-base font-black text-gray-900 transition active:scale-[0.99] disabled:opacity-40"
+              class="kadi-gold-button w-full rounded-2xl p-4 text-base font-black active:scale-[0.99] disabled:opacity-40"
             >
               💾 Save table rules
             </button>
@@ -508,15 +507,17 @@ export function RulesBuilder({
                   else setConfirmDelete(true);
                 }}
                 class={`w-full rounded-2xl border p-3 text-sm font-bold transition active:scale-[0.99] ${
-                  confirmDelete ? "border-red-400 bg-red-400/15 text-red-200" : "border-white/10 bg-white/5"
+                  confirmDelete
+                    ? "border-red-400 bg-red-400/15 text-red-200"
+                    : "border-kadi-line/45 bg-kadi-deep/30"
                 }`}
               >
-                {confirmDelete ? "Tap again to delete this profile" : "🗑 Delete this profile"}
+                {confirmDelete ? "Press again to delete this profile" : "🗑 Delete this profile"}
               </button>
             )}
           </div>
         </div>
       </div>
-    </div>
+    </ScreenFrame>
   );
 }

@@ -1,6 +1,7 @@
 import { del, get, set } from 'idb-keyval';
 import { migrateRules, PRESETS, STANDARD_MAUA, type RulesConfig } from '../engine/rules';
 import type { GameState } from '../engine/state';
+import { appendMatch, normalizeHistory, type MatchRecord } from './history';
 
 /** Backend-ready seam: UI only talks to this interface.
  *  v1 = LocalStore. v2 online = SupabaseStore with the same shape. */
@@ -102,6 +103,9 @@ export interface GameStore {
   getStats(): Promise<Stats>;
   recordResult(won: boolean): Promise<Stats>;
   resetStats(): Promise<Stats>;
+  getMatchHistory(): Promise<MatchRecord[]>;
+  recordMatch(record: MatchRecord): Promise<MatchRecord[]>;
+  clearMatchHistory(): Promise<void>;
   getSettings(): Promise<Settings>;
   saveSettings(s: Partial<Settings>): Promise<Settings>;
   getCustomRules(): Promise<RulesConfig[]>;
@@ -139,6 +143,29 @@ export class LocalStore implements GameStore {
     const fresh = { ...DEFAULT_STATS };
     await set('kadi-stats', fresh);
     return fresh;
+  }
+
+  async getMatchHistory(): Promise<MatchRecord[]> {
+    try {
+      return normalizeHistory(await get('kadi-history'));
+    } catch {
+      return [];
+    }
+  }
+
+  async recordMatch(record: MatchRecord): Promise<MatchRecord[]> {
+    const current = await this.getMatchHistory();
+    const next = appendMatch(current, record);
+    await set('kadi-history', next);
+    return next;
+  }
+
+  async clearMatchHistory(): Promise<void> {
+    try {
+      await del('kadi-history');
+    } catch {
+      /* ignore */
+    }
   }
 
   async getSettings(): Promise<Settings> {

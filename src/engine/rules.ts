@@ -1,7 +1,7 @@
 import type { Rank, Suit } from './cards';
 
 /**
- * Rules as DATA — the engine never hardcodes card meanings.
+ * Rules as DATA, the engine never hardcodes card meanings.
  * Add a field + default to support a new house rule without breaking old profiles.
  */
 export interface RulesConfig {
@@ -31,7 +31,7 @@ export interface RulesConfig {
   /**
    * Bom ni Bom dodge: while a penalty is pending, a single J (jump) or K
    * (kickback) may be played to pass the unchanged debt onward. J/K stay
-   * jump/reverse cards — they never count as penalties and never add picks.
+   * jump/reverse cards, they never count as penalties and never add picks.
    */
   dodgePenaltyWithJumpKickback: boolean;
   /** Ace played on a penalty clears it (block). */
@@ -43,7 +43,7 @@ export interface RulesConfig {
   kickbackRanks: Rank[];
   kickbackCounterable: boolean;
   questionRanks: Rank[];
-  /** Stacked questions (Q/8) are closed by a same-suit winning answer — or by any Ace. */
+  /** Stacked questions (Q/8) are closed by a same-suit winning answer, or by any Ace. */
   mustAnswerSameSuit: boolean;
   /** An Ace answers any open question regardless of suit (Q♠ + A♦ is legal). Future custom mode may turn this off. */
   aceAnswersQuestion: boolean;
@@ -57,7 +57,7 @@ export interface RulesConfig {
   cardlessBlocksWin: boolean;
   /**
    * Must-end-on-one: only a lone single card can close a game. Multi-card
-   * dumps can shed down to one card but never win outright — engineer your
+   * dumps can shed down to one card but never win outright, engineer your
    * hand to a single finisher and play it alone.
    */
   winningDumpMustBeSingle: boolean;
@@ -90,7 +90,7 @@ export interface RulesConfig {
 export const STANDARD_MAUA: RulesConfig = {
   version: 2,
   name: 'Standard Maua',
-  description: 'The classic Maua — family-style penalties, latest replaces, Jokers hit hard.',
+  description: 'The classic Maua, family-style penalties, latest replaces, Jokers hit hard.',
   dealCount: 4,
   jokersEnabled: true,
   penaltyPicks: { '2': 2, '3': 3, 'JOKER': 5 },
@@ -129,14 +129,14 @@ export const STANDARD_MAUA: RulesConfig = {
 export const BOM_NI_BOM: RulesConfig = {
   ...STANDARD_MAUA,
   name: 'Bom ni Bom',
-  description: 'Wild penalties — any answers any, J/K dodges, debts add up. Fast and chaotic.',
+  description: 'Wild penalties, any answers any, J/K dodges, debts add up. Fast and chaotic.',
   penaltyMatchMode: 'any',
   dodgePenaltyWithJumpKickback: true,
   penaltyAccumulates: true,
 };
 
 /**
- * Backstreet Pesa — the money-game table. Country-wide common rules because
+ * Backstreet Pesa, the money-game table. Country-wide common rules because
  * cash is on the line: penalties accumulate (eater picks the total) and the
  * table is strict (illegal taps are fined + turn passes, no free passes).
  * Same-suit question answers, hard Niko Kadi call fines and the cardless
@@ -145,7 +145,7 @@ export const BOM_NI_BOM: RulesConfig = {
 export const BACKSTREET_PESA: RulesConfig = {
   ...STANDARD_MAUA,
   name: 'Backstreet Pesa',
-  description: 'Money-game rules — penalties add up, strict table, no free passes. High stakes.',
+  description: 'Money-game rules, penalties add up, strict table, no free passes. High stakes.',
   penaltyAccumulates: true,
   strictWrongPlay: true,
 };
@@ -230,7 +230,7 @@ export function encodeRulesConfig(c: RulesConfig): string {
 export function decodeRulesConfig(code: string): RulesConfig {
   const trimmed = code.trim();
   if (!trimmed.startsWith(SHARE_CODE_PREFIX)) {
-    throw new Error(`Not a Kadi share code — it should start with ${SHARE_CODE_PREFIX}`);
+    throw new Error(`Not a Kadi share code, it should start with ${SHARE_CODE_PREFIX}`);
   }
   const b64 = trimmed
     .slice(SHARE_CODE_PREFIX.length)
@@ -242,16 +242,16 @@ export function decodeRulesConfig(code: string): RulesConfig {
     const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
     json = new TextDecoder().decode(bytes);
   } catch {
-    throw new Error('Share code is corrupted — ask for a fresh copy.');
+    throw new Error('Share code is corrupted, ask for a fresh copy.');
   }
   let raw: unknown;
   try {
     raw = JSON.parse(json);
   } catch {
-    throw new Error('Share code is corrupted — ask for a fresh copy.');
+    throw new Error('Share code is corrupted, ask for a fresh copy.');
   }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new Error('Share code is corrupted — ask for a fresh copy.');
+    throw new Error('Share code is corrupted, ask for a fresh copy.');
   }
   const rec = raw as Record<string, unknown>;
   const name = typeof rec['name'] === 'string' && rec['name'].trim() !== '' ? rec['name'] : 'Shared table';

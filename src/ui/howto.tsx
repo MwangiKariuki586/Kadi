@@ -3,6 +3,7 @@ import type { ComponentChildren } from "preact";
 import type { Card, Suit } from "../engine/cards";
 import { passOrPick, playCombo, validateCombo } from "../engine/validator";
 import { CardView, Pill } from "./components";
+import { PageHeader, ScreenFrame } from "./layout";
 import { haptics } from "./haptics";
 import { sfx } from "./sounds";
 import { reasonText } from "./reasons";
@@ -40,9 +41,9 @@ function choiceBoard(id: string): ChoiceBoard {
 type Result = { tone: "good" | "bad" | "almost"; text: string } | null;
 
 const RESULT_STYLE: Record<Exclude<Result, null>["tone"], string> = {
-  good: "border-green-400/70 bg-green-400/10 text-green-100",
-  bad: "border-red-400/70 bg-red-500/15 text-red-100",
-  almost: "border-yellow-400/70 bg-yellow-400/10 text-yellow-100",
+  good: "border-emerald-400/60 bg-emerald-400/10 text-emerald-100",
+  bad: "border-red-400/60 bg-red-500/15 text-red-100",
+  almost: "border-kadi-gold/60 bg-kadi-gold/10 text-kadi-cream",
 };
 
 /** Tap-the-cards practice board backed by the real rules engine. */
@@ -77,7 +78,7 @@ export function TryBoard({ board }: { board: PlayBoard }) {
 
   const onPlay = () => {
     if (selected.length === 0) {
-      setResult({ tone: "bad", text: "Tap a card first, then Play." });
+      setResult({ tone: "bad", text: "Pick a card first, then Play." });
       return;
     }
     const s = buildPracticeTable(board.setup);
@@ -144,7 +145,7 @@ export function TryBoard({ board }: { board: PlayBoard }) {
   };
 
   return (
-    <div class="rounded-2xl border border-white/10 bg-black/30 p-3">
+    <div class="rounded-2xl border border-kadi-line/40 bg-kadi-deep/30 p-3">
       <p class="text-xs font-bold text-white/90">{board.prompt}</p>
       <div class="mt-2 flex items-center justify-center gap-4">
         <div class="flex flex-col items-center gap-1">
@@ -191,7 +192,7 @@ export function TryBoard({ board }: { board: PlayBoard }) {
           <button
             type="button"
             onClick={onKula}
-            class="flex-1 rounded-2xl bg-white/10 py-2.5 text-xs font-bold active:scale-95 transition"
+            class="kadi-ghost-button flex-1 rounded-2xl py-2.5 text-xs font-bold active:scale-95"
           >
             {board.kula.label}
           </button>
@@ -200,7 +201,7 @@ export function TryBoard({ board }: { board: PlayBoard }) {
           <button
             type="button"
             onClick={onPlay}
-            class="flex-1 rounded-2xl bg-yellow-400 py-2.5 text-xs font-black text-gray-900 active:scale-95 transition"
+            class="kadi-gold-button flex-1 rounded-2xl py-2.5 text-xs font-black active:scale-95"
           >
             Play{selected.length > 0 ? ` ${selected.length}` : ""}
           </button>
@@ -208,7 +209,7 @@ export function TryBoard({ board }: { board: PlayBoard }) {
           <button
             type="button"
             onClick={reset}
-            class="flex-1 rounded-2xl bg-white/10 py-2.5 text-xs font-bold active:scale-95 transition"
+            class="kadi-ghost-button flex-1 rounded-2xl py-2.5 text-xs font-bold active:scale-95"
           >
             ↻ Try again
           </button>
@@ -234,7 +235,7 @@ export function ChoiceBoardView({ board }: { board: ChoiceBoard }) {
   };
 
   return (
-    <div class="rounded-2xl border border-white/10 bg-black/30 p-3">
+    <div class="rounded-2xl border border-kadi-line/40 bg-kadi-deep/30 p-3">
       <p class="text-xs font-bold text-white/90">{board.prompt}</p>
       <div class="mt-2 flex justify-center">
         <div class="flex" style={{ paddingLeft: 8 }}>
@@ -254,9 +255,9 @@ export function ChoiceBoardView({ board }: { board: ChoiceBoard }) {
             class={`w-full rounded-2xl border p-3 text-sm font-bold transition active:scale-[0.99] ${
               picked === i
                 ? o.correct
-                  ? "border-green-400 bg-green-400/10 text-green-100"
+                  ? "border-emerald-400 bg-emerald-400/10 text-emerald-100"
                   : "border-red-400 bg-red-500/15 text-red-100"
-                : "border-white/10 bg-white/5 text-white"
+                : "border-kadi-line/40 bg-kadi-deep/30 text-white"
             }`}
           >
             {o.label}
@@ -284,7 +285,7 @@ export function CardExample({
   caption: string;
 }) {
   return (
-    <div class="rounded-2xl border border-white/10 bg-black/30 p-3">
+    <div class="rounded-2xl border border-kadi-line/40 bg-kadi-deep/30 p-3">
       <div class="flex justify-center">
         <div class="flex" style={{ paddingLeft: 8 }}>
           {cards.map((c) => (
@@ -314,8 +315,8 @@ function Section({
 }) {
   return (
     <section id={`howto-${id}`} class="mt-5 scroll-mt-20">
-      <h3 class="text-sm font-black text-yellow-200">{title}</h3>
-      <p class="mt-1 text-[11px] leading-relaxed text-white/60">{line}</p>
+      <h3 class="text-sm font-black text-white">{title}</h3>
+      <p class="mt-1 text-[11px] leading-relaxed text-white/50">{line}</p>
       <div class="mt-2 flex flex-col gap-2">{children}</div>
     </section>
   );
@@ -338,41 +339,34 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
         .getElementById(`howto-${id}`)
         ?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch {
-      /* DOM unavailable — ignore */
+      /* DOM unavailable, ignore */
     }
   };
 
   return (
-    <div class="h-dvh overflow-hidden bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col safe-top safe-bottom">
-      <div class="mx-auto flex h-full w-full max-w-md flex-col px-6 pb-4 pt-4">
-        <div class="shrink-0">
-          <button
-            type="button"
-            aria-label="Back"
-            onClick={onBack}
-            class="text-white/60 text-lg leading-none"
-          >
-            <span aria-hidden="true" class="font-black text-2xl">⬅</span>
-          </button>
-          <h2 class="mt-2 text-3xl font-black text-yellow-300">How to play</h2>
-          <p class="mt-0.5 text-xs text-white/60">
-            Tap through the lessons every board is real Kadi.
-          </p>
-          <div class="mt-2 flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+    <ScreenFrame width="xl">
+      <div class="flex h-full min-h-0 flex-col lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-10">
+        <aside class="shrink-0">
+          <PageHeader
+            title="How to play"
+            subtitle="Step through the lessons, every board is real Kadi."
+            onBack={onBack}
+          />
+          <div class="mt-2 flex gap-1.5 overflow-x-auto no-scrollbar pb-1 lg:mt-6 lg:flex-col lg:items-stretch lg:overflow-visible">
             {CHIPS.map((c) => (
               <button
                 key={c.id}
                 type="button"
                 onClick={() => jump(c.id)}
-                class="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white/80 active:scale-95 transition"
+                class="shrink-0 rounded-full border border-kadi-line/45 bg-kadi-deep/40 px-3 py-1.5 text-[11px] font-bold text-white/70 transition hover:border-kadi-gold/40 hover:text-white active:scale-95 lg:rounded-xl lg:px-3 lg:py-2 lg:text-left lg:text-xs"
               >
                 {c.label}
               </button>
             ))}
           </div>
-        </div>
+        </aside>
 
-        <div class="mt-2 min-h-0 flex-1 overflow-y-auto no-scrollbar overscroll-contain pb-2">
+        <div class="mt-2 min-h-0 flex-1 overflow-y-auto no-scrollbar overscroll-contain pb-2 lg:mt-0 lg:pr-2">
           <Section
             id="goal"
             title="🎯 Goal"
@@ -400,7 +394,7 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
           <Section
             id="match"
             title="🃏 Matching"
-            line="Match the top card's suit or rank. Tap cards in order the first one must match."
+            line="Match the top card's suit or rank. Select cards in order, the first one must match."
           >
             <TryBoard board={playBoard("match-one")} />
             <TryBoard board={playBoard("combo-order")} />
@@ -434,14 +428,14 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
                 { id: "hx-2d", rank: "2", suit: "diamonds" },
                 { id: "JOKER-1", rank: "JOKER", suit: "none" },
               ]}
-              caption="2♦, then Joker (+5). Only another Joker or an Ace relaxes it — eat and follow ♦."
+              caption="2♦, then Joker (+5). Only another Joker or an Ace relaxes it, eat and follow ♦."
             />
             <CardExample
               cards={[
                 { id: "hx-2h", rank: "2", suit: "hearts" },
                 { id: "JOKER-2", rank: "JOKER", suit: "none" },
               ]}
-              caption="Any Joker answers any 2 or 3 — black Joker on 2♥ is legal. No color to match."
+              caption="Any Joker answers any 2 or 3, black Joker on 2♥ is legal. No color to match."
             />
           </Section>
 
@@ -465,6 +459,6 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
           </Section>
         </div>
       </div>
-    </div>
+    </ScreenFrame>
   );
 }

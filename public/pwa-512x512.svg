@@ -1,7 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#052e16"/>
-  <rect x="156" y="96" width="200" height="280" rx="24" fill="#ffffff"/>
-  <text x="256" y="240" font-size="120" text-anchor="middle" fill="#111827" font-family="system-ui,sans-serif" font-weight="900">K</text>
-  <text x="256" y="330" font-size="96" text-anchor="middle" fill="#111827" font-family="system-ui,sans-serif">♠</text>
-  <rect x="156" y="376" width="200" height="28" rx="14" fill="#facc15"/>
+  <rect width="512" height="512" rx="112" fill="#05251a"/>
+  <circle cx="256" cy="256" r="176" fill="#0a3323"/>
+  <rect x="154" y="92" width="204" height="288" rx="28" fill="#f8f1de" stroke="#f5c518" stroke-width="10"/>
+  <rect x="172" y="110" width="168" height="252" rx="18" fill="none" stroke="#e7dcc2" stroke-width="4"/>
+  <text x="256" y="238" font-size="120" text-anchor="middle" fill="#14251b" font-family="system-ui,sans-serif" font-weight="900">K</text>
+  <text x="256" y="326" font-size="92" text-anchor="middle" fill="#14251b" font-family="Georgia,serif">♠</text>
+  <rect x="198" y="388" width="116" height="26" rx="13" fill="#f5c518"/>
 </svg>
