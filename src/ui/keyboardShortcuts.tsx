@@ -41,7 +41,7 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
   { keys: ["P"], label: "Play selected cards" },
   { keys: ["D"], label: "Pick, draw, or accept a penalty" },
   { keys: ["K"], label: "Declare KADI" },
-  { keys: ["Esc"], label: "Close a dialog or clear selection" },
+  { keys: ["Esc"], label: "Pause the match, or close a dialog" },
   { keys: ["?"], label: "Open or close this panel" },
 ];
 

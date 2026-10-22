@@ -1,6 +1,12 @@
 export type ShortcutLayer = "game" | "modal" | "help";
 
-export type GameShortcut = "play" | "pick" | "kadi" | "dismiss" | "help";
+export type GameShortcut =
+  | "play"
+  | "pick"
+  | "kadi"
+  | "pause"
+  | "dismiss"
+  | "help";
 
 export interface KeyInput {
   key: string;
@@ -61,7 +67,7 @@ export function resolveGameShortcut(
     case "k":
       return "kadi";
     case "escape":
-      return "dismiss";
+      return "pause";
     default:
       return null;
   }

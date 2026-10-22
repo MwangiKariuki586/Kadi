@@ -40,6 +40,10 @@ test("shortcut hints are exposed and the help dialog toggles with ?", async ({
     "aria-keyshortcuts",
     "K",
   );
+  await expect(page.getByTestId("pause-button")).toHaveAttribute(
+    "aria-keyshortcuts",
+    "Escape",
+  );
 
   const button = page.getByTestId("shortcuts-button");
   await expect(button).toBeVisible();
@@ -104,12 +108,24 @@ test("P plays a hinted legal card", async ({ page }) => {
   await expect(page.getByTestId("feed-panel")).toContainText(/You play/);
 });
 
-test("Escape clears a card selection", async ({ page }) => {
+test("Escape pauses the match without clearing the selection", async ({
+  page,
+}) => {
   await waitForMyTurn(page);
   const card = page.getByTestId("hand").locator("button").first();
   await card.click();
   await expect(card).toHaveAttribute("aria-pressed", "true");
 
   await page.keyboard.press("Escape");
-  await expect(card).toHaveAttribute("aria-pressed", "false");
+  const pause = page.getByRole("dialog", { name: "Quit this match?" });
+  await expect(pause).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Close", exact: true }),
+  ).toBeFocused();
+  await expect(card).toHaveAttribute("aria-pressed", "true");
+
+  await page.keyboard.press("Escape");
+  await expect(pause).toBeHidden();
+  await expect(card).toHaveAttribute("aria-pressed", "true");
+  await expect(card).toBeFocused();
 });

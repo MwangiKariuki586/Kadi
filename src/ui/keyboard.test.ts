@@ -32,8 +32,8 @@ describe("resolveGameShortcut", () => {
     expect(resolveGameShortcut(press("K"), "game")).toBe("kadi");
   });
 
-  it("maps escape and help", () => {
-    expect(resolveGameShortcut(press("Escape"), "game")).toBe("dismiss");
+  it("maps pause and help", () => {
+    expect(resolveGameShortcut(press("Escape"), "game")).toBe("pause");
     expect(resolveGameShortcut(press("?"), "game")).toBe("help");
     expect(
       resolveGameShortcut(

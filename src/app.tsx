@@ -429,8 +429,14 @@ export function App() {
   // (bounded, a kept turn that keeps nothing eventually picks).
   const currentPlayer = state?.currentPlayer ?? 0;
   const gameOver = state?.gameOver ?? false;
+  const paused = confirmQuit || shortcutsOpen;
   useEffect(() => {
-    if (screen !== "game" || !stateRef.current || stateRef.current.gameOver)
+    if (
+      paused ||
+      screen !== "game" ||
+      !stateRef.current ||
+      stateRef.current.gameOver
+    )
       return;
     const st = stateRef.current;
     if (st.currentPlayer === 0) return;
@@ -511,7 +517,7 @@ export function App() {
     };
     id = window.setTimeout(runBot, 650 + Math.random() * 350);
     return () => window.clearTimeout(id);
-  }, [screen, currentPlayer, gameOver, difficulty, bump, pushFeed]);
+  }, [paused, screen, currentPlayer, gameOver, difficulty, bump, pushFeed]);
 
   // ---- KADI call-window: shout within 2s of a clean, winnable turn start ----
   // Opens once per human turn (undeclared + winnable shape + no debts/demands
@@ -1032,11 +1038,14 @@ export function App() {
       setShortcutsOpen((open) => !open);
       return;
     }
+    if (action === "pause") {
+      setConfirmQuit(true);
+      return;
+    }
     if (shortcutsOpen) setShortcutsOpen(false);
     else if (confirmQuit) setConfirmQuit(false);
     else if (superPickerFor) setSuperPickerFor(null);
     else if (suitPickerFor) setSuitPickerFor(null);
-    else setSelected([]);
   };
 
   const waitingOn =
@@ -1144,7 +1153,10 @@ export function App() {
               <button
                 type="button"
                 onClick={() => setConfirmQuit(true)}
-                aria-label="Quit"
+                aria-label="Pause or quit"
+                aria-keyshortcuts="Escape"
+                title="Pause or quit (Esc)"
+                data-testid="pause-button"
                 class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-white/55 transition hover:bg-white/5 hover:text-white"
               >
                 <Icon name="pause" class="h-5 w-5" />
