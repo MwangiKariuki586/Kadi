@@ -53,6 +53,8 @@ import { MyGamesScreen } from "./ui/records";
 import { BOT_NAMES, PLAYER_NAMES } from "./ui/players";
 import { BrandMark, PageBackdrop, StatsCard } from "./ui/theme";
 import { Icon } from "./ui/icons";
+import type { GameShortcut, ShortcutLayer } from "./ui/keyboard";
+import { GameShortcutLayer, ShortcutHelp } from "./ui/keyboardShortcuts";
 import { reasonText } from "./ui/reasons";
 import {
   describeDeal,
@@ -129,6 +131,7 @@ export function App() {
   const [hapticsOn, setHapticsOn] = useState(isHapticsEnabled());
   const [animationsOn, setAnimationsOn] = useState(true);
   const [settingsOrigin, setSettingsOrigin] = useState<"home" | "game">("home");
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const customsRef = useRef<RulesConfig[]>([]);
   /** True when the active table is a saved custom, its flags stand alone. */
   const isCustomActive = !PRESETS.some((p) => p.name === preset.name);
@@ -1006,6 +1009,36 @@ export function App() {
     }
   };
 
+  const shortcutLayer: ShortcutLayer = shortcutsOpen
+    ? "help"
+    : confirmQuit || suitPickerFor || superPickerFor || state.gameOver
+      ? "modal"
+      : "game";
+
+  const onShortcut = (action: GameShortcut) => {
+    if (action === "play") {
+      onPlayPress();
+      return;
+    }
+    if (action === "pick") {
+      onPickPress();
+      return;
+    }
+    if (action === "kadi") {
+      onKadi();
+      return;
+    }
+    if (action === "help") {
+      setShortcutsOpen((open) => !open);
+      return;
+    }
+    if (shortcutsOpen) setShortcutsOpen(false);
+    else if (confirmQuit) setConfirmQuit(false);
+    else if (superPickerFor) setSuperPickerFor(null);
+    else if (suitPickerFor) setSuitPickerFor(null);
+    else setSelected([]);
+  };
+
   const waitingOn =
     BOT_NAMES[(state.currentPlayer - 1 + BOT_NAMES.length) % BOT_NAMES.length];
   const coachMsg = turnCoach({
@@ -1051,6 +1084,7 @@ export function App() {
   return (
     <div class="kadi-shell relative flex h-dvh flex-col overflow-hidden text-white safe-top safe-bottom">
       <PageBackdrop />
+      <GameShortcutLayer layer={shortcutLayer} onAction={onShortcut} />
       {suitPickerFor && (
         <SuitPicker
           onCancel={() => setSuitPickerFor(null)}
@@ -1070,6 +1104,9 @@ export function App() {
           onExit={() => quitToHome(true)}
           onSaveExit={() => quitToHome(false)}
         />
+      )}
+      {shortcutsOpen && (
+        <ShortcutHelp onClose={() => setShortcutsOpen(false)} />
       )}
 
       <div class="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row">
@@ -1091,6 +1128,19 @@ export function App() {
             </div>
             <div class="flex items-center gap-1.5">
               {threats.some(Boolean) && <Pill tone="amber">KADI!</Pill>}
+              <button
+                type="button"
+                onClick={() => setShortcutsOpen(true)}
+                aria-label="Keyboard shortcuts"
+                aria-keyshortcuts="?"
+                title="Keyboard shortcuts (?)"
+                data-testid="shortcuts-button"
+                class="hidden min-h-11 min-w-11 items-center justify-center rounded-xl text-white/55 transition hover:bg-white/5 hover:text-white lg:inline-flex"
+              >
+                <span aria-hidden="true" class="font-mono text-base font-black">
+                  ?
+                </span>
+              </button>
               <button
                 type="button"
                 onClick={() => setConfirmQuit(true)}
@@ -1302,6 +1352,8 @@ export function App() {
                   type="button"
                   onClick={onPickPress}
                   disabled={!myTurn}
+                  aria-keyshortcuts="D"
+                  title="Pick or draw (D)"
                   data-testid="pick-button"
                   class="kadi-ghost-button flex-1 rounded-2xl py-3.5 text-sm font-bold disabled:opacity-40 active:scale-95 lg:w-full lg:flex-none lg:py-4 lg:text-base [@media(max-height:520px)]:py-2"
                 >
@@ -1321,6 +1373,8 @@ export function App() {
                     selectedCards.length === 0 ||
                     (selectionInvalid && !strictOn)
                   }
+                  aria-keyshortcuts="P"
+                  title="Play selected cards (P)"
                   data-testid="play-button"
                   class={`flex-1 rounded-2xl py-3.5 text-sm font-black transition active:scale-95 disabled:opacity-40 lg:w-full lg:flex-none lg:py-4 lg:text-base [@media(max-height:520px)]:py-2 ${
                     selectionInvalid

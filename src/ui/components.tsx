@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import { useDialogFocus } from "./dialogFocus";
 import type { ComponentChildren } from "preact";
 import {
   cardLabel,
@@ -252,6 +253,7 @@ export function CardView({
       onClick={onClick}
       aria-label={cardLabel(card)}
       aria-pressed={selected === true}
+      data-hint={hint ? "true" : undefined}
       class={className}
     >
       {content}
@@ -347,6 +349,9 @@ export function SuitPicker({
   onPick: (s: Suit) => void;
   onCancel: () => void;
 }) {
+  const firstSuitRef = useRef<HTMLButtonElement>(null);
+  useDialogFocus(firstSuitRef);
+
   return (
     <div
       class="fixed inset-0 z-50 flex items-end justify-center bg-kadi-deep/80 p-4 backdrop-blur-sm sm:items-center"
@@ -366,9 +371,10 @@ export function SuitPicker({
           Next player must follow it
         </p>
         <div class="grid grid-cols-4 gap-2">
-          {SUIT_BUTTONS.map(({ suit, glyph, red }) => (
+          {SUIT_BUTTONS.map(({ suit, glyph, red }, index) => (
             <button
               key={suit}
+              ref={index === 0 ? firstSuitRef : undefined}
               type="button"
               onClick={() => onPick(suit)}
               class={`rounded-xl border border-kadi-cream-line bg-kadi-cream py-3 text-3xl font-bold shadow-sm transition hover:brightness-105 active:scale-95 ${red ? "text-[#b3261e]" : "text-kadi-ink"}`}
@@ -618,9 +624,13 @@ export function CardRequestPicker({
   onCancel: () => void;
 }) {
   const [rank, setRank] = useState<Rank | null>(null);
+  const firstRankRef = useRef<HTMLButtonElement>(null);
   const countOf = (r: Rank, suit?: Suit) =>
     hand.filter((c) => c.rank === r && (suit === undefined || c.suit === suit))
       .length;
+
+  useDialogFocus(firstRankRef);
+
   return (
     <div
       class="fixed inset-0 z-50 flex items-end justify-center bg-kadi-deep/80 p-4 backdrop-blur-sm sm:items-center"
@@ -648,6 +658,7 @@ export function CardRequestPicker({
             return (
               <button
                 key={r}
+                ref={r === REQUEST_RANKS[0] ? firstRankRef : undefined}
                 type="button"
                 onClick={() => setRank(r)}
                 class={`relative rounded-lg border py-2 text-sm font-black transition active:scale-95 ${
@@ -710,6 +721,9 @@ export function QuitConfirmModal({
   onExit: () => void;
   onSaveExit: () => void;
 }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useDialogFocus(closeRef);
+
   return (
     <div
       class="fixed inset-0 z-50 flex items-end justify-center bg-kadi-deep/80 p-4 backdrop-blur-sm sm:items-center"
@@ -723,6 +737,7 @@ export function QuitConfirmModal({
         onClick={(e) => e.stopPropagation()}
       >
         <button
+          ref={closeRef}
           type="button"
           onClick={onClose}
           aria-label="Close"
@@ -826,7 +841,8 @@ export function KadiBuzzer({
       onClick={onPress}
       disabled={off}
       aria-label="Declare Kadi"
-      title={title}
+      aria-keyshortcuts="K"
+      title={`${title} (K)`}
       data-testid="kadi-buzzer"
       class={`kadi-buzzer ${urgent && !off ? "kadi-buzzer-urgent" : "kadi-buzzer-idle"}${off ? " kadi-buzzer-disabled" : ""}`}
     >
