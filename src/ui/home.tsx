@@ -1,6 +1,7 @@
 import type { ActiveGameSave, Stats } from "../store/local";
 import { relativeTime, type MatchRecord } from "../store/history";
 import { Icon } from "./icons";
+import { InstallButton, InstallCard } from "./installPrompt";
 import {
   BrandMark,
   HeroCardFan,
@@ -217,6 +218,7 @@ export function HomeScreen({
         <header class="flex items-center justify-between gap-3 py-4">
           <BrandMark />
           <div class="flex items-center gap-2">
+            <InstallButton />
             <button
               type="button"
               aria-label="Open settings"
@@ -390,6 +392,13 @@ export function HomeScreen({
               <div class="shrink-0">
                 <ChallengeCard onCreateRoom={onCreateRoom} />
               </div>
+              <div class="shrink-0">
+                <InstallCard games={stats.games} placement="mobile" />
+              </div>
+            </div>
+
+            <div class="mt-8 hidden lg:block">
+              <InstallCard games={stats.games} placement="desktop" />
             </div>
           </main>
 

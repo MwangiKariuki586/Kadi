@@ -33,7 +33,8 @@ export type IconName =
   | "lock"
   | "trash"
   | "edit"
-  | "copy";
+  | "copy"
+  | "download";
 
 const ICONS: Record<IconName, JSX.Element> = {
   home: (
@@ -233,6 +234,13 @@ const ICONS: Record<IconName, JSX.Element> = {
     <>
       <rect x="8" y="8" width="12" height="12" rx="2" />
       <path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" />
+    </>
+  ),
+  download: (
+    <>
+      <path d="M12 3.5v11" />
+      <path d="m7.5 10 4.5 4.5 4.5-4.5" />
+      <path d="M4.5 16.5v2A1.5 1.5 0 0 0 6 20h12a1.5 1.5 0 0 0 1.5-1.5v-2" />
     </>
   ),
 };
