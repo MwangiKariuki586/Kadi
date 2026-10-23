@@ -177,5 +177,6 @@ channels (~1 write/move for turn-based). Leaderboards/coins only on demand.
   2. *Bot tempo:* approved ~0.9–1.4s thinking (from 650–1000ms) to give humans declaration
      room without reminders — **not built** (see bot loop constant).
   3. *Capacitor wrapper + Play listing* ($25) — deferred.
-  4. *Real PNG icons* — currently SVG placeholders (installable, but store-ready art pending).
+  4. *Real PNG icons* — 192/512, maskable and apple-touch PNGs now generated from the SVG
+     (`npm run icons`); final store-ready art still pending.
   5. *Online multiplayer (v2)* — designed, not built. 

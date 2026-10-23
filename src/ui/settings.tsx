@@ -3,6 +3,7 @@ import type { ComponentChildren } from "preact";
 import type { Difficulty } from "../bots/bot";
 import type { Settings, Stats } from "../store/local";
 import { Pill } from "./components";
+import { InstallSettingsRow } from "./installPrompt";
 import { PageHeader, ScreenFrame } from "./layout";
 
 export interface SettingsScreenProps {
@@ -264,6 +265,16 @@ export function SettingsScreen({
                   </button>
                 </div>
               )}
+            </Section>
+          )}
+
+          {origin === "home" && (
+            <Section
+              level="📲"
+              title="Install app"
+              sub="Full-screen and offline, straight from your home screen."
+            >
+              <InstallSettingsRow />
             </Section>
           )}
 

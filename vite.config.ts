@@ -10,8 +10,9 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'icons/*.svg'],
+      includeManifestIcons: false,
       manifest: {
+        id: '/',
         name: 'Kadi: Kenyan Card Game',
         short_name: 'Kadi',
         description: 'Lightweight offline Kadi vs smart bots. Niko Kadi!',
@@ -21,12 +22,18 @@ export default defineConfig({
         orientation: 'any',
         scope: '/',
         start_url: '/',
+        lang: 'en',
+        categories: ['games', 'entertainment'],
+        prefer_related_applications: false,
         icons: [
-          { src: 'pwa-512x512.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'any' },
+          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'pwa-512x512.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,ogg,mp3,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,ogg,mp3,woff2}'],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       },
     }),
