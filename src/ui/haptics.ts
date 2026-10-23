@@ -1,8 +1,13 @@
 // Haptics: navigator.vibrate on web; Capacitor Haptics later without code change.
 
-let enabled =
-  typeof localStorage === 'undefined' ||
-  localStorage.getItem('kadi-haptics-off') !== '1';
+let enabled = true;
+try {
+  enabled =
+    typeof localStorage === 'undefined' ||
+    localStorage.getItem('kadi-haptics-off') !== '1';
+} catch {
+  enabled = true;
+}
 
 export function isHapticsEnabled(): boolean {
   return enabled;

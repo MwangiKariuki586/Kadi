@@ -57,6 +57,14 @@ function suitOrNull(suit: Card['suit']): Suit | null {
   return suit === 'none' ? null : suit;
 }
 
+function livePenaltyCard(state: GameState): Card {
+  for (let i = state.discardPile.length - 1; i >= 0; i--) {
+    const card = state.discardPile[i];
+    if (isPenaltyRank(card.rank, state.config)) return card;
+  }
+  return topCard(state);
+}
+
 function rankNeedsAnswer(rank: Card['rank'], state: GameState): boolean {
   if (isQuestionRank(rank, state.config)) return true;
   if (isJumpRank(rank, state.config) && jumpActsAsQuestion(state)) return true;
@@ -323,7 +331,7 @@ function validateVsTable(cards: Card[], state: GameState): ComboCheck {
 
   // Pending penalty: only penalty-family answers, Ace block, or Bom ni Bom dodge.
   if (state.pendingPenalty > 0) {
-    const table = topCard(state);
+    const table = livePenaltyCard(state);
     const hasAce = cards.some((c) => c.rank === 'A');
     if (hasAce) {
       // Ace block must be aces-only (stacked aces may also carry a super request).
@@ -915,7 +923,7 @@ export function passOrPick(state: GameState, playerIndex: number): { picked: num
   // Eat penalty
   if (state.pendingPenalty > 0) {
     const n = state.pendingPenalty;
-    const wasJokerTop = topCard(state).rank === 'JOKER';
+    const wasJokerTop = livePenaltyCard(state).rank === 'JOKER';
     const remembered = state.pendingPenaltySuit;
     state.pendingPenalty = 0;
     state.pendingPenaltyRank = null;

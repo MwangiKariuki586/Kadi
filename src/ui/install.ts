@@ -213,7 +213,6 @@ export function initInstallPrompt(): void {
 
   const onDisplayModeChange = () => {
     if (!standaloneNow()) return;
-    writeInstalled(browserStorage);
     update({ installed: true });
   };
 

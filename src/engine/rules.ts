@@ -174,35 +174,95 @@ export function isWinningRank(rank: Rank, config: RulesConfig): boolean {
   return config.winningRanks.includes(rank);
 }
 
+const KNOWN_RANKS = new Set<string>([
+  '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'JOKER',
+]);
+const PENALTY_RANKS = ['2', '3', 'JOKER'] as const;
+const MATCH_MODES = ['family', 'sameRank', 'any'] as const;
+const SUITS = ['hearts', 'diamonds', 'spades', 'clubs'] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value);
+}
+
+function isRankList(value: unknown): value is Rank[] {
+  return Array.isArray(value) &&
+    value.every((rank) => typeof rank === 'string' && KNOWN_RANKS.has(rank));
+}
+
 /**
  * Guardrails for hand-built profiles (builder UI + share-code imports).
  * Returns human-readable problems; empty means the profile is playable.
  */
 export function validateRulesConfig(c: RulesConfig): string[] {
+  if (!isRecord(c)) return ['Rules data is invalid.'];
+  const raw = c as unknown as Record<string, unknown>;
   const problems: string[] = [];
-  if (!c.name || c.name.trim() === '') problems.push('Give the profile a name.');
-  if (c.winningRanks.length === 0) problems.push('Pick at least one rank that can finish.');
-  const picks = c.penaltyPicks;
-  if (picks['2'] == null && picks['3'] == null && picks['JOKER'] == null) {
-    problems.push('Keep at least one penalty card (2, 3 or Joker) active.');
+  if (typeof raw.name !== 'string' || raw.name.trim() === '') {
+    problems.push('Give the profile a name.');
   }
-  for (const r of ['2', '3', 'JOKER'] as const) {
-    const n = picks[r];
-    if (n != null && !(n >= 1)) problems.push(`Pick count for ${r} must be at least 1.`);
+
+  const winningRanks = isRankList(raw.winningRanks) ? raw.winningRanks : null;
+  if (!winningRanks) {
+    problems.push('Winning ranks must be a list of real card ranks.');
+  } else if (winningRanks.length === 0) {
+    problems.push('Pick at least one rank that can finish.');
   }
-  if (!(c.superAceMinAces >= 2)) problems.push('Stacked super aces need at least 2.');
-  if (!(c.dealCount >= 2 && c.dealCount <= 7)) problems.push('Deal 2–7 cards each.');
-  const clash = c.jumpRanks.find((r) => c.kickbackRanks.includes(r));
-  if (clash) problems.push(`A rank cannot jump and reverse at once (see ${clash}).`);
-  const fines: [string, number][] = [
-    ['unanswered question', c.unansweredQuestionPickCount],
-    ['late Niko Kadi call', c.lateCallPickCount],
-    ['false Kadi call', c.falseKadiPickCount],
-    ['illegal play', c.invalidPlayPickCount],
-    ['unmet exact demand', c.unmetRequestPickCount],
+
+  const picks = raw.penaltyPicks;
+  if (!isRecord(picks)) {
+    problems.push('Penalty picks must be a card-to-count object.');
+  } else {
+    if (PENALTY_RANKS.every((r) => picks[r] == null)) {
+      problems.push('Keep at least one penalty card (2, 3 or Joker) active.');
+    }
+    for (const [rank, n] of Object.entries(picks)) {
+      if (n != null && (!isCount(n) || n < 1)) {
+        problems.push(`Pick count for ${rank} must be a whole number of at least 1.`);
+      }
+    }
+  }
+
+  if (!isCount(raw.superAceMinAces) || raw.superAceMinAces < 2) {
+    problems.push('Stacked super aces need at least 2.');
+  }
+  if (!isCount(raw.dealCount) || raw.dealCount < 2 || raw.dealCount > 7) {
+    problems.push('Deal 2–7 cards each.');
+  }
+
+  const jumpRanks = isRankList(raw.jumpRanks) ? raw.jumpRanks : null;
+  if (!jumpRanks) problems.push('Jump cards must be a list of real card ranks.');
+  const kickbackRanks = isRankList(raw.kickbackRanks) ? raw.kickbackRanks : null;
+  if (!kickbackRanks) problems.push('Kickback cards must be a list of real card ranks.');
+  if (!isRankList(raw.questionRanks)) problems.push('Question cards must be a list of real card ranks.');
+  if (!isRankList(raw.starterBlacklist)) problems.push('Starter blacklist must be a list of real card ranks.');
+  if (jumpRanks && kickbackRanks) {
+    const clash = jumpRanks.find((r) => kickbackRanks.includes(r));
+    if (clash) problems.push(`A rank cannot jump and reverse at once (see ${clash}).`);
+  }
+
+  if (typeof raw.specialAceSuit !== 'string' || !SUITS.includes(raw.specialAceSuit as Suit)) {
+    problems.push('The special ace suit is invalid.');
+  }
+  if (!MATCH_MODES.includes(raw.penaltyMatchMode as (typeof MATCH_MODES)[number])) {
+    problems.push('Penalty matching mode is invalid.');
+  }
+
+  const fines: [string, unknown][] = [
+    ['unanswered question', raw.unansweredQuestionPickCount],
+    ['late Niko Kadi call', raw.lateCallPickCount],
+    ['false Kadi call', raw.falseKadiPickCount],
+    ['illegal play', raw.invalidPlayPickCount],
+    ['unmet exact demand', raw.unmetRequestPickCount],
   ];
   for (const [label, n] of fines) {
-    if (!(n >= 0)) problems.push(`Fine for ${label} cannot be negative.`);
+    if (!isCount(n) || n < 0) {
+      problems.push(`Fine for ${label} must be a whole number and cannot be negative.`);
+    }
   }
   return problems;
 }

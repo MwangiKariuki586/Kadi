@@ -38,6 +38,7 @@ Phone testing on the same Wi-Fi: `npm run dev -- --port 5173 --strictPort --host
 | `npm run dev`     | Start dev server with HMR                 |
 | `npm run build`   | Strict `tsc -b` + production Vite build   |
 | `npm run preview` | Serve the production `dist/` locally      |
+| `npm run icons`   | Regenerate PWA PNGs; run `npx playwright install chromium` once first |
 | `npm test`        | Run the Vitest suite once                 |
 | `npm run test:watch` | Run Vitest in watch mode               |
 | `npm run test:e2e` | Run Playwright across six viewports      |

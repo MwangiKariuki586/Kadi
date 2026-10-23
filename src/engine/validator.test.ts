@@ -358,6 +358,36 @@ describe('penalties', () => {
     expect(s.lastEffect).toBe('Picked 2');
   });
 
+  it('a dodge does not replace the live penalty card for answers', () => {
+    const two = C('2', 'diamonds', 't1');
+    const three = C('3', 'diamonds', 'answer');
+    const jack = C('J', 'spades', 'dodge');
+    const s = rigged([two, three], C('9', 'diamonds'), [jack, C('4', 'clubs')], 2, BOM_NI_BOM);
+
+    expect(playCombo(s, 0, [two]).ok).toBe(true);
+    expect(playCombo(s, 1, [jack]).ok).toBe(true);
+    expect(s.pendingPenalty).toBe(2);
+    expect(validateCombo([three], s, 0).ok).toBe(true);
+  });
+
+  it('eating a Joker after a dodge follows the suit before the Joker', () => {
+    const two = C('2', 'diamonds', 't1');
+    const red: Card = { id: 'JOKER-1', suit: 'none', rank: 'JOKER' };
+    const jack = C('J', 'spades', 'dodge');
+    const s = rigged([two, jack], C('9', 'diamonds'), [red, C('4', 'clubs')], 2, BOM_NI_BOM);
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'clubs', `d${i}`));
+
+    expect(playCombo(s, 0, [two]).ok).toBe(true);
+    expect(playCombo(s, 1, [red]).ok).toBe(true);
+    expect(s.pendingPenalty).toBe(7);
+    expect(playCombo(s, 0, [jack]).ok).toBe(true);
+    expect(s.pendingPenalty).toBe(7);
+
+    expect(passOrPick(s, 1)).toMatchObject({ picked: 7 });
+    expect(s.activeSuit).toBe('diamonds');
+    expect(s.lastEffect).toMatch(/follow diamonds/);
+  });
+
   it('eating after an answer draws the latest count, not the sum', () => {
     const s = rigged([C('2', 'hearts', 't')], C('9', 'hearts'), [C('3', 'hearts', 's3'), C('4', 'clubs', 'o')], 2);
     s.drawPile = Array.from({ length: 20 }, (_, i) => C('7', 'clubs', `d${i}`));

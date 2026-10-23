@@ -13,8 +13,28 @@ test("challenge friends modal is honest and routes back to solo play", async ({
   const dialog = page.getByRole("dialog", { name: /Private rooms are coming/ });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText(/Online rooms and friend invites/)).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Close" })).toBeFocused();
   await dialog.getByRole("button", { name: /Test yourself/ }).click();
   await expect(page.getByRole("heading", { name: "New Game" })).toBeVisible();
+});
+
+test("challenge modal closes on Escape and restores the opener", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    !testInfo.project.name.startsWith("desktop"),
+    "desktop keyboard focus",
+  );
+  await gotoHome(page);
+  const opener = page.getByRole("button", { name: /Create Room/ }).first();
+  await opener.click();
+  const dialog = page.getByRole("dialog", { name: /Private rooms are coming/ });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Close" })).toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
 });
 
 test("recent games opens My Games from the home card", async ({ page }) => {
