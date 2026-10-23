@@ -1,0 +1,464 @@
+import { useMemo, useState } from "preact/hooks";
+import type { ComponentChildren } from "preact";
+import type { Card, Suit } from "../engine/cards";
+import { passOrPick, playCombo, validateCombo } from "../engine/validator";
+import { CardView, Pill } from "./components";
+import { PageHeader, ScreenFrame } from "./layout";
+import { haptics } from "./haptics";
+import { sfx } from "./sounds";
+import { reasonText } from "./reasons";
+import {
+  CHOICE_BOARDS,
+  PLAY_BOARDS,
+  buildPracticeTable,
+  tableCards,
+  type ChoiceBoard,
+  type PlayBoard,
+} from "./howtoContent";
+
+function suitGlyph(suit: Suit): string {
+  return suit === "hearts"
+    ? "♥"
+    : suit === "diamonds"
+      ? "♦"
+      : suit === "spades"
+        ? "♠"
+        : "♣";
+}
+
+function playBoard(id: string): PlayBoard {
+  const b = PLAY_BOARDS.find((x) => x.id === id);
+  if (!b) throw new Error(`unknown board ${id}`);
+  return b;
+}
+
+function choiceBoard(id: string): ChoiceBoard {
+  const b = CHOICE_BOARDS.find((x) => x.id === id);
+  if (!b) throw new Error(`unknown board ${id}`);
+  return b;
+}
+
+type Result = { tone: "good" | "bad" | "almost"; text: string } | null;
+
+const RESULT_STYLE: Record<Exclude<Result, null>["tone"], string> = {
+  good: "border-emerald-400/60 bg-emerald-400/10 text-emerald-100",
+  bad: "border-red-400/60 bg-red-500/15 text-red-100",
+  almost: "border-kadi-gold/60 bg-kadi-gold/10 text-kadi-cream",
+};
+
+/** Tap-the-cards practice board backed by the real rules engine. */
+export function TryBoard({ board }: { board: PlayBoard }) {
+  const [attempt, setAttempt] = useState(0);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [result, setResult] = useState<Result>(null);
+  const [done, setDone] = useState(false);
+  const table = useMemo(
+    () => buildPracticeTable(board.setup),
+    [board, attempt],
+  );
+  const top = table.discardPile[table.discardPile.length - 1];
+  const hand = table.hands[0];
+  const order = new Map(selected.map((id, i) => [id, i + 1]));
+
+  const reset = () => {
+    setAttempt((a) => a + 1);
+    setSelected([]);
+    setResult(null);
+    setDone(false);
+  };
+
+  const toggle = (card: Card) => {
+    if (done) return;
+    haptics.tap();
+    setResult(null);
+    setSelected((s) =>
+      s.includes(card.id) ? s.filter((id) => id !== card.id) : [...s, card.id],
+    );
+  };
+
+  const onPlay = () => {
+    if (selected.length === 0) {
+      setResult({ tone: "bad", text: "Pick a card first, then Play." });
+      return;
+    }
+    const s = buildPracticeTable(board.setup);
+    const cards = tableCards(s, selected);
+    const v = validateCombo(cards, s, 0);
+    if (!v.ok) {
+      sfx.error();
+      setResult({
+        tone: "bad",
+        text: `⛔ ${reasonText(v.reason ?? null, s.activeSuit, s.pendingPenalty > 0 && s.discardPile[s.discardPile.length - 1]?.rank === 'JOKER', cards.some((c) => c.rank === 'JOKER'))}`,
+      });
+      return;
+    }
+    const solved = board.solutions.some(
+      (sol) => sol.join("|") === selected.join("|"),
+    );
+    if (board.expect) {
+      const clone = JSON.parse(JSON.stringify(s));
+      const r = playCombo(clone, 0, cards, null, null);
+      const hit =
+        board.expect === "win"
+          ? r.won === true
+          : board.expect === "cardless"
+            ? r.becameCardless === true
+            : (r.fined ?? 0) > 0;
+      if (hit && solved) {
+        sfx.play();
+        haptics.play();
+        setDone(true);
+        setResult({ tone: "good", text: `✅ ${board.winText}` });
+      } else {
+        setResult({
+          tone: "almost",
+          text:
+            board.almostText ??
+            "Legal move but not the lesson. Reset and try again.",
+        });
+      }
+      return;
+    }
+    if (solved) {
+      sfx.play();
+      haptics.play();
+      setDone(true);
+      setResult({ tone: "good", text: `✅ ${board.winText}` });
+    } else {
+      setResult({
+        tone: "almost",
+        text:
+          board.almostText ??
+          "Legal move but not the lesson. Reset and try again.",
+      });
+    }
+  };
+
+  const onKula = () => {
+    if (!board.kula) return;
+    const s = buildPracticeTable(board.setup);
+    passOrPick(s, 0);
+    haptics.tap();
+    setDone(true);
+    setSelected([]);
+    setResult({ tone: "good", text: `✅ ${board.kula.winText}` });
+  };
+
+  return (
+    <div class="rounded-2xl border border-kadi-line/40 bg-kadi-deep/30 p-3">
+      <p class="text-xs font-bold text-white/90">{board.prompt}</p>
+      <div class="mt-2 flex items-center justify-center gap-4">
+        <div class="flex flex-col items-center gap-1">
+          <CardView card={top} large />
+          <div class="flex h-6 gap-1">
+            {table.pendingPenalty > 0 && (
+              <Pill tone="red">Pick {table.pendingPenalty}</Pill>
+            )}
+            {table.pendingSkip > 0 && (
+              <Pill tone="amber">SKIP ×{table.pendingSkip}</Pill>
+            )}
+            {table.activeCardRequest && (
+              <Pill tone="amber">
+                Need: {table.activeCardRequest.rank}
+                {suitGlyph(table.activeCardRequest.suit)}
+              </Pill>
+            )}
+          </div>
+        </div>
+      </div>
+      <div class="mt-1 flex justify-center">
+        <div class="flex" style={{ paddingLeft: 8 }}>
+          {hand.map((c) => (
+            <div key={`${attempt}-${c.id}`} class="-ml-4 first:ml-0">
+              <CardView
+                card={c}
+                selected={selected.includes(c.id)}
+                order={order.get(c.id) ?? null}
+                onClick={() => toggle(c)}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+      {result && (
+        <p
+          class={`anim-fly-in mt-2 rounded-xl border px-3 py-2 text-center text-xs font-bold ${RESULT_STYLE[result.tone]}`}
+        >
+          {result.text}
+        </p>
+      )}
+      <div class="mt-2 flex gap-2">
+        {board.kula && !done && (
+          <button
+            type="button"
+            onClick={onKula}
+            class="kadi-ghost-button flex-1 rounded-2xl py-2.5 text-xs font-bold active:scale-95"
+          >
+            {board.kula.label}
+          </button>
+        )}
+        {!done ? (
+          <button
+            type="button"
+            onClick={onPlay}
+            class="kadi-gold-button flex-1 rounded-2xl py-2.5 text-xs font-black active:scale-95"
+          >
+            Play{selected.length > 0 ? ` ${selected.length}` : ""}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={reset}
+            class="kadi-ghost-button flex-1 rounded-2xl py-2.5 text-xs font-bold active:scale-95"
+          >
+            ↻ Try again
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Two-option timing quiz for the Niko Kadi call. */
+export function ChoiceBoardView({ board }: { board: ChoiceBoard }) {
+  const [picked, setPicked] = useState<number | null>(null);
+  const correct = picked != null && board.options[picked].correct;
+
+  const choose = (i: number) => {
+    setPicked(i);
+    if (board.options[i].correct) {
+      sfx.play();
+      haptics.play();
+    } else {
+      sfx.error();
+    }
+  };
+
+  return (
+    <div class="rounded-2xl border border-kadi-line/40 bg-kadi-deep/30 p-3">
+      <p class="text-xs font-bold text-white/90">{board.prompt}</p>
+      <div class="mt-2 flex justify-center">
+        <div class="flex" style={{ paddingLeft: 8 }}>
+          {board.hand.map((c) => (
+            <div key={c.id} class="-ml-4 first:ml-0">
+              <CardView card={{ id: c.id, rank: c.rank, suit: c.suit }} />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div class="mt-2 flex flex-col gap-2">
+        {board.options.map((o, i) => (
+          <button
+            key={o.label}
+            type="button"
+            onClick={() => choose(i)}
+            class={`w-full rounded-2xl border p-3 text-sm font-bold transition active:scale-[0.99] ${
+              picked === i
+                ? o.correct
+                  ? "border-emerald-400 bg-emerald-400/10 text-emerald-100"
+                  : "border-red-400 bg-red-500/15 text-red-100"
+                : "border-kadi-line/40 bg-kadi-deep/30 text-white"
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      {picked != null && (
+        <p
+          class={`anim-fly-in mt-2 rounded-xl border px-3 py-2 text-center text-xs font-bold ${correct ? RESULT_STYLE.good : RESULT_STYLE.bad}`}
+        >
+          {correct ? "✅ " : "⛔ "}
+          {board.options[picked].feedback}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Non-interactive row: a few cards plus the takeaway line. */
+export function CardExample({
+  cards,
+  caption,
+}: {
+  cards: Card[];
+  caption: string;
+}) {
+  return (
+    <div class="rounded-2xl border border-kadi-line/40 bg-kadi-deep/30 p-3">
+      <div class="flex justify-center">
+        <div class="flex" style={{ paddingLeft: 8 }}>
+          {cards.map((c) => (
+            <div key={c.id} class="-ml-4 first:ml-0">
+              <CardView card={c} />
+            </div>
+          ))}
+        </div>
+      </div>
+      <p class="mt-2 text-center text-[11px] leading-relaxed text-white/70">
+        {caption}
+      </p>
+    </div>
+  );
+}
+
+function Section({
+  id,
+  title,
+  line,
+  children,
+}: {
+  id: string;
+  title: string;
+  line: string;
+  children: ComponentChildren;
+}) {
+  return (
+    <section id={`howto-${id}`} class="mt-5 scroll-mt-20">
+      <h3 class="text-sm font-black text-white">{title}</h3>
+      <p class="mt-1 text-[11px] leading-relaxed text-white/50">{line}</p>
+      <div class="mt-2 flex flex-col gap-2">{children}</div>
+    </section>
+  );
+}
+
+const CHIPS = [
+  { id: "goal", label: "🎯 Goal" },
+  { id: "kadi", label: "📢 Niko Kadi" },
+  { id: "match", label: "🃏 Matching" },
+  { id: "powers", label: "⚡ Powers" },
+  { id: "kula", label: "🔥 Kula" },
+  { id: "babu", label: "👴 Babu" },
+  { id: "win", label: "🏆 Winning" },
+];
+
+export function HowToScreen({ onBack }: { onBack: () => void }) {
+  const jump = (id: string) => {
+    try {
+      document
+        .getElementById(`howto-${id}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch {
+      /* DOM unavailable, ignore */
+    }
+  };
+
+  return (
+    <ScreenFrame width="xl">
+      <div class="flex h-full min-h-0 flex-col lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-10">
+        <aside class="shrink-0">
+          <PageHeader
+            title="How to play"
+            subtitle="Step through the lessons, every board is real Kadi."
+            onBack={onBack}
+          />
+          <div class="mt-2 flex gap-1.5 overflow-x-auto no-scrollbar pb-1 lg:mt-6 lg:flex-col lg:items-stretch lg:overflow-visible">
+            {CHIPS.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => jump(c.id)}
+                class="shrink-0 rounded-full border border-kadi-line/45 bg-kadi-deep/40 px-3 py-1.5 text-[11px] font-bold text-white/70 transition hover:border-kadi-gold/40 hover:text-white active:scale-95 lg:rounded-xl lg:px-3 lg:py-2 lg:text-left lg:text-xs"
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <div class="mt-2 min-h-0 flex-1 overflow-y-auto no-scrollbar overscroll-contain pb-2 lg:mt-0 lg:pr-2">
+          <Section
+            id="goal"
+            title="🎯 Goal"
+            line="Finish all your cards in one move. Your last card must be 4, 5, 6, 7, 9 or 10 or an Ace answering a Q/8."
+          >
+            <TryBoard board={playBoard("goal-pick-winner")} />
+            <CardExample
+              cards={[
+                { id: "gx-q", rank: "Q", suit: "spades" },
+                { id: "gx-a", rank: "A", suit: "diamonds" },
+              ]}
+              caption="An Ace can also finish but only answering a Q or 8. Full lesson in Winning below."
+            />
+          </Section>
+
+          <Section
+            id="kadi"
+            title="📢 Niko Kadi"
+            line="Shout Niko Kadi before you dump your whole hand. Same turn is fine. A false call makes you kula +1 and locks the button until your next turn."
+          >
+            <ChoiceBoardView board={choiceBoard("kadi-shout-now")} />
+            <ChoiceBoardView board={choiceBoard("kadi-too-early")} />
+          </Section>
+
+          <Section
+            id="match"
+            title="🃏 Matching"
+            line="Match the top card's suit or rank. Select cards in order, the first one must match."
+          >
+            <TryBoard board={playBoard("match-one")} />
+            <TryBoard board={playBoard("combo-order")} />
+          </Section>
+
+          <Section
+            id="powers"
+            title="⚡ Power cards"
+            line="J ruka (next player sits out), K reverses, Q and 8 ask (any Ace can answer), Ace funga or picks a suit."
+          >
+            <TryBoard board={playBoard("answer-question")} />
+            <TryBoard board={playBoard("jump-refuse")} />
+            <CardExample
+              cards={[
+                { id: "hx-a", rank: "A", suit: "clubs" },
+                { id: "hx-s", rank: "4", suit: "spades" },
+              ]}
+              caption="A free Ace picks the next suit here spades. Everyone follows it."
+            />
+          </Section>
+
+          <Section
+            id="kula"
+            title="🔥 Kula"
+            line="2, 3 and Joker send the next player to kula. Answer with the same family or block with an Ace."
+          >
+            <TryBoard board={playBoard("block-penalty")} />
+            <TryBoard board={playBoard("penalty-choice")} />
+            <CardExample
+              cards={[
+                { id: "hx-2d", rank: "2", suit: "diamonds" },
+                { id: "JOKER-1", rank: "JOKER", suit: "none" },
+              ]}
+              caption="2♦, then Joker (+5). Only another Joker or an Ace relaxes it, eat and follow ♦."
+            />
+            <CardExample
+              cards={[
+                { id: "hx-2h", rank: "2", suit: "hearts" },
+                { id: "JOKER-2", rank: "JOKER", suit: "none" },
+              ]}
+              caption="Any Joker answers any 2 or 3, black Joker on 2♥ is legal. No color to match."
+            />
+          </Section>
+
+          <Section
+            id="babu"
+            title="👴 Babu"
+            line="A♠ names any exact card. Bring it, play an Ace, or kula. Stacked Aces always demand, Babu or not."
+          >
+            <TryBoard board={playBoard("babu-demand")} />
+          </Section>
+
+          <Section
+            id="win"
+            title="🏆 Winning"
+            line="Dump everything in one move, ending clean. Shout Niko Kadi first; same turn counts."
+          >
+            <TryBoard board={playBoard("win-clean")} />
+            <TryBoard board={playBoard("win-ace-answer")} />
+            <TryBoard board={playBoard("win-bad-ending")} />
+            <TryBoard board={playBoard("win-no-call")} />
+          </Section>
+        </div>
+      </div>
+    </ScreenFrame>
+  );
+}

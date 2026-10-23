@@ -4,7 +4,8 @@
 **Why:** No working Kadi app exists for Kenyan youth; existing ones are broken. Goals: (1) a new
 challenge when alone, (2) playable with no friends around (bots simulate 1–3 opponents).
 **Status:** Playable v1 on `http://localhost:5173` (dev, HMR) and LAN `http://192.168.100.8:5173`.
-Verified: **91/91 Vitest green, `tsc -b` clean, production build ~91 KB precached.**
+Responsive from phone through wide desktop. Verified: **195/195 Vitest green,
+`tsc -b` clean, production build green, Playwright smoke across six viewports.**
 
 ---
 
@@ -25,12 +26,13 @@ need no server.
 
 * **Vite 8 + TypeScript + Preact 10 + Tailwind 4** — Preact is API-identical React at ~3 KB;
   production JS is ~16 KB gzip. No game engine: DOM + CSS transforms only.
-* **PWA** via `vite-plugin-pwa` (Workbox, auto-update, standalone portrait, offline precache).
-  Capacitor-ready for a future store wrapper (Capacitor itself is free/MIT).
+* **PWA** via `vite-plugin-pwa` (Workbox, auto-update, standalone, any orientation, offline
+  precache). Capacitor-ready for a future store wrapper (Capacitor itself is free/MIT).
 * **Zero-asset media:** WebAudio-synthesized SFX (no mp3s), inline-SVG cards incl. a red/black
   Jester illustration, `navigator.vibrate` haptics. Total precache stays < 100 KB.
 * **Storage:** `idb-keyval` (stats, settings, custom rules, live-game saves).
-* **Tests:** Vitest (`npm test`), strict `tsc -b` on every build.
+* **Tests:** Vitest (`npm test`) for logic, Playwright (`npm run test:e2e`) for responsive
+  smoke coverage; strict `tsc -b` on every build.
 
 ## 3. Architecture
 
@@ -38,8 +40,10 @@ need no server.
 src/engine/  cards.ts, rules.ts (RulesConfig), state.ts, validator.ts   ← pure TS, UI-free
 src/bots/    bot.ts (easy/medium/hard), bot.test.ts
 src/store/   local.ts (GameStore interface + LocalStore, idb-keyval)
-src/ui/      components.tsx, feed.ts (narration), sounds.ts, haptics.ts
+src/ui/      components.tsx, layout.tsx (page shells + seat placement), feed.ts (narration),
+             sounds.ts, haptics.ts
 src/app.tsx  screens + table + wiring (only stateful/impure layer)
+e2e/         Playwright responsive smoke tests
 ```
 
 Rules:
@@ -53,15 +57,18 @@ Rules:
 ## 4. Rules engine & locked ruleset (Standard Maua base)
 
 Deck: 52 + 2 Jokers in Standard (Strict = Standard minus Jokers only). Deal 4 each. Starter is
-never 2/3/J/Q/8/K/A/Joker. Win = dump the whole hand in one move ending on 4/5/6/7/9/10,
-declared on a strictly earlier turn (`Niko Kadi`), no cardless blocker.
+never 2/3/J/Q/8/K/A/Joker. Win = call `Niko Kadi`, then dump the whole hand in one move
+ending on 4/5/6/7/9/10, with no cardless blocker. The call may happen on the same turn,
+but it must land before the dump.
 
 ### Decision log (each debated during build)
 
-1. **Penalty answers = penalty family + color.** A 2♥ is answered by any 2, same-suit 3♥,
-   color-matched Joker, or Ace. Non-penalty cards can never answer. Joker colors derive from
-   id (JOKER-1 red ↔ hearts/diamonds, JOKER-2 black ↔ spades/clubs); a Joker on top is
-   answered by same-color-family penalties or Ace.
+1. **Penalty answers = family; Joker takes the suit before it.** A 2♥ is answered by any 2,
+   same-suit 3♥, any Joker, or Ace. Non-penalty cards can never answer. A Joker is only
+   playable after a 2/3 (never a free play) and remembers that suit: 2♦, Joker, then only
+   ♦ penalties, another Joker, or Ace may answer (off-suit 2♠ is illegal). Joker art stays
+   red/black per id (JOKER-1 red, JOKER-2 black) — purely visual now, plus a legacy color
+   fallback for pre-memory saves.
 2. **No accumulation — top takes over.** Answering replaces the debt (Joker +5 answered by a
    2 → Pick 2; 2-on-2 stays 2). Flag: `penaltyAccumulates: false` (kept for legacy variants).
    Answering is still allowed (`allowPenaltyStacking` is the gate, unchanged).
@@ -78,19 +85,23 @@ declared on a strictly earlier turn (`Niko Kadi`), no cardless blocker.
    selected cards show 1/2/3 badges. K/J stacks chain by suit-or-rank; next player follows
    the net calculation (J+J in 3P anti-clockwise returns to self; K+K restores direction).
    Bots try pairs in both orders.
-7. **KADI! badge = declared AND finishable now.** `canFinishNow` (bounded permutation search,
-   cap 7, recomputed per move) requires prior-turn declaration, no outstanding debts,
-   a legal full-hand winning dump vs the current table, and no cardless blocker. Stops
-   6-card "KADI!" ghosts. The Kadi! *button* stays free (declaring early is legal; the win
-   still requires the earlier turn) — speech act vs verified threat are separate by design.
-8. **No win without the call — late calls fined.** Clean dumps without valid prior declaration:
-   dump stands, win denied, draw `lateCallPickCount` (default 1) instead of wandering
-   cardless. Non-winning dumps keep the legacy cardless path.
+7. **KADI! badge = valid call AND finishable now.** `canFinishNow` (bounded permutation search,
+   cap 7, recomputed per move) requires a call (same-turn is enough), no outstanding debts,
+   a legal full-hand winning dump vs the current table, and no cardless blocker. `canCallKadi`
+   ignores the current table and checks the future winning dump; it allows 4+ same-rank cards
+   and question stacks, and rejects mixed Aces, penalties, bare questions, and chains that do
+   not actually go out. The button stays manual, but a false call fines and locks it until the
+   offender's next turn.
+8. **No win without the call, and no delay window.** Press KADI first, then dump; same-turn
+   works. Clean dumps with no call: dump stands, win denied, draw `lateCallPickCount` (default
+   1) instead of wandering cardless. Calling with no winnable hand: draw `falseKadiPickCount`
+   once and lock the button. The old 2s window and delay fine were removed.
 9. **Strict tables (opt-in).** Toggle (default off): illegal submissions stay tappable and are
    fined via the previously-dormant `penaliseIllegalPlay` (draw + turn passes). Casual tables
    keep protective disabled-Play + inline reason. Count reuses `invalidPlayPickCount`.
 10. **Kadi! button kept manual.** Gating/auto-declaring were rejected: timing skill must mean
     something, and auto would gut the iconic callout (esp. for future human multiplayer).
+    Silent-finish tables (`mustSayNikoKadi: false`) hide the requirement and disable the call.
 
 ## 5. Bots
 
@@ -107,11 +118,13 @@ declared on a strictly earlier turn (`Niko Kadi`), no cardless blocker.
 
 * **Tap-to-play** (tap in order → Play), no drag (reliable on low-end touch).
 * **Invalid selections disable Play upfront** with the inline reason — no tap-to-discover.
-* **Event feed, not toasts, narrates the table:** every auto-consequence is announced
+* **Event feed is the single in-game channel:** every auto-consequence is announced
   (`Pick 2 hangs over You (from 2♣)`, `lifts the rank — follow Clubs ♣`, eats/blocks/
-  skips/reverses/demands/wins), latest two always visible, tap 📜 for history. Penalty lines
-  name source cards; suit calls always name the previous suit. Toasts are reserved for
-  illegal taps.
+  skips/reverses/demands/wins) plus throttled info notices for dead taps
+  (out-of-turn, already-called/cardless KADI), latest summary always visible,
+  tap 📜 for history. Penalty lines
+  name source cards; suit calls always name the previous suit. Toasts survive
+  only on Home/Settings confirmations (Resumed!, Stats cleared…) which have no panel.
 * **Turn coach is opt-in (default off):** contextual `turnCoach` line (debts → corrections →
   opportunities) behind Home's `💡 Hints` toggle. Default table shows only `👉 Your turn`.
 * **Quit confirmation modal:** Quit → "Keep playing / Save & exit". Exiting preserves the game;
@@ -121,8 +134,12 @@ declared on a strictly earlier turn (`Niko Kadi`), no cardless blocker.
 * **Joker face:** inline-SVG jester in currentColor — red/black per Joker color, `+5` badge.
 * **Super-ace picker** highlights held ranks/suits (★ + counts) since demanding what you hold
   is unanswerable; also used for the lone-special-ace mode.
-* Portrait-first, thumb-reach layout, dark battery-saving theme, Sheng-flavored copy,
-  `prefers-reduced-motion` respected, 48dp targets, safe-area insets.
+* **Responsive layout:** phones keep the thumb-first stack; `md` centres pages and splits
+  settings/rules into two columns; `lg` turns the table into a fixed seat ring with a bottom
+  action rail (buzzer / hand / Play-Pick); `xl` adds the live match-log rail. Modals centre
+  from `sm+`. Hover, visible `:focus-visible` rings, and native keyboard activation are
+  supported; copy stays pointer-neutral ("Press", "Pick"). Dark battery-saving theme,
+  Sheng-flavored copy, `prefers-reduced-motion` respected, 48dp targets, safe-area insets.
 
 ## 7. Backend plan (v2, not built)
 
@@ -132,10 +149,12 @@ channels (~1 write/move for turn-based). Leaderboards/coins only on demand.
 
 ## 8. Verification
 
-* 91 Vitest tests across 5 files (engine 58: 57 validator incl. an exhaustive proof that
-  a broken chain fails in 5,000+ table states; bots 10 incl. 600-decision legality fuzz;
-  feed 16 narration + coach; store 7 resume-guard + defaults). `tsc -b` strict-clean.
-  `npm run build` green.
+* 195 Vitest tests across 9 files, including the validator's exhaustive proof that a broken
+  chain fails in 5,000+ table states, bot legality fuzz, feed narration/coach, store resume
+  guards, and responsive seat placement. `tsc -b` strict-clean. `npm run build` green.
+* Playwright smoke suite across six viewports (390×844, 844×390, 768×1024, 1024×768,
+  1366×768, 1440×900) asserts page breakpoints, seat-ring geometry, bottom-rail containment,
+  feed-rail visibility, and keyboard focus rings. Run with `npm run test:e2e`.
 * Manual: dev on :5173, LAN-tested on phone via `--host` (needs one admin firewall rule —
   see below). Preview smoke-tested HTTP 200.
 
@@ -158,5 +177,6 @@ channels (~1 write/move for turn-based). Leaderboards/coins only on demand.
   2. *Bot tempo:* approved ~0.9–1.4s thinking (from 650–1000ms) to give humans declaration
      room without reminders — **not built** (see bot loop constant).
   3. *Capacitor wrapper + Play listing* ($25) — deferred.
-  4. *Real PNG icons* — currently SVG placeholders (installable, but store-ready art pending).
+  4. *Real PNG icons* — 192/512, maskable and apple-touch PNGs now generated from the SVG
+     (`npm run icons`); final store-ready art still pending.
   5. *Online multiplayer (v2)* — designed, not built. 

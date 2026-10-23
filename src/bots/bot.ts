@@ -1,6 +1,6 @@
 import type { Card, Suit } from '../engine/cards';
-import { isPenaltyRank, isWinningRank } from '../engine/rules';
-import { isSuperAceCombo, comboLeavesQuestionOpen, legalSingles, validateCombo } from '../engine/validator';
+import { isJumpRank, isKickbackRank, isPenaltyRank, isWinningRank } from '../engine/rules';
+import { isAceAnswerCombo, isSuperAceCombo, comboLeavesQuestionOpen, canCallKadi, canDeclareKadi, canFinishNow, hasValidKadiCall, legalSingles, validateCombo, winningDumpOrder } from '../engine/validator';
 import { topCard, type GameState } from '../engine/state';
 
 // Re-export for single import path (validator lives in engine/validator)
@@ -26,14 +26,16 @@ export function bestSuit(hand: Card[]): Suit {
   return best;
 }
 
-/** Two-card combos closing with an answer (Q + same-suit answer, suit chains). */
+/** Two-card combos closing with an answer (Q + same-suit answer, or Q + Ace any suit). */
 function questionCombos(state: GameState, playerIndex: number): Card[][] {
   const hand = state.hands[playerIndex];
   const combos: Card[][] = [];
   for (const q of hand) {
     // Lone questions are legal (draw obligation), so always look for a closing answer.
     for (const a of hand) {
-      if (a.id === q.id || !isWinningRank(a.rank, state.config)) continue;
+      if (a.id === q.id) continue;
+      const aceAnswer = a.rank === 'A' && state.config.aceAnswersQuestion !== false;
+      if (!aceAnswer && !isWinningRank(a.rank, state.config)) continue;
       if (validateCombo([q, a], state, playerIndex).ok) combos.push([q, a]);
     }
   }
@@ -91,6 +93,10 @@ function withDeclarations(
   if (state.activeCardRequest && !isSuperAceCombo(combo, state)) {
     return { declaredSuit: null, requestedCard: null };
   }
+  // An Ace answering a question never declares — suit auto-follows the Ace.
+  if (isAceAnswerCombo(combo, state)) {
+    return { declaredSuit: null, requestedCard: null };
+  }
   const ace = combo.find((c) => c.rank === 'A');
   const rest = hand.filter((h) => !combo.some((p) => p.id === h.id));
   if (isSuperAceCombo(combo, state)) {
@@ -99,17 +105,16 @@ function withDeclarations(
   return { declaredSuit: ace ? bestSuit(rest) : null, requestedCard: null };
 }
 
+/** A seat is a live threat when it has a valid call and can finish now. */
+export function isDeclaredThreat(state: GameState, playerIndex: number): boolean {
+  return canFinishNow(state, playerIndex);
+}
+
 export function shouldDeclareKadi(state: GameState, playerIndex: number): boolean {
-  if (state.kadiCalls[playerIndex]) return false;
-  const hand = state.hands[playerIndex];
-  if (hand.length > 3 || hand.length === 0) return false;
-  // Winnable shape: every card is a winning rank (questions need their answer present).
-  const answerable = (q: Card): boolean =>
-    hand.some((a) => a.id !== q.id && isWinningRank(a.rank, state.config) && a.suit === q.suit);
-  return hand.every((c) =>
-    isWinningRank(c.rank, state.config) ||
-    (state.config.questionRanks.includes(c.rank) && answerable(c)),
-  );
+  // Single definition of "legally winnable hand" lives in the engine so
+  // humans (tryDeclareKadi) and bots agree. canDeclareKadi also covers silent
+  // tables, cardless players, and finished games.
+  return canDeclareKadi(state, playerIndex) && canCallKadi(state, playerIndex);
 }
 
 export function chooseMove(
@@ -119,6 +124,14 @@ export function chooseMove(
   random: () => number = Math.random,
 ): BotMove | null {
   const hand = state.hands[playerIndex];
+
+  // 0. A valid call plus a whole-hand winner: take the win now.
+  if (hasValidKadiCall(state, playerIndex)) {
+    const winningDump = winningDumpOrder(state, playerIndex);
+    if (winningDump) {
+      return { cards: winningDump, ...withDeclarations(state, hand, winningDump) };
+    }
+  }
 
   // 1. Penalty owed: stack (color-family gate) > block > take.
   if (state.pendingPenalty > 0) {
@@ -136,11 +149,20 @@ export function chooseMove(
     return null;
   }
 
-  // 2. Skipped: counter with a Jump if we can (medium+ always, easy sometimes).
+  // 2. Skipped: refuse with a Jump if we can (medium+ always, easy sometimes).
   if (state.pendingSkip > 0) {
     const jumps = hand.filter((c) => validateCombo([c], state, playerIndex).ok);
     if (jumps.length > 0 && (difficulty !== 'easy' || random() < 0.5)) {
       return { cards: [randomOf(jumps, random)] };
+    }
+    return null;
+  }
+
+  // 2b. Reversed: refuse with a Kickback if we can (medium+ always, easy sometimes).
+  if ((state.pendingReverse ?? 0) > 0) {
+    const kicks = hand.filter((c) => validateCombo([c], state, playerIndex).ok);
+    if (kicks.length > 0 && (difficulty !== 'easy' || random() < 0.5)) {
+      return { cards: [randomOf(kicks, random)] };
     }
     return null;
   }
@@ -164,9 +186,37 @@ export function chooseMove(
   const qCombos = questionCombos(state, playerIndex);
   const pairs = difficulty === 'easy' ? [] : pairCombos(state, playerIndex);
 
+  // Table heat: anyone short OR anyone who declared KADI paints a target,
+  // exactly like friends consulting to stop the winner. declarerNext is the
+  // seat that would act right after this bot (direction-aware).
+  const n = state.hands.length;
+  const nextSeat = (playerIndex + state.direction + n) % n;
+  const declarerNext =
+    nextSeat !== playerIndex && isDeclaredThreat(state, nextSeat);
+  const anyDeclarer = state.hands.some((_, i) => i !== playerIndex && isDeclaredThreat(state, i));
+  const rivalClose =
+    state.hands.some((h, i) => i !== playerIndex && h.length <= 2) || anyDeclarer;
+
+  const isAttack = (combo: Card[]): boolean => {
+    const last = combo[combo.length - 1];
+    if (isPenaltyRank(last.rank, state.config)) return true;
+    if (isSuperAceCombo(combo, state)) return true;
+    if (combo.some((c) => isJumpRank(c.rank, state.config))) return true;
+    if (combo.some((c) => isKickbackRank(c.rank, state.config))) return true;
+    return false;
+  };
+
   if (difficulty === 'easy') {
     const options: Card[][] = [...singles.map((s) => [s]), ...qCombos];
     if (options.length === 0) return null;
+    // Easy still pressures a declarer next to act, just less reliably.
+    if (declarerNext) {
+      const attacks = options.filter(isAttack);
+      if (attacks.length > 0 && random() < 0.6) {
+        const pick = randomOf(attacks, random);
+        return { cards: pick, ...withDeclarations(state, hand, pick) };
+      }
+    }
     const pick = randomOf(options, random);
     return { cards: pick, ...withDeclarations(state, hand, pick) };
   }
@@ -177,16 +227,22 @@ export function chooseMove(
   const allOptions: Card[][] = [...qCombos, ...pairs, ...singles.map((s) => [s])];
   if (allOptions.length === 0) return null;
 
-  const rivalClose = state.hands.some((h, i) => i !== playerIndex && h.length <= 2);
-
   const score = (combo: Card[]): number => {
     let s = combo.length * 10;
     const last = combo[combo.length - 1];
     if (isPenaltyRank(last.rank, state.config) && rivalClose) s += difficulty === 'hard' ? 12 : 6;
     if (isSuperAceCombo(combo, state) && rivalClose) s += difficulty === 'hard' ? 10 : 5;
+    // Hunting bonus: routing or hitting the declarer next to act.
+    if (declarerNext && isAttack(combo)) s += difficulty === 'hard' ? 8 : 4;
     // Asking bare costs cards — prefer answering; easy bots don't care.
     if (comboLeavesQuestionOpen(combo, state)) s -= difficulty === 'hard' ? 8 : 5;
-    if (last.rank === 'A') s -= 4; // save Aces for defence (hard saves harder)
+    const aceClosesQuestion =
+      last.rank === 'A' &&
+      state.config.aceAnswersQuestion !== false &&
+      combo.some((c) => c.rank !== 'A' && state.config.questionRanks.includes(c.rank)) &&
+      !comboLeavesQuestionOpen(combo, state);
+    if (aceClosesQuestion) s += difficulty === 'hard' ? 3 : 1;
+    else if (last.rank === 'A') s -= 4; // save Aces for defence (hard saves harder)
     if (isWinningRank(last.rank, state.config)) s += difficulty === 'hard' ? 3 : 1;
     if (combo.length === 1 && state.config.questionRanks.includes(combo[0].rank)) s -= 5;
     return s + random() * 2;

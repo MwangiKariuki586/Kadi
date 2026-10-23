@@ -1,13 +1,15 @@
 import type { Rank, Suit } from './cards';
 
 /**
- * Rules as DATA — the engine never hardcodes card meanings.
+ * Rules as DATA, the engine never hardcodes card meanings.
  * Add a field + default to support a new house rule without breaking old profiles.
  */
 export interface RulesConfig {
-  version: 1;
+  version: number;
   /** Display name for presets / custom profiles */
   name: string;
+  /** Short human-friendly blurb shown in preset picker */
+  description?: string;
   /** Cards dealt to each player at start */
   dealCount: number;
   jokersEnabled: boolean;
@@ -15,8 +17,23 @@ export interface RulesConfig {
   penaltyPicks: Partial<Record<'2' | '3' | 'JOKER', number>>;
   /** Gate: a pending penalty may be answered with a matching penalty card (else pick or Ace-block). */
   allowPenaltyStacking: boolean;
-  /** Debts accumulate across stacks (true) or the latest penalty replaces (false: top takes over). */
+  /** Debts accumulate across stacks (true: eater picks the total) or the latest penalty replaces (false: top takes over). */
   penaltyAccumulates: boolean;
+  /**
+   * How a penalty card answers a pending penalty:
+   * - 'family' (default): a Joker answers any 2/3; a Joker on top is relaxed
+   *   only by another Joker or an Ace; 2/3 on 2/3: same rank any suit, or
+   *   same suit any penalty rank.
+   * - 'sameRank': only the same rank answers (2-on-2, 3-on-3, JOKER-on-JOKER).
+   * - 'any' (Bom ni Bom): any penalty answers any other, regardless of rank/suit.
+   */
+  penaltyMatchMode: 'family' | 'sameRank' | 'any';
+  /**
+   * Bom ni Bom dodge: while a penalty is pending, a single J (jump) or K
+   * (kickback) may be played to pass the unchanged debt onward. J/K stay
+   * jump/reverse cards, they never count as penalties and never add picks.
+   */
+  dodgePenaltyWithJumpKickback: boolean;
   /** Ace played on a penalty clears it (block). */
   aceBlocksPenalty: boolean;
   /** Ace declares the next suit (request). */
@@ -26,14 +43,24 @@ export interface RulesConfig {
   kickbackRanks: Rank[];
   kickbackCounterable: boolean;
   questionRanks: Rank[];
-  /** Question must be followed by same-suit answer in the same combo. */
+  /** Stacked questions (Q/8) are closed by a same-suit winning answer, or by any Ace. */
   mustAnswerSameSuit: boolean;
+  /** An Ace answers any open question regardless of suit (Q♠ + A♦ is legal). Future custom mode may turn this off. */
+  aceAnswersQuestion: boolean;
   /** Asking a question without an answer is legal but draws this many cards. */
   unansweredQuestionPickCount: number;
   /** Ranks that alone can finish a game. */
   winningRanks: Rank[];
+  /** Must say Niko Kadi before finishing; same-turn calls count. */
   mustSayNikoKadi: boolean;
+  /** Someone cardless at the table blocks every win. */
   cardlessBlocksWin: boolean;
+  /**
+   * Must-end-on-one: only a lone single card can close a game. Multi-card
+   * dumps can shed down to one card but never win outright, engineer your
+   * hand to a single finisher and play it alone.
+   */
+  winningDumpMustBeSingle: boolean;
   /** Ranks that may never open the discard pile. */
   starterBlacklist: Rank[];
   /** With exactly 2 players, J behaves like a Question (needs answer) instead of skip. */
@@ -46,6 +73,8 @@ export interface RulesConfig {
   strictWrongPlay: boolean;
   /** Going out clean without a valid prior Kadi call: win denied, draw this many. */
   lateCallPickCount: number;
+  /** Calling Kadi without a legally winnable hand: call rejected, draw this many, locked until next turn. */
+  falseKadiPickCount: number;
   /** Super-ace mode (lobby toggle): the special ace ALONE can demand an exact card. */
   superAceEnabled: boolean;
   /** The inherently "special" ace when superAceEnabled (usually spades). */
@@ -57,13 +86,16 @@ export interface RulesConfig {
 }
 
 export const STANDARD_MAUA: RulesConfig = {
-  version: 1,
+  version: 2,
   name: 'Standard Maua',
+  description: 'The classic Maua, family-style penalties, latest replaces, Jokers hit hard.',
   dealCount: 4,
   jokersEnabled: true,
   penaltyPicks: { '2': 2, '3': 3, 'JOKER': 5 },
   allowPenaltyStacking: true,
   penaltyAccumulates: false,
+  penaltyMatchMode: 'family',
+  dodgePenaltyWithJumpKickback: false,
   aceBlocksPenalty: true,
   aceCallsSuit: true,
   jumpRanks: ['J'],
@@ -72,34 +104,54 @@ export const STANDARD_MAUA: RulesConfig = {
   kickbackCounterable: true,
   questionRanks: ['Q', '8'],
   mustAnswerSameSuit: true,
+  aceAnswersQuestion: true,
   unansweredQuestionPickCount: 1,
   winningRanks: ['4', '5', '6', '7', '9', '10'],
   mustSayNikoKadi: true,
   cardlessBlocksWin: true,
+  winningDumpMustBeSingle: false,
   starterBlacklist: ['2', '3', 'J', 'Q', '8', 'K', 'A', 'JOKER'],
-  twoPlayerJumpAsQuestion: true,
-  twoPlayerKickbackAsQuestion: true,
+  twoPlayerJumpAsQuestion: false,
+  twoPlayerKickbackAsQuestion: false,
   invalidPlayPickCount: 1,
   strictWrongPlay: false,
   lateCallPickCount: 1,
+  falseKadiPickCount: 1,
   superAceEnabled: false,
   specialAceSuit: 'spades',
   superAceMinAces: 2,
   unmetRequestPickCount: 1,
 };
 
-export const STRICT_NO_JOKER: RulesConfig = {
+export const BOM_NI_BOM: RulesConfig = {
   ...STANDARD_MAUA,
-  name: 'Strict No-Joker',
-  jokersEnabled: false,
-  penaltyPicks: { '2': 2, '3': 3 },
+  name: 'Bom ni Bom',
+  description: 'Wild penalties, any answers any, J/K dodges, debts add up. Fast and chaotic.',
+  penaltyMatchMode: 'any',
+  dodgePenaltyWithJumpKickback: true,
+  penaltyAccumulates: true,
 };
 
-export const PRESETS: RulesConfig[] = [STANDARD_MAUA, STRICT_NO_JOKER];
+/**
+ * Backstreet Pesa, the money-game table. Country-wide common rules because
+ * cash is on the line: penalties accumulate (eater picks the total) and the
+ * table is strict (illegal taps are fined + turn passes, no free passes).
+ * Same-suit question answers, hard Niko Kadi call fines and the cardless
+ * block all carry over from Standard.
+ */
+export const BACKSTREET_PESA: RulesConfig = {
+  ...STANDARD_MAUA,
+  name: 'Backstreet Pesa',
+  description: 'Money-game rules, penalties add up, strict table, no free passes. High stakes.',
+  penaltyAccumulates: true,
+  strictWrongPlay: true,
+};
+
+export const PRESETS: RulesConfig[] = [STANDARD_MAUA, BOM_NI_BOM, BACKSTREET_PESA];
 
 /** Migrate any stored config to current version (forward-compatible). */
 export function migrateRules(input: Partial<RulesConfig> & { version?: number }): RulesConfig {
-  return { ...STANDARD_MAUA, ...input, version: 1, name: input.name ?? 'Custom' };
+  return { ...STANDARD_MAUA, ...input, version: 2, name: input.name ?? 'Custom', description: input.description };
 }
 
 export function isPenaltyRank(rank: Rank, config: RulesConfig): boolean {
@@ -120,4 +172,172 @@ export function isQuestionRank(rank: Rank, config: RulesConfig): boolean {
 
 export function isWinningRank(rank: Rank, config: RulesConfig): boolean {
   return config.winningRanks.includes(rank);
+}
+
+const KNOWN_RANKS = new Set<string>([
+  '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'JOKER',
+]);
+const PENALTY_RANKS = ['2', '3', 'JOKER'] as const;
+const MATCH_MODES = ['family', 'sameRank', 'any'] as const;
+const SUITS = ['hearts', 'diamonds', 'spades', 'clubs'] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value);
+}
+
+function isRankList(value: unknown): value is Rank[] {
+  return Array.isArray(value) &&
+    value.every((rank) => typeof rank === 'string' && KNOWN_RANKS.has(rank));
+}
+
+/**
+ * Guardrails for hand-built profiles (builder UI + share-code imports).
+ * Returns human-readable problems; empty means the profile is playable.
+ */
+export function validateRulesConfig(c: RulesConfig): string[] {
+  if (!isRecord(c)) return ['Rules data is invalid.'];
+  const raw = c as unknown as Record<string, unknown>;
+  const problems: string[] = [];
+  if (typeof raw.name !== 'string' || raw.name.trim() === '') {
+    problems.push('Give the profile a name.');
+  }
+
+  const winningRanks = isRankList(raw.winningRanks) ? raw.winningRanks : null;
+  if (!winningRanks) {
+    problems.push('Winning ranks must be a list of real card ranks.');
+  } else if (winningRanks.length === 0) {
+    problems.push('Pick at least one rank that can finish.');
+  }
+
+  const picks = raw.penaltyPicks;
+  if (!isRecord(picks)) {
+    problems.push('Penalty picks must be a card-to-count object.');
+  } else {
+    if (PENALTY_RANKS.every((r) => picks[r] == null)) {
+      problems.push('Keep at least one penalty card (2, 3 or Joker) active.');
+    }
+    for (const [rank, n] of Object.entries(picks)) {
+      if (n != null && (!isCount(n) || n < 1)) {
+        problems.push(`Pick count for ${rank} must be a whole number of at least 1.`);
+      }
+    }
+  }
+
+  if (!isCount(raw.superAceMinAces) || raw.superAceMinAces < 2) {
+    problems.push('Stacked super aces need at least 2.');
+  }
+  if (!isCount(raw.dealCount) || raw.dealCount < 2 || raw.dealCount > 7) {
+    problems.push('Deal 2–7 cards each.');
+  }
+
+  const jumpRanks = isRankList(raw.jumpRanks) ? raw.jumpRanks : null;
+  if (!jumpRanks) problems.push('Jump cards must be a list of real card ranks.');
+  const kickbackRanks = isRankList(raw.kickbackRanks) ? raw.kickbackRanks : null;
+  if (!kickbackRanks) problems.push('Kickback cards must be a list of real card ranks.');
+  if (!isRankList(raw.questionRanks)) problems.push('Question cards must be a list of real card ranks.');
+  if (!isRankList(raw.starterBlacklist)) problems.push('Starter blacklist must be a list of real card ranks.');
+  if (jumpRanks && kickbackRanks) {
+    const clash = jumpRanks.find((r) => kickbackRanks.includes(r));
+    if (clash) problems.push(`A rank cannot jump and reverse at once (see ${clash}).`);
+  }
+
+  if (typeof raw.specialAceSuit !== 'string' || !SUITS.includes(raw.specialAceSuit as Suit)) {
+    problems.push('The special ace suit is invalid.');
+  }
+  if (!MATCH_MODES.includes(raw.penaltyMatchMode as (typeof MATCH_MODES)[number])) {
+    problems.push('Penalty matching mode is invalid.');
+  }
+
+  const fines: [string, unknown][] = [
+    ['unanswered question', raw.unansweredQuestionPickCount],
+    ['late Niko Kadi call', raw.lateCallPickCount],
+    ['false Kadi call', raw.falseKadiPickCount],
+    ['illegal play', raw.invalidPlayPickCount],
+    ['unmet exact demand', raw.unmetRequestPickCount],
+  ];
+  for (const [label, n] of fines) {
+    if (!isCount(n) || n < 0) {
+      problems.push(`Fine for ${label} must be a whole number and cannot be negative.`);
+    }
+  }
+  return problems;
+}
+
+/** Prefix for offline share codes: `kadi2.` + base64url(JSON). */
+export const SHARE_CODE_PREFIX = 'kadi2.';
+
+/** Pack a profile into a copy-paste share code (offline, clipboard only). */
+export function encodeRulesConfig(c: RulesConfig): string {
+  const json = JSON.stringify(migrateRules({ ...c }));
+  const bytes = new TextEncoder().encode(json);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return (
+    SHARE_CODE_PREFIX +
+    btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  );
+}
+
+/** Unpack a share code back into a validated profile. Throws on any problem. */
+export function decodeRulesConfig(code: string): RulesConfig {
+  const trimmed = code.trim();
+  if (!trimmed.startsWith(SHARE_CODE_PREFIX)) {
+    throw new Error(`Not a Kadi share code, it should start with ${SHARE_CODE_PREFIX}`);
+  }
+  const b64 = trimmed
+    .slice(SHARE_CODE_PREFIX.length)
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  let json: string;
+  try {
+    const bin = atob(b64);
+    const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
+    json = new TextDecoder().decode(bytes);
+  } catch {
+    throw new Error('Share code is corrupted, ask for a fresh copy.');
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    throw new Error('Share code is corrupted, ask for a fresh copy.');
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('Share code is corrupted, ask for a fresh copy.');
+  }
+  const rec = raw as Record<string, unknown>;
+  const name = typeof rec['name'] === 'string' && rec['name'].trim() !== '' ? rec['name'] : 'Shared table';
+  const migrated = migrateRules({ ...(raw as Partial<RulesConfig>), name });
+  const problems = validateRulesConfig(migrated);
+  if (problems.length > 0) throw new Error(`Shared rules are not playable: ${problems[0]}`);
+  return migrated;
+}
+
+/** One-line card for preset/custom pickers: the ways this table differs. */
+export function describeRules(c: RulesConfig): string {
+  const bits: string[] = [];
+  // Penalty matching style
+  if (c.penaltyMatchMode === 'any') bits.push('Any penalty answers any (Bom ni Bom)');
+  else if (c.penaltyMatchMode === 'sameRank') bits.push('Same-rank only stacks');
+  else bits.push('Family: Joker covers 2/3, same rank/suit otherwise');
+  // Stacking behavior
+  bits.push(c.penaltyAccumulates ? 'Penalties add up (eater pays all)' : 'Latest penalty replaces (top takes over)');
+  // J/K dodge
+  if (c.dodgePenaltyWithJumpKickback) bits.push('Dodge penalty with J/K');
+  // Jokers
+  bits.push(c.jokersEnabled ? 'Jokers in (+5)' : 'No Jokers');
+  // Strict
+  if (c.strictWrongPlay) bits.push('Strict: wrong play = penalty + lose turn');
+  // Winning quirks
+  if (c.winningDumpMustBeSingle) bits.push('Must play single card to win');
+  if (!c.mustSayNikoKadi) bits.push('Silent finish allowed');
+  if (!c.cardlessBlocksWin) bits.push('Empty hand does not block win');
+  // Babu
+  if (c.superAceEnabled) bits.push('Babu (special Ace demands exact card)');
+  bits.push(`${c.dealCount} cards each`);
+  return bits.join(' • ');
 }

@@ -12,52 +12,93 @@ import { PRESETS, STANDARD_MAUA, type RulesConfig } from "./engine/rules";
 import { createGame, topCard, type GameState } from "./engine/state";
 import {
   canDeclareKadi,
+  canDumpWinningNow,
   canFinishNow,
   declareKadi,
+  isAceAnswerCombo,
+  isKadiLocked,
   isSuperAceCombo,
   legalSingles,
   passOrPick,
   playCombo,
   resolveWrongPlay,
+  tryDeclareKadi,
   validateCombo,
 } from "./engine/validator";
-import { store, type ActiveGameSave, type Stats } from "./store/local";
+import {
+  resolveProfile,
+  store,
+  type ActiveGameSave,
+  type Settings,
+  type Stats,
+} from "./store/local";
+import { loadBootData } from "./store/boot";
+import { createMatchId, type MatchRecord } from "./store/history";
 import {
   CardRequestPicker,
   CardView,
   CoachBar,
   EventBanner,
+  KadiBuzzer,
+  OpponentSeat,
   Pill,
   QuitConfirmModal,
   SuitPicker,
   Toast,
 } from "./ui/components";
+import { SettingsScreen } from "./ui/settings";
+import { RulesBuilder } from "./ui/rulesBuilder";
+import { HowToScreen } from "./ui/howto";
+import { HomeScreen, ChallengeFriendsModal } from "./ui/home";
+import { LobbyScreen } from "./ui/lobby";
+import { MyGamesScreen } from "./ui/records";
+import { BOT_NAMES, PLAYER_NAMES } from "./ui/players";
+import { BrandMark, PageBackdrop, StatsCard } from "./ui/theme";
+import { Icon } from "./ui/icons";
+import type { GameShortcut, ShortcutLayer } from "./ui/keyboard";
+import { GameShortcutLayer, ShortcutHelp } from "./ui/keyboardShortcuts";
+import { reasonText } from "./ui/reasons";
 import {
   describeDeal,
+  describeFalseKadi,
   describeKadi,
+  describeNotice,
   describePick,
   describePlay,
   describeResume,
+  describeStall,
   describeWrongPlay,
   snapshotState,
   turnCoach,
   type FeedEvent,
 } from "./ui/feed";
-import { haptics } from "./ui/haptics";
+import { haptics, isHapticsEnabled, setHapticsEnabled } from "./ui/haptics";
 import { isMuted, setMuted, sfx } from "./ui/sounds";
+import { applyMotionPreference } from "./ui/motion";
 
-type Screen = "home" | "lobby" | "game";
+type Screen =
+  | "home"
+  | "lobby"
+  | "game"
+  | "settings"
+  | "rules"
+  | "howto"
+  | "games";
 
-const BOT_NAMES = ["Jabari", "Amani", "Zawadi", "Neema"];
-const NAMES = ["You", ...BOT_NAMES];
+const NAMES = [...PLAYER_NAMES];
 
 export function App() {
   const [screen, setScreen] = useState<Screen>("home");
   const [numBots, setNumBots] = useState(2);
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [preset, setPreset] = useState<RulesConfig>(STANDARD_MAUA);
+  const [customs, setCustoms] = useState<RulesConfig[]>([]);
+  const [builderInit, setBuilderInit] = useState<{
+    initial: RulesConfig;
+    sourceName: string;
+    editingName: string | null;
+  } | null>(null);
   const [superAceOn, setSuperAceOn] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
   const [muted, setMutedState] = useState(isMuted());
   const [stats, setStats] = useState<Stats>({
     games: 0,
@@ -65,6 +106,8 @@ export function App() {
     bestStreak: 0,
     streak: 0,
   });
+  const [history, setHistory] = useState<MatchRecord[]>([]);
+  const [challengeOpen, setChallengeOpen] = useState(false);
 
   const [tick, setTick] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
@@ -78,16 +121,44 @@ export function App() {
   const [feed, setFeed] = useState<FeedEvent[]>([]);
   const [coachOn, setCoachOn] = useState(false);
   const [strictOn, setStrictOn] = useState(false);
+  const [jokersOn, setJokersOn] = useState(true);
+  const [hapticsOn, setHapticsOn] = useState(isHapticsEnabled());
+  const [animationsOn, setAnimationsOn] = useState(true);
+  const [settingsOrigin, setSettingsOrigin] = useState<"home" | "game">("home");
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const customsRef = useRef<RulesConfig[]>([]);
+  /** True when the active table is a saved custom, its flags stand alone. */
+  const isCustomActive = !PRESETS.some((p) => p.name === preset.name);
 
   const pushFeed = useCallback((...evts: FeedEvent[]) => {
     setFeed((f) => [...f, ...evts].slice(-15));
   }, []);
+
+  // Throttled feed notices for dead taps (no state change). Prevents mash-spam
+  // from evicting real history out of the capped 15-event window.
+  const noticeThrottle = useRef<{ text: string; at: number }>({
+    text: "",
+    at: 0,
+  });
+  const pushNotice = useCallback(
+    (text: string, turn: number) => {
+      const now = Date.now();
+      const last = noticeThrottle.current;
+      if (last.text === text && now - last.at < 1500) return;
+      noticeThrottle.current = { text, at: now };
+      pushFeed(describeNotice("You", text, turn));
+    },
+    [pushFeed],
+  );
 
   const stateRef = useRef<GameState | null>(null);
   const recordedRef = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
   const state = stateRef.current;
 
+  // Home/Settings-only transient confirmations (Resumed!, Stats cleared…).
+  // The game screen uses pushFeed/pushNotice so the event panel stays the
+  // single in-game notification channel.
   const flash = useCallback((msg: string) => {
     setToast(msg);
     window.clearTimeout(toastTimer.current);
@@ -104,16 +175,17 @@ export function App() {
       recordedRef.current = false;
       setNumBots(save.meta.numBots);
       setDifficulty(save.meta.difficulty);
-      const p = PRESETS.find((x) => x.name === save.meta.presetName);
-      if (p) setPreset(p);
-    setSuperAceOn(save.meta.superAce);
-    setStrictOn(save.state.config.strictWrongPlay);
-    setSelected([]);
+      setPreset(resolveProfile(save.meta.presetName, customsRef.current));
+      setSuperAceOn(save.meta.superAce);
+      setStrictOn(save.state.config.strictWrongPlay);
+      setSelected([]);
       setSuitPickerFor(null);
       setSuperPickerFor(null);
       setBusy(false);
       setScreen("game");
-      setFeed([describeResume(save.state.currentPlayer, NAMES)]);
+      setFeed([
+        describeResume(save.state.currentPlayer, NAMES, save.state.turnNumber),
+      ]);
       bump();
     },
     [bump],
@@ -152,11 +224,16 @@ export function App() {
   );
 
   const startGame = useCallback(() => {
-    const config: RulesConfig = {
-      ...preset,
-      superAceEnabled: superAceOn,
-      strictWrongPlay: strictOn,
-    };
+    // Customs stand alone; presets take the lobby Babu/strict overlays.
+    const custom = !PRESETS.some((p) => p.name === preset.name);
+    const config: RulesConfig = custom
+      ? { ...preset, jokersEnabled: jokersOn }
+      : {
+          ...preset,
+          superAceEnabled: superAceOn,
+          strictWrongPlay: strictOn,
+          jokersEnabled: jokersOn,
+        };
     const st = createGame({ numPlayers: 1 + numBots, config });
     stateRef.current = st;
     recordedRef.current = false;
@@ -165,99 +242,240 @@ export function App() {
     setSuperPickerFor(null);
     setConfirmQuit(false);
     setScreen("game");
-    setFeed([describeDeal(topCard(st))]);
+    setFeed([describeDeal(topCard(st), st.turnNumber)]);
     sfx.shuffle();
     haptics.tap();
     bump();
-  }, [numBots, preset, superAceOn, strictOn, bump]);
+  }, [numBots, preset, superAceOn, strictOn, jokersOn, bump]);
 
-  // ---- boot: settings, stats, then auto-resume a live match (no taps) ----
+  /** Single write-through for all Settings page + quick toggles. */
+  const savePatch = useCallback((patch: Partial<Settings>) => {
+    if (patch.difficulty !== undefined) setDifficulty(patch.difficulty);
+    if (patch.presetName !== undefined) {
+      const p = [...PRESETS, ...customsRef.current].find(
+        (x) => x.name === patch.presetName,
+      );
+      if (p) setPreset({ ...p });
+    }
+    if (patch.superAce !== undefined) setSuperAceOn(patch.superAce);
+    if (patch.coach !== undefined) setCoachOn(patch.coach);
+    if (patch.strict !== undefined) setStrictOn(patch.strict);
+    if (patch.jokersEnabled !== undefined) setJokersOn(patch.jokersEnabled);
+    if (patch.sound !== undefined) {
+      setMutedState(!patch.sound);
+      setMuted(!patch.sound);
+    }
+    if (patch.haptics !== undefined) {
+      setHapticsOn(patch.haptics);
+      setHapticsEnabled(patch.haptics);
+    }
+    if (patch.animations !== undefined) {
+      setAnimationsOn(patch.animations);
+      applyMotionPreference(patch.animations);
+    }
+    void store.saveSettings(patch);
+  }, []);
+
+  const openSettings = useCallback((from: "home" | "game") => {
+    setSettingsOrigin(from);
+    setScreen("settings");
+    haptics.tap();
+  }, []);
+
+  const openBuilderNew = useCallback(() => {
+    setBuilderInit({
+      initial: { ...preset },
+      sourceName: `Cloned from ${preset.name}`,
+      editingName: null,
+    });
+    setScreen("rules");
+    haptics.tap();
+  }, [preset]);
+
+  const openBuilderEdit = useCallback(() => {
+    setBuilderInit({
+      initial: { ...preset },
+      sourceName: preset.name,
+      editingName: preset.name,
+    });
+    setScreen("rules");
+    haptics.tap();
+  }, [preset]);
+
+  const saveCustomProfile = useCallback(
+    (profile: RulesConfig, previousName: string | null) => {
+      void store.saveCustomRules(profile, previousName).then((next) => {
+        setCustoms(next);
+        customsRef.current = next;
+        setPreset({ ...profile });
+        void store.saveSettings({ presetName: profile.name });
+        setBuilderInit(null);
+        setScreen("settings");
+        flash("Table rules saved 💾");
+      });
+    },
+    [flash],
+  );
+
+  const deleteCustomProfile = useCallback(
+    (name: string) => {
+      void store.deleteCustomRules(name).then((next) => {
+        setCustoms(next);
+        customsRef.current = next;
+        setPreset({ ...STANDARD_MAUA });
+        void store.saveSettings({ presetName: STANDARD_MAUA.name });
+        setBuilderInit(null);
+        setScreen("settings");
+        flash("Profile deleted 🗑");
+      });
+    },
+    [flash],
+  );
+
+  // ---- boot: customs, settings, stats, then auto-resume a live match (no taps) ----
   useEffect(() => {
     void store.getStats().then(setStats);
-    void store.getSettings().then((s) => {
-      setDifficulty(s.difficulty);
-      const p = PRESETS.find((x) => x.name === s.presetName);
-      if (p) setPreset(p);
-      setSuperAceOn(s.superAce);
-      setCoachOn(s.coach);
-      setStrictOn(s.strict);
-      setMutedState(!s.sound);
-      setMuted(!s.sound);
-    });
-    void store.loadActiveGame().then((save) => {
-      if (save) {
-        setResumable(save);
-        restoreSave(save);
-        flash("Resumed!");
-      }
-      setBooted(true);
-    });
+    void store.getMatchHistory().then(setHistory);
+    void loadBootData(store)
+      .then(({ customs, settings, save }) => {
+        setCustoms(customs);
+        customsRef.current = customs;
+        if (settings) {
+          setDifficulty(settings.difficulty);
+          setPreset(resolveProfile(settings.presetName, customs));
+          setSuperAceOn(settings.superAce);
+          setCoachOn(settings.coach);
+          setStrictOn(settings.strict);
+          setJokersOn(settings.jokersEnabled);
+          setMutedState(!settings.sound);
+          setMuted(!settings.sound);
+          setHapticsOn(settings.haptics);
+          setHapticsEnabled(settings.haptics);
+          setAnimationsOn(settings.animations);
+          applyMotionPreference(settings.animations);
+        }
+        if (save) {
+          setResumable(save);
+          restoreSave(save);
+          flash("Resumed!");
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => setBooted(true));
   }, [restoreSave, flash]);
 
   // ---- bot loop: any non-human turn advances after a thinking delay ----
+  // A refusal keeps the turn, so the bot may act several times in a row
+  // (bounded, a kept turn that keeps nothing eventually picks).
   const currentPlayer = state?.currentPlayer ?? 0;
   const gameOver = state?.gameOver ?? false;
+  const paused = confirmQuit || shortcutsOpen;
   useEffect(() => {
-    if (screen !== "game" || !stateRef.current || stateRef.current.gameOver)
+    if (
+      paused ||
+      screen !== "game" ||
+      !stateRef.current ||
+      stateRef.current.gameOver
+    )
       return;
     const st = stateRef.current;
     if (st.currentPlayer === 0) return;
     setBusy(true);
-    const id = window.setTimeout(
-      () => {
-        const s = stateRef.current;
-        if (!s || s.gameOver) {
-          setBusy(false);
-          return;
-        }
-        const me = s.currentPlayer;
-        const before = snapshotState(s, me);
-        if (difficulty !== "easy" || Math.random() < 0.6) {
-          if (shouldDeclareKadi(s, me)) {
-            declareKadi(s, me);
-            sfx.kadi();
-          }
-        }
-        const move = chooseMove(s, me, difficulty);
-        if (move) {
-          const r = playCombo(
-            s,
+    let actions = 0;
+    let id = 0;
+    const runBot = () => {
+      const s = stateRef.current;
+      if (!s || s.gameOver) {
+        setBusy(false);
+        return;
+      }
+      const me = s.currentPlayer;
+      if (me === 0) {
+        setBusy(false);
+        return;
+      }
+      if (actions >= 4) {
+        // Safety valve: a kept turn that never ends picks and passes on.
+        const stuck = snapshotState(s, me);
+        const pr = passOrPick(s, me);
+        pushFeed(
+          ...describePick(
+            stuck,
             me,
-            move.cards,
-            move.declaredSuit,
-            move.requestedCard ?? null,
-          );
-          if (r.ok) {
-            pushFeed(
-              ...describePlay(before, s, me, NAMES, move.cards, {
-                won: r.won,
-                cardless: r.becameCardless,
-                fined: r.fined,
-              }),
-            );
-            if (r.won) sfx.win();
-            else sfx.play();
-          } else {
-            // Should never happen (moves are pre-validated) — narrate instead
-            // of silently swallowing so ghosts leave evidence, not confusion.
-            pushFeed({
-              icon: "🐞",
-              text: `${NAMES[me]} stalls — illegal move blocked (${move.cards.map(cardLabel).join(" + ")})`,
-              tone: "info",
-            });
-          }
-        } else {
-          const pr = passOrPick(s, me);
-          pushFeed(...describePick(before, me, NAMES, pr.picked, pr.skipped));
-          sfx.pick();
-        }
+            NAMES,
+            pr.picked,
+            pr.skipped,
+            stuck.kadi[me] && !s.kadiCalls[me],
+          ),
+        );
         setBusy(false);
         bump();
-      },
-      650 + Math.random() * 350,
-    );
+        return;
+      }
+      actions += 1;
+      const before = snapshotState(s, me);
+      if (difficulty !== "easy" || Math.random() < 0.6) {
+        if (shouldDeclareKadi(s, me)) {
+          declareKadi(s, me);
+          sfx.kadi();
+        }
+      }
+      const move = chooseMove(s, me, difficulty);
+      let keepGoing = false;
+      if (move) {
+        const r = playCombo(
+          s,
+          me,
+          move.cards,
+          move.declaredSuit,
+          move.requestedCard ?? null,
+        );
+        if (r.ok) {
+          pushFeed(
+            ...describePlay(before, s, me, NAMES, move.cards, {
+              won: r.won,
+              cardless: r.becameCardless,
+              fined: r.fined,
+            }),
+          );
+          if (r.won) sfx.win();
+          else sfx.play();
+          keepGoing = r.keptTurn === true && !r.won;
+        } else {
+          // Should never happen (moves are pre-validated), narrate instead
+          // of silently swallowing so ghosts leave evidence, not confusion.
+          pushFeed(
+            describeStall(
+              NAMES[me],
+              move.cards.map(cardLabel).join(" + "),
+              s.turnNumber,
+            ),
+          );
+        }
+      } else {
+        const pr = passOrPick(s, me);
+        pushFeed(
+          ...describePick(
+            before,
+            me,
+            NAMES,
+            pr.picked,
+            pr.skipped,
+            before.kadi[me] && !s.kadiCalls[me],
+          ),
+        );
+        sfx.pick();
+      }
+      if (keepGoing) {
+        id = window.setTimeout(runBot, 500 + Math.random() * 300);
+      } else {
+        setBusy(false);
+        bump();
+      }
+    };
+    id = window.setTimeout(runBot, 650 + Math.random() * 350);
     return () => window.clearTimeout(id);
-  }, [screen, currentPlayer, gameOver, difficulty, bump, pushFeed]);
+  }, [paused, screen, currentPlayer, gameOver, difficulty, bump, pushFeed]);
 
   // ---- record result once (finished games are never resumed) ----
   useEffect(() => {
@@ -273,8 +491,19 @@ export function App() {
         sfx.lose();
       }
       void store.recordResult(won).then(setStats);
+      void store
+        .recordMatch({
+          id: createMatchId(),
+          at: Date.now(),
+          playerNames: NAMES.slice(0, state.hands.length),
+          winnerIndex: state.winnerIndex ?? 0,
+          difficulty,
+          presetName: preset.name,
+          turns: state.turnNumber,
+        })
+        .then(setHistory);
     }
-  }, [screen, state?.gameOver, state?.winnerIndex]);
+  }, [screen, state?.gameOver, state?.winnerIndex, difficulty, preset.name]);
 
   // ---- persist the live match every committed change ----
   useEffect(() => {
@@ -301,7 +530,7 @@ export function App() {
 
   // Live KADI! threat per seat: declared AND finishable in one move right now.
   // Recomputed per committed move (tick), not per tap/selection render.
-  // (state identity is stable — contents are read fresh on each tick.)
+  // (state identity is stable, contents are read fresh on each tick.)
   const threats = useMemo(
     () => (state ? state.hands.map((_, i) => canFinishNow(state, i)) : []),
     [tick],
@@ -309,237 +538,190 @@ export function App() {
 
   if (!booted) {
     return (
-      <div class="min-h-dvh bg-green-950 text-white flex flex-col items-center justify-center gap-2">
-        <div class="text-5xl">🂡</div>
-        <p class="text-yellow-300 font-black tracking-wide">KADI</p>
+      <div class="kadi-shell flex min-h-dvh flex-col items-center justify-center gap-3 text-white">
+        <BrandMark />
+        <p class="kadi-label">Dealing the table…</p>
       </div>
     );
   }
 
   if (screen === "home") {
     return (
-      <div class="min-h-dvh bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col safe-top safe-bottom">
+      <>
         <Toast message={toast} />
-        <div class="flex-1 flex flex-col items-center justify-center px-6 text-center">
-          <div class="text-6xl mb-2">🂡</div>
-          <h1 class="text-5xl font-black tracking-tight text-yellow-300">
-            KADI
-          </h1>
-          <p class="mt-1 text-white/70 text-sm">
-            Kenyan card game • lightweight • offline
-          </p>
-          <div class="mt-4 flex gap-2">
-            <Pill>{stats.games} games</Pill>
-            <Pill tone="amber">{stats.wins} wins</Pill>
-            <Pill tone="green">🔥 {stats.bestStreak} best</Pill>
-          </div>
-          <button
-            type="button"
-            onClick={() => setScreen("lobby")}
-            class="mt-8 w-full max-w-xs rounded-2xl bg-yellow-400 py-4 text-xl font-black text-gray-900 shadow-xl active:scale-95 transition"
-          >
-            ▶ &nbsp;Play vs Bots
-          </button>
-          {resumable && (
-            <button
-              type="button"
-              onClick={() => restoreSave(resumable)}
-              class="mt-3 w-full max-w-xs rounded-2xl border border-yellow-400/60 bg-yellow-400/10 py-3 text-sm font-black text-yellow-200 active:scale-95 transition"
-            >
-              ⏸ Continue — {resumable.state.hands.length}P •{" "}
-              {resumable.state.currentPlayer === 0 ? "your turn" : "bot turn"} •
-              you hold {resumable.state.hands[0].length}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setShowHelp((v) => !v)}
-            class="mt-3 w-full max-w-xs rounded-2xl bg-white/10 py-3 text-sm font-bold text-white active:scale-95 transition"
-          >
-            {showHelp ? "Hide rules" : "How to play"}
-          </button>
-          {showHelp && (
-            <div class="mt-3 w-full max-w-xs rounded-2xl bg-black/40 border border-white/10 p-4 text-left text-xs leading-relaxed text-white/85 anim-fly-in">
-              <p>
-                🎯 <b>Goal:</b> finish all your cards in <b>one move</b>, ending
-                on <b>4 5 6 7 9 10</b>.
-              </p>
-              <p class="mt-2">
-                📢 Say <b class="text-yellow-300">Niko Kadi</b> the turn{" "}
-                <i>before</i> you finish — or the win doesn't count.
-              </p>
-              <p class="mt-2">
-                🃏 Match <b>suit or rank</b>. J = Jump (skip) • K = reverse •
-                Q/8 = question — pair a same-suit answer or pick 1 • A blocks
-                2/3 (no call) • played freely, A requests a suit • 2/3 = pick
-                2/3 (answer to forward, latest count stands).
-              </p>
-              <p class="mt-2">
-                🚫 Can't finish on J Q 8 K A 2 3. Can't win while anyone is
-                cardless. Go out without the call: fined +1, no win.
-              </p>
-            </div>
-          )}
-        </div>
-        <div class="pb-6 flex justify-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              const m = !muted;
-              setMuted(m);
-              setMutedState(m);
-              void store.saveSettings({ sound: !m });
+        <HomeScreen
+          stats={stats}
+          history={history}
+          numBots={numBots}
+          resumable={resumable}
+          onPlay={() => setScreen("lobby")}
+          onSelectMode={(bots) => {
+            setNumBots(bots);
+            setScreen("lobby");
+            haptics.tap();
+          }}
+          onContinue={() => {
+            if (resumable) restoreSave(resumable);
+          }}
+          onHowTo={() => setScreen("howto")}
+          onSettings={() => openSettings("home")}
+          onViewGames={() => setScreen("games")}
+          onCreateRoom={() => setChallengeOpen(true)}
+        />
+        {challengeOpen && (
+          <ChallengeFriendsModal
+            onClose={() => setChallengeOpen(false)}
+            onPlay={() => {
+              setChallengeOpen(false);
+              setScreen("lobby");
             }}
-            class="rounded-full bg-white/10 px-4 py-2 text-xs text-white/80"
-          >
-            {muted ? "🔇 Sound off" : "🔊 Sound on"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              const v = !coachOn;
-              setCoachOn(v);
-              void store.saveSettings({ coach: v });
-            }}
-            class="rounded-full bg-white/10 px-4 py-2 text-xs text-white/80"
-            title="Beginner turn hints"
-          >
-            {coachOn ? "💡 Hints on" : "💡 Hints off"}
-          </button>
-        </div>
-      </div>
+          />
+        )}
+      </>
     );
+  }
+
+  if (screen === "games") {
+    return <MyGamesScreen history={history} onBack={() => setScreen("home")} onPlay={() => setScreen("lobby")} />;
   }
 
   if (screen === "lobby") {
     return (
-      <div class="min-h-dvh bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col px-6 py-8 safe-top safe-bottom">
-        <button
-          type="button"
-          onClick={() => setScreen("home")}
-          class="self-start text-white/60 text-sm"
-        >
-          ← Back
-        </button>
-        <h2 class="mt-2 text-3xl font-black text-yellow-300">New Game</h2>
+      <LobbyScreen
+        numBots={numBots}
+        presetName={preset.name}
+        customs={customs}
+        jokersOn={jokersOn}
+        onSelectBots={(bots) => {
+          setNumBots(bots);
+          haptics.tap();
+        }}
+        onToggleJokers={() => {
+          savePatch({ jokersEnabled: !jokersOn });
+          haptics.tap();
+        }}
+        onSelectPreset={(name) => {
+          savePatch({ presetName: name });
+          haptics.tap();
+        }}
+        onEditCustom={(custom) => {
+          setBuilderInit({
+            initial: { ...custom },
+            sourceName: custom.name,
+            editingName: custom.name,
+          });
+          setScreen("rules");
+          haptics.tap();
+        }}
+        onNewCustom={() => {
+          setBuilderInit({
+            initial: { ...STANDARD_MAUA },
+            sourceName: `Cloned from ${STANDARD_MAUA.name}`,
+            editingName: null,
+          });
+          setScreen("rules");
+          haptics.tap();
+        }}
+        onDeal={startGame}
+        onBack={() => setScreen("home")}
+        onSettings={() => openSettings("home")}
+      />
+    );
+  }
 
-        <p class="mt-6 text-xs font-bold uppercase tracking-widest text-white/50">
-          Opponents (bots)
-        </p>
-        <div class="mt-2 grid grid-cols-3 gap-2">
-          {[1, 2, 3].map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => setNumBots(n)}
-              class={`rounded-2xl py-3 font-black ${numBots === n ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"}`}
-            >
-              {n + 1}P
-              <span class="block text-[10px] font-normal">you + {n} 🤖</span>
-            </button>
-          ))}
-        </div>
-
-        <p class="mt-6 text-xs font-bold uppercase tracking-widest text-white/50">
-          Bot smarts
-        </p>
-        <div class="mt-2 grid grid-cols-3 gap-2">
-          {(["easy", "medium", "hard"] as Difficulty[]).map((d) => (
-            <button
-              key={d}
-              type="button"
-              onClick={() => {
-                setDifficulty(d);
-                void store.saveSettings({ difficulty: d });
-              }}
-              class={`rounded-2xl py-3 font-bold capitalize ${difficulty === d ? "bg-yellow-400 text-gray-900" : "bg-white/10 text-white"}`}
-            >
-              {d === "easy" ? "😌" : d === "medium" ? "🧠" : "🔥"} {d}
-            </button>
-          ))}
-        </div>
-
-        <p class="mt-6 text-xs font-bold uppercase tracking-widest text-white/50">
-          House rules
-        </p>
-        <div class="mt-2 flex flex-col gap-2">
-          {PRESETS.map((p) => (
-            <button
-              key={p.name}
-              type="button"
-              onClick={() => {
-                setPreset(p);
-                void store.saveSettings({ presetName: p.name });
-              }}
-              class={`rounded-2xl border p-3 text-left ${preset.name === p.name ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-white/5"}`}
-            >
-              <span class="font-bold text-sm">{p.name}</span>
-              <span class="block text-[11px] text-white/60 mt-0.5">
-                {p.jokersEnabled
-                  ? "With Jokers (+5, color-matched)"
-                  : "No Jokers in deck"}{" "}
-                • {p.dealCount} cards each
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <p class="mt-6 text-xs font-bold uppercase tracking-widest text-white/50">
-          Extra spice
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            const v = !superAceOn;
-            setSuperAceOn(v);
-            void store.saveSettings({ superAce: v });
+  // ---- settings screen (pause-safe: bots idle while open) ----
+  if (screen === "settings") {
+    return (
+      <div>
+        <Toast message={toast} />
+        <SettingsScreen
+          origin={settingsOrigin}
+          settings={{
+            sound: !muted,
+            difficulty,
+            presetName: preset.name,
+            superAce: superAceOn,
+            coach: coachOn,
+            strict: strictOn,
+            jokersEnabled: jokersOn,
+            haptics: hapticsOn,
+            animations: animationsOn,
           }}
-          class={`mt-2 w-full rounded-2xl border p-3 text-left ${superAceOn ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-white/5"}`}
-        >
-          <span class="font-bold text-sm">
-            ⚡ Special Ace {superAceOn ? "(on)" : "(off)"}
-          </span>
-          <span class="block text-[11px] text-white/60 mt-0.5">
-            A♠ alone demands an exact card. Stacked Aces always can — answer
-            it, lift it with a lone Ace (suit stays), or pick.
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            const v = !strictOn;
-            setStrictOn(v);
-            void store.saveSettings({ strict: v });
+          stats={stats}
+          hasSave={settingsOrigin === "home" && resumable !== null}
+          isCustom={isCustomActive}
+          onNewCustom={openBuilderNew}
+          onEditCustom={openBuilderEdit}
+          onBack={() => setScreen(settingsOrigin)}
+          onSave={(patch) => {
+            savePatch(patch);
+            haptics.tap();
           }}
-          class={`mt-2 w-full rounded-2xl border p-3 text-left ${strictOn ? "border-red-400 bg-red-400/10" : "border-white/10 bg-white/5"}`}
-        >
-          <span class="font-bold text-sm">
-            🚨 Strict table {strictOn ? "(on)" : "(off)"}
-          </span>
-          <span class="block text-[11px] text-white/60 mt-0.5">
-            Wrong plays are fined +1 and turn passes. Off: Play blocks them free.
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={startGame}
-          class="mt-8 w-full rounded-2xl bg-yellow-400 py-4 text-xl font-black text-gray-900 shadow-xl active:scale-95 transition"
-        >
-          Deal me in 🂡
-        </button>
+          onClearHistory={() => {
+            void store.clearMatchHistory().then(() => {
+              setHistory([]);
+              flash("Match history cleared");
+            });
+          }}
+          onResetStats={() => {
+            void store.resetStats().then((s) => {
+              setStats(s);
+              flash("Stats cleared 🧹");
+            });
+          }}
+          onClearSave={() => {
+            void store.clearActiveGame().then(() => {
+              setResumable(null);
+              flash("Saved match forfeited ⏸");
+            });
+          }}
+          onClearCustoms={() => {
+            void store.clearAllCustomRules().then(() => {
+              setCustoms([]);
+              customsRef.current = [];
+              if (isCustomActive) {
+                setPreset({ ...STANDARD_MAUA });
+                void store.saveSettings({ presetName: STANDARD_MAUA.name });
+              }
+              flash("Custom rules cleared 🗑");
+            });
+          }}
+        />
       </div>
     );
+  }
+
+  // ---- custom table rules builder (home/settings only, never mid-match) ----
+  if (screen === "rules" && builderInit) {
+    return (
+      <div>
+        <Toast message={toast} />
+        <RulesBuilder
+          initial={builderInit.initial}
+          sourceName={builderInit.sourceName}
+          editingName={builderInit.editingName}
+          customNames={customs.map((c) => c.name)}
+          onBack={() => setScreen("settings")}
+          onSave={saveCustomProfile}
+          onDelete={deleteCustomProfile}
+        />
+      </div>
+    );
+  }
+
+  // ---- how to play (pre-game guide, no match state touched) ----
+  if (screen === "howto") {
+    return <HowToScreen onBack={() => setScreen("home")} />;
   }
 
   // ---- game screen ----
   if (!state) {
     return (
-      <div class="min-h-dvh bg-green-950 text-white flex items-center justify-center">
+      <div class="kadi-shell flex min-h-dvh items-center justify-center text-white">
         <button
           type="button"
           onClick={startGame}
-          class="rounded-2xl bg-yellow-400 px-6 py-3 font-black text-gray-900"
+          class="kadi-gold-button rounded-2xl px-6 py-3 font-black"
         >
           Start
         </button>
@@ -550,21 +732,74 @@ export function App() {
   const top = topCard(state);
   const myHand = state.hands[0];
   const myTurn = state.currentPlayer === 0 && !state.gameOver;
+  // The buzzer is live until you call, get locked by a false call, or the
+  // table has the declaration rule off. One call per turn is the safe rule:
+  // a false call fines once and locks the button until your next turn.
+  const kadiEnabled = state.config.mustSayNikoKadi !== false;
+  const kadiCalled = state.kadiCalls[0] === true;
+  const kadiLocked = kadiEnabled && !kadiCalled && isKadiLocked(state, 0);
+  const kadiCanCall =
+    kadiEnabled && !kadiCalled && !kadiLocked && myHand.length > 0;
+  const kadiFinishNow = myTurn && canDumpWinningNow(state, 0);
+  const kadiUrgent =
+    kadiFinishNow && kadiEnabled && !kadiCalled && !kadiLocked;
+  const kadiTitle = !kadiEnabled
+    ? "KADI calls are off for this table"
+    : myHand.length === 0
+      ? "Cardless, nothing to declare with"
+      : kadiCalled
+        ? kadiFinishNow
+          ? "KADI called, finish now!"
+          : "KADI called, play on"
+        : kadiLocked
+          ? "False KADI, locked until your next turn"
+          : kadiFinishNow
+            ? "Your hand can go out, press KADI first!"
+            : `Say KADI anytime, a wrong call is fined +${state.config.falseKadiPickCount} and locks the button`;
+  const kadiStateLabel = !kadiEnabled || myHand.length === 0
+    ? "off"
+    : kadiCalled
+      ? "called"
+      : kadiLocked
+        ? "locked"
+        : kadiUrgent
+          ? "urgent"
+          : "ready";
   const selectedCards = selected.flatMap(
     (id) => myHand.find((c) => c.id === id) ?? [],
   );
   const selectedOrder = new Map(selected.map((id, i) => [id, i + 1]));
   const validation =
     selectedCards.length > 0 ? validateCombo(selectedCards, state, 0) : null;
-  // An illegal selection disables Play upfront — no tap needed to find out.
+  // An illegal selection disables Play upfront, no tap needed to find out.
   const selectionInvalid = validation != null && !validation.ok;
   const selectionReason = selectionInvalid
-    ? reasonText(validation.reason ?? null)
+    ? reasonText(
+        validation.reason ?? null,
+        state.activeSuit,
+        state.pendingPenalty > 0 && topCard(state).rank === "JOKER",
+        selectedCards.some((c) => c.rank === "JOKER"),
+      )
+    : null;
+  const winningDumpBlocked =
+    kadiEnabled &&
+    !kadiCalled &&
+    myTurn &&
+    myHand.length > 0 &&
+    selectedCards.length === myHand.length &&
+    canDumpWinningNow(state, 0);
+  const winningDumpNote = winningDumpBlocked
+    ? kadiLocked
+      ? "False KADI: this dump cannot win until your next turn."
+      : "Press KADI first - this dump wins."
     : null;
 
   const toggleSelect = (card: Card) => {
     if (!myTurn || busy) {
-      flash(state.gameOver ? "Game over" : "Wait for your turn…");
+      pushNotice(
+        state.gameOver ? "Game over" : "Wait for your turn…",
+        state.turnNumber,
+      );
       return;
     }
     haptics.tap();
@@ -578,20 +813,36 @@ export function App() {
     declared: Suit | null,
     requested?: { rank: Rank; suit: Suit } | null,
   ) => {
+    if (
+      kadiEnabled &&
+      !kadiCalled &&
+      cards.length === myHand.length &&
+      canDumpWinningNow(state, 0)
+    ) {
+      sfx.error();
+      pushNotice(
+        kadiLocked
+          ? "False KADI - this dump cannot win until your next turn."
+          : "Press KADI first - this dump wins.",
+        state.turnNumber,
+      );
+      return;
+    }
     const before = snapshotState(state, 0);
     const r = playCombo(state, 0, cards, declared, requested ?? null);
     if (!r.ok) {
       sfx.error();
       haptics.penalty();
       // Strict tables fine the attempt (draw + turn passes); casual rejects free.
+      // The reason is already shown inline + in the coach line, no toast: the
+      // feed (strict fine) is the only panel entry.
       const fined = resolveWrongPlay(state, 0);
       if (fined > 0) {
-        pushFeed(describeWrongPlay("You", cards, fined));
+        pushFeed(describeWrongPlay("You", cards, fined, state.turnNumber));
         setSelected([]);
         setSuitPickerFor(null);
         setSuperPickerFor(null);
       }
-      flash(reasonText(r.reason ?? null));
       bump();
       return;
     }
@@ -608,8 +859,8 @@ export function App() {
     if (r.won) {
       // win sfx handled by effect
     } else if (r.fined) {
+      // Narrated by the describePlay fined event above, no toast.
       sfx.penalty();
-      flash(`No call — fined +${r.fined}. Say KADI a turn earlier!`);
     } else if (r.becameCardless) {
       sfx.penalty();
     } else {
@@ -621,7 +872,7 @@ export function App() {
 
   const onPlayPress = () => {
     if (selectedCards.length === 0 || !myTurn) return;
-    // Answering a penalty with aces is a pure block — no suit/super picker.
+    // Answering a penalty with aces is a pure block, no suit/super picker.
     if (
       state.pendingPenalty === 0 &&
       isSuperAceCombo(selectedCards, state) &&
@@ -630,8 +881,11 @@ export function App() {
       setSuperPickerFor(selectedCards);
       return;
     }
+    // An Ace answering a question never declares: suit auto-follows the Ace.
+    const aceAnswers = isAceAnswerCombo(selectedCards, state);
     const needsSuit =
       selectedCards.some((c) => c.rank === "A") &&
+      !aceAnswers &&
       state.config.aceCallsSuit &&
       state.pendingPenalty === 0 &&
       state.activeCardRequest == null;
@@ -646,7 +900,16 @@ export function App() {
     if (!myTurn || busy) return;
     const before = snapshotState(state, 0);
     const r = passOrPick(state, 0);
-    pushFeed(...describePick(before, 0, NAMES, r.picked, r.skipped));
+    pushFeed(
+      ...describePick(
+        before,
+        0,
+        NAMES,
+        r.picked,
+        r.skipped,
+        before.kadi[0] && !state.kadiCalls[0],
+      ),
+    );
     sfx.pick();
     haptics.tap();
     setSelected([]);
@@ -654,17 +917,131 @@ export function App() {
   };
 
   const onKadi = () => {
-    if (declareKadi(state, 0)) {
+    if (state.gameOver) return;
+    if (!kadiEnabled) {
+      pushNotice("KADI calls are off for this table.", state.turnNumber);
+      return;
+    }
+    if (state.kadiCalls[0]) {
+      pushNotice("KADI already called, go out and finish!", state.turnNumber);
+      return;
+    }
+    if (kadiLocked) {
+      pushNotice("False KADI, locked until your next turn.", state.turnNumber);
+      return;
+    }
+    if (myHand.length === 0) {
+      pushNotice("Cardless, nothing to declare with.", state.turnNumber);
+      return;
+    }
+    const r = tryDeclareKadi(state, 0);
+    if (r.ok) {
       sfx.kadi();
       haptics.play();
-      pushFeed(describeKadi("You"));
+      pushFeed(describeKadi("You", state.turnNumber));
+      bump();
+    } else if (r.falseCall && r.fined) {
+      sfx.penalty();
+      haptics.penalty();
+      pushFeed(describeFalseKadi("You", r.fined, state.turnNumber));
+      bump();
+    } else if (r.falseCall) {
+      sfx.error();
+      haptics.penalty();
+      pushNotice(
+        "False KADI, no winnable hand. Locked until your next turn.",
+        state.turnNumber,
+      );
+      bump();
+    } else if (r.locked) {
+      sfx.error();
+      pushNotice("False KADI, locked until your next turn.", state.turnNumber);
       bump();
     }
   };
 
+  const shortcutLayer: ShortcutLayer = shortcutsOpen
+    ? "help"
+    : confirmQuit || suitPickerFor || superPickerFor || state.gameOver
+      ? "modal"
+      : "game";
+
+  const onShortcut = (action: GameShortcut) => {
+    if (action === "play") {
+      onPlayPress();
+      return;
+    }
+    if (action === "pick") {
+      onPickPress();
+      return;
+    }
+    if (action === "kadi") {
+      onKadi();
+      return;
+    }
+    if (action === "help") {
+      setShortcutsOpen((open) => !open);
+      return;
+    }
+    if (action === "pause") {
+      setConfirmQuit(true);
+      return;
+    }
+    if (shortcutsOpen) setShortcutsOpen(false);
+    else if (confirmQuit) setConfirmQuit(false);
+    else if (superPickerFor) setSuperPickerFor(null);
+    else if (suitPickerFor) setSuitPickerFor(null);
+  };
+
+  const waitingOn =
+    BOT_NAMES[(state.currentPlayer - 1 + BOT_NAMES.length) % BOT_NAMES.length];
+  const coachMsg = turnCoach({
+    gameOver: state.gameOver,
+    winner:
+      state.winnerIndex == null
+        ? null
+        : state.winnerIndex === 0
+          ? "You"
+          : BOT_NAMES[
+              (state.winnerIndex - 1 + BOT_NAMES.length) % BOT_NAMES.length
+            ],
+    myTurn,
+    waitingOn,
+    busyThinking: busy && state.currentPlayer !== 0,
+    pendingPenalty: state.pendingPenalty,
+    pendingSkip: state.pendingSkip,
+    pendingReverse: state.pendingReverse ?? 0,
+    activeSuit: state.activeSuit,
+    prevSuit: state.lastSuitBeforeRequest ?? null,
+    request: state.activeCardRequest,
+    topLabel: cardLabel(top),
+    selectedCount: selectedCards.length,
+    comboValid: validation ? validation.ok : null,
+    invalidReason:
+      validation && !validation.ok
+        ? reasonText(
+            validation.reason ?? null,
+            state.activeSuit,
+            state.pendingPenalty > 0 && topCard(state).rank === "JOKER",
+            selectedCards.some((c) => c.rank === "JOKER"),
+          )
+        : null,
+    legalCount: hints.size,
+    kadiReady:
+      canDeclareKadi(state, 0) &&
+      !isKadiLocked(state, 0) &&
+      shouldDeclareKadi(state, 0),
+  });
+  const turnLine = state.gameOver
+    ? "Game over"
+    : myTurn
+      ? "👉 Your turn"
+      : `Waiting on ${waitingOn}…`;
+
   return (
-    <div class="min-h-dvh bg-gradient-to-b from-green-950 via-green-900 to-green-950 text-white flex flex-col safe-top safe-bottom">
-      <Toast message={toast} />
+    <div class="kadi-shell relative flex h-dvh flex-col overflow-hidden text-white safe-top safe-bottom">
+      <PageBackdrop />
+      <GameShortcutLayer layer={shortcutLayer} onAction={onShortcut} />
       {suitPickerFor && (
         <SuitPicker
           onCancel={() => setSuitPickerFor(null)}
@@ -680,222 +1057,336 @@ export function App() {
       )}
       {confirmQuit && !state.gameOver && (
         <QuitConfirmModal
-          onKeepPlaying={() => setConfirmQuit(false)}
+          onClose={() => setConfirmQuit(false)}
+          onExit={() => quitToHome(true)}
           onSaveExit={() => quitToHome(false)}
         />
       )}
+      {shortcutsOpen && (
+        <ShortcutHelp onClose={() => setShortcutsOpen(false)} />
+      )}
 
-      {/* top bar */}
-      <div class="flex items-center justify-between px-4 pt-3">
-        <button
-          type="button"
-          onClick={() => setConfirmQuit(true)}
-          class="text-white/60 text-sm"
-        >
-          ← Quit
-        </button>
-        <div class="flex items-center gap-2">
-          <Pill>
-            {state.direction === 1 ? "↻ clockwise" : "↺ anti-clockwise"}
-          </Pill>
-          {threats.some(Boolean) && <Pill tone="amber">KADI!</Pill>}
-        </div>
-        <span class="text-white/60 text-xs">{preset.name}</span>
-      </div>
-
-      {/* bots */}
-      <div class="flex justify-center gap-3 px-4 pt-2">
-        {state.hands.map((hand, i) => {
-          if (i === 0) return null;
-          const isTurn = state.currentPlayer === i && !state.gameOver;
-          return (
-            <div
-              key={i}
-              class={`flex items-center gap-2 rounded-2xl border px-3 py-2 ${isTurn ? "border-yellow-400 bg-yellow-400/10" : "border-white/10 bg-black/30"}`}
-            >
-              <div class="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-lg">
-                🤖
+      <div class="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row">
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* top bar */}
+          <div
+            class="flex shrink-0 items-center justify-between gap-3 px-3 pt-2 md:px-6 md:pt-3"
+            data-testid="game-topbar"
+          >
+            <div class="flex min-w-0 items-center gap-2.5">
+              <BrandMark compact />
+              <span class="hidden h-6 w-px bg-white/10 sm:block" />
+              <div class="hidden items-center gap-1.5 sm:flex">
+                <Pill>{state.hands.length}P</Pill>
+                <Pill>
+                  {state.direction === 1 ? "↻ clockwise" : "↺ anti-clockwise"}
+                </Pill>
               </div>
-              <div>
-                <div class="text-xs font-bold">
-                  {BOT_NAMES[(i - 1) % BOT_NAMES.length]}
-                  {state.kadiCalls[i] && threats[i] && (
-                    <span class="ml-1 text-yellow-300">KADI!</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              {state.config.mustSayNikoKadi !== false &&
+                threats.some(Boolean) && <Pill tone="amber">KADI!</Pill>}
+              <button
+                type="button"
+                onClick={() => setShortcutsOpen(true)}
+                aria-label="Keyboard shortcuts"
+                aria-keyshortcuts="?"
+                title="Keyboard shortcuts (?)"
+                data-testid="shortcuts-button"
+                class="hidden min-h-11 min-w-11 items-center justify-center rounded-xl text-white/55 transition hover:bg-white/5 hover:text-white lg:inline-flex"
+              >
+                <span aria-hidden="true" class="font-mono text-base font-black">
+                  ?
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmQuit(true)}
+                aria-label="Pause or quit"
+                aria-keyshortcuts="Escape"
+                title="Pause or quit (Esc)"
+                data-testid="pause-button"
+                class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-white/55 transition hover:bg-white/5 hover:text-white"
+              >
+                <Icon name="pause" class="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                aria-label="Open settings"
+                onClick={() => openSettings("game")}
+                class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-white/55 transition hover:bg-white/5 hover:text-white"
+              >
+                <Icon name="settings" class="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* table */}
+          <div
+            class="flex min-h-0 min-w-0 flex-1 flex-col px-2.5 pb-2 md:px-5 md:pb-3"
+            data-testid="game-table"
+          >
+            {/* bots */}
+            <div class="flex shrink-0 justify-center gap-2 pt-2 md:gap-3">
+              {state.hands.map((hand, i) => {
+                if (i === 0) return null;
+                const slot: "left" | "top" | "right" =
+                  i === 1 ? "left" : i === 2 ? "top" : "right";
+                const isTurn = state.currentPlayer === i && !state.gameOver;
+                return (
+                  <OpponentSeat
+                    key={i}
+                    name={BOT_NAMES[(i - 1) % BOT_NAMES.length]}
+                    cards={hand.length}
+                    isTurn={isTurn}
+                    thinking={isTurn && busy}
+                    kadi={Boolean(
+                      state.config.mustSayNikoKadi !== false &&
+                        state.kadiCalls[i] &&
+                        threats[i],
+                    )}
+                    slot={slot}
+                    className="lg:max-w-[13rem]"
+                  />
+                );
+              })}
+            </div>
+
+            {/* center felt */}
+            <div class="relative mt-2 flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden rounded-[2rem] border border-kadi-line/35 bg-[radial-gradient(ellipse_at_center,rgba(20,74,53,0.55),rgba(4,22,16,0.3)_68%)] px-3 py-3 md:mt-3 md:px-6 md:py-4">
+              <div class="pointer-events-none absolute inset-3 rounded-[1.6rem] border border-white/4" />
+              <div class="relative flex items-center justify-center gap-6 md:gap-9">
+                <button
+                  type="button"
+                  onClick={onPickPress}
+                  class="flex flex-col items-center gap-2 rounded-xl transition hover:bg-white/5 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                  disabled={!myTurn}
+                  aria-label={`Pick a card (${state.drawPile.length} left)`}
+                  data-testid="draw-pile"
+                >
+                  <div
+                    class={`flex w-[4.5rem] flex-col items-center justify-center rounded-xl border ${
+                      myTurn
+                        ? "border-kadi-gold/70 bg-kadi-gold/5 shadow-[0_0_24px_rgba(245,197,24,0.1)]"
+                        : "border-kadi-line/50 bg-black/20"
+                    } py-2 md:w-24 md:py-3`}
+                  >
+                    <CardView
+                      card={{ id: "draw-back", rank: "A", suit: "spades" }}
+                      faceDown
+                    />
+                    <span class="mt-1.5 text-[10px] font-bold text-white/65 md:text-[11px]">
+                      {state.drawPile.length} left
+                    </span>
+                    <span
+                      class={`text-[9px] font-black tracking-widest md:text-[10px] ${
+                        myTurn ? "text-kadi-gold" : "text-white/25"
+                      }`}
+                    >
+                      {myTurn ? "PICK" : "DECK"}
+                    </span>
+                  </div>
+                </button>
+                <div
+                  class="anim-fly-in flex flex-col items-center gap-1.5"
+                  key={top.id + String(state.discardPile.length)}
+                >
+                  <CardView card={top} large />
+                  <div class="flex min-h-6 flex-wrap justify-center gap-1">
+                    {state.pendingPenalty > 0 && (
+                      <Pill tone="red">Pick {state.pendingPenalty}</Pill>
+                    )}
+                    {state.pendingSkip > 0 && (
+                      <Pill tone="amber">SKIP ×{state.pendingSkip}</Pill>
+                    )}
+                    {(state.pendingReverse ?? 0) > 0 && (
+                      <Pill tone="amber">
+                        REVERSE ×{state.pendingReverse}
+                      </Pill>
+                    )}
+                    {state.activeSuit && (
+                      <Pill tone="green">Suit: {state.activeSuit}</Pill>
+                    )}
+                    {state.activeCardRequest && (
+                      <Pill tone="amber">
+                        Need: {state.activeCardRequest.rank}
+                        {state.activeCardRequest.suit === "hearts"
+                          ? "♥"
+                          : state.activeCardRequest.suit === "diamonds"
+                            ? "♦"
+                            : state.activeCardRequest.suit === "spades"
+                              ? "♠"
+                              : "♣"}
+                      </Pill>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div class="relative mt-3 w-full max-w-xl xl:hidden">
+                <EventBanner events={feed} />
+              </div>
+              <div
+                class="relative mt-1.5 w-full max-w-xl"
+                aria-live="polite"
+              >
+                {coachOn ? (
+                  <CoachBar msg={coachMsg} />
+                ) : (
+                  <p
+                    class={`mb-1 text-center text-xs font-bold ${
+                      myTurn && !state.gameOver
+                        ? "text-kadi-gold"
+                        : "text-white/50"
+                    }`}
+                  >
+                    {turnLine}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* bottom rail: buzzer / hand / actions */}
+          <div class="flex min-w-0 shrink-0 flex-col justify-end px-1 pb-1 pt-1 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-end lg:gap-8 lg:px-0 lg:pb-0 [@media(max-height:520px)]:pb-0 [@media(max-height:520px)]:pt-0">
+            {!state.gameOver && (
+              <div class="flex shrink-0 flex-col items-center justify-center py-2 lg:order-2 lg:w-40 lg:justify-self-center lg:pb-3 [@media(max-height:520px)]:py-0">
+                {kadiCalled && myHand.length > 0 && (
+                  <p class="mb-1 text-center text-[11px] font-bold uppercase tracking-widest text-amber-300">
+                    {kadiFinishNow
+                      ? "KADI called, finish now!"
+                      : myTurn
+                        ? "KADI called, play on"
+                        : "KADI called"}
+                  </p>
+                )}
+                <KadiBuzzer
+                  urgent={kadiUrgent}
+                  disabled={!kadiCanCall}
+                  stateLabel={kadiStateLabel}
+                  title={kadiTitle}
+                  onPress={onKadi}
+                />
+              </div>
+            )}
+
+            <div class="flex min-w-0 flex-col items-center lg:order-1">
+              <div
+                class="flex w-full min-w-0 shrink-0 overflow-x-auto no-scrollbar pt-3 [@media(max-height:520px)]:pt-1"
+                data-testid="hand"
+              >
+                <div
+                  class="mx-auto flex w-max"
+                  style={{ paddingLeft: 8, paddingRight: 8 }}
+                >
+                  {myHand.map((c) => (
+                    <div
+                      key={c.id}
+                      class="-ml-4 first:ml-0 md:-ml-3 lg:-ml-4"
+                    >
+                      <CardView
+                        card={c}
+                        selected={selected.includes(c.id)}
+                        order={selectedOrder.get(c.id) ?? null}
+                        hint={hints.has(c.id) && selected.length === 0}
+                        onClick={() => toggleSelect(c)}
+                      />
+                    </div>
+                  ))}
+                  {myHand.length === 0 && (
+                    <p class="text-white/60 text-sm pb-6">Cardless</p>
                   )}
                 </div>
-                <div class="text-[11px] text-white/60">
-                  {isTurn && busy ? "thinking…" : `${hand.length} cards`}
-                </div>
               </div>
             </div>
-          );
-        })}
-      </div>
 
-      {/* center piles */}
-      <div class="flex items-center justify-center gap-6 py-4">
-        <button
-          type="button"
-          onClick={onPickPress}
-          class="flex flex-col items-center gap-1"
-          disabled={!myTurn}
-        >
-          <div
-            class={`rounded-lg border-2 border-dashed ${myTurn ? "border-yellow-400/70" : "border-white/20"} bg-black/30 w-20 h-28 flex flex-col items-center justify-center`}
-          >
-            <span class="text-2xl">🂠</span>
-            <span class="text-[11px] text-white/70 font-bold">
-              {state.drawPile.length} left
-            </span>
-            <span class="text-[10px] text-yellow-300 font-bold">
-              {myTurn ? "TAP TO PICK" : ""}
-            </span>
-          </div>
-        </button>
-        <div
-          class="flex flex-col items-center gap-1 anim-fly-in"
-          key={top.id + String(state.discardPile.length)}
-        >
-          <CardView card={top} large />
-          <div class="flex gap-1 h-6">
-            {state.pendingPenalty > 0 && (
-              <Pill tone="red">Pick {state.pendingPenalty}</Pill>
-            )}
-            {state.pendingSkip > 0 && (
-              <Pill tone="amber">SKIP ×{state.pendingSkip}</Pill>
-            )}
-            {state.activeSuit && (
-              <Pill tone="green">Suit: {state.activeSuit}</Pill>
-            )}
-            {state.activeCardRequest && (
-              <Pill tone="amber">
-                Need: {state.activeCardRequest.rank}
-                {state.activeCardRequest.suit === "hearts"
-                  ? "♥"
-                  : state.activeCardRequest.suit === "diamonds"
-                    ? "♦"
-                    : state.activeCardRequest.suit === "spades"
-                      ? "♠"
-                      : "♣"}
-              </Pill>
-            )}
-          </div>
-        </div>
-      </div>
-      <EventBanner events={feed} />
-      {coachOn ? (
-        <CoachBar
-          msg={turnCoach({
-            gameOver: state.gameOver,
-            winner:
-              state.winnerIndex == null
-                ? null
-                : state.winnerIndex === 0
-                  ? "You"
-                  : BOT_NAMES[(state.winnerIndex - 1 + BOT_NAMES.length) % BOT_NAMES.length],
-            myTurn,
-            waitingOn:
-              BOT_NAMES[(state.currentPlayer - 1 + BOT_NAMES.length) % BOT_NAMES.length],
-            busyThinking: busy && state.currentPlayer !== 0,
-            pendingPenalty: state.pendingPenalty,
-            pendingSkip: state.pendingSkip,
-            activeSuit: state.activeSuit,
-            prevSuit: state.lastSuitBeforeRequest ?? null,
-            request: state.activeCardRequest,
-            topLabel: cardLabel(top),
-            selectedCount: selectedCards.length,
-            comboValid: validation ? validation.ok : null,
-            invalidReason: validation && !validation.ok ? reasonText(validation.reason ?? null) : null,
-            legalCount: hints.size,
-            kadiReady: canDeclareKadi(state, 0) && shouldDeclareKadi(state, 0),
-          })}
-        />
-      ) : (
-        <p class="text-center text-xs text-white/50 mb-1">
-          {state.gameOver
-            ? "Game over"
-            : myTurn
-              ? "👉 Your turn"
-              : `Waiting on ${BOT_NAMES[(state.currentPlayer - 1 + BOT_NAMES.length) % BOT_NAMES.length]}…`}
-        </p>
-      )}
-
-      {/* hand */}
-      <div class="flex-1 flex items-end justify-center px-4 pb-2 overflow-x-auto">
-        <div class="flex" style={{ paddingLeft: 8 }}>
-          {myHand.map((c) => (
-            <div key={c.id} class="-ml-4 first:ml-0">
-              <CardView
-                card={c}
-                selected={selected.includes(c.id)}
-                order={selectedOrder.get(c.id) ?? null}
-                hint={hints.has(c.id) && selected.length === 0}
-                onClick={() => toggleSelect(c)}
-              />
+            <div
+              class="mt-3 shrink-0 lg:order-3 lg:mt-0 lg:w-44 lg:justify-self-end [@media(max-height:520px)]:mt-1"
+              data-testid="actions"
+            >
+              {selectionInvalid && (
+                <p class="pb-1 text-center text-[11px] font-bold text-red-300">
+                  ⛔ {selectionReason}
+                </p>
+              )}
+              {!selectionInvalid && winningDumpNote && (
+                <p class="pb-1 text-center text-[11px] font-bold text-amber-300">
+                  {winningDumpNote}
+                </p>
+              )}
+              <div class="flex items-center gap-2 lg:flex-col-reverse lg:items-stretch">
+                <button
+                  type="button"
+                  onClick={onPickPress}
+                  disabled={!myTurn}
+                  aria-keyshortcuts="D"
+                  title="Pick or draw (D)"
+                  data-testid="pick-button"
+                  class="kadi-ghost-button flex-1 rounded-2xl py-3.5 text-sm font-bold disabled:opacity-40 active:scale-95 lg:w-full lg:flex-none lg:py-4 lg:text-base [@media(max-height:520px)]:py-2"
+                >
+                  {state.pendingPenalty > 0
+                    ? `Eat +${state.pendingPenalty}`
+                    : state.pendingSkip > 0
+                      ? "Accept skip"
+                      : (state.pendingReverse ?? 0) > 0
+                        ? "Accept reverse"
+                        : "Pick"}
+                </button>
+                <button
+                  type="button"
+                  onClick={onPlayPress}
+                  disabled={
+                    !myTurn ||
+                    selectedCards.length === 0 ||
+                    (selectionInvalid && !strictOn)
+                  }
+                  aria-keyshortcuts="P"
+                  title="Play selected cards (P)"
+                  data-testid="play-button"
+                  class={`flex-1 rounded-2xl py-3.5 text-sm font-black transition active:scale-95 disabled:opacity-40 lg:w-full lg:flex-none lg:py-4 lg:text-base [@media(max-height:520px)]:py-2 ${
+                    selectionInvalid
+                      ? strictOn
+                        ? "bg-red-500 text-white"
+                        : "bg-red-500/40 text-white/60"
+                      : "kadi-gold-button"
+                  }`}
+                >
+                  Play{selectedCards.length > 0 ? ` ${selectedCards.length}` : ""}
+                </button>
+              </div>
             </div>
-          ))}
-          {myHand.length === 0 && (
-            <p class="text-white/60 text-sm pb-6">
-              Cardless — you'll pick on your turn.
-            </p>
-          )}
+          </div>
         </div>
       </div>
 
-      {/* actions */}
-      {selectionInvalid && (
-        <p class="px-4 pb-1 text-center text-[11px] font-bold text-red-300">
-          ⛔ {selectionReason}
-        </p>
-      )}
-      <div class="px-4 pb-5 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onPickPress}
-          disabled={!myTurn}
-          class="flex-1 rounded-2xl bg-white/10 py-3.5 font-bold text-sm disabled:opacity-40 active:scale-95 transition"
-        >
-          {state.pendingPenalty > 0
-            ? `Eat +${state.pendingPenalty}`
-            : state.pendingSkip > 0
-              ? "Accept skip"
-              : "Pick"}
-        </button>
-        {canDeclareKadi(state, 0) && !state.gameOver && (
-          <button
-            type="button"
-            onClick={onKadi}
-            class={`rounded-2xl px-4 py-3.5 text-sm font-black ${shouldDeclareKadi(state, 0) ? "bg-yellow-400 text-gray-900 anim-kadi-glow" : "bg-white/10"}`}
-          >
-            Kadi!
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={onPlayPress}
-          disabled={
-            !myTurn || selectedCards.length === 0 || (selectionInvalid && !strictOn)
-          }
-          class={`flex-1 rounded-2xl py-3.5 font-black text-sm active:scale-95 transition disabled:opacity-40 ${
-            selectionInvalid
-              ? strictOn
-                ? "bg-red-500 text-white"
-                : "bg-red-500/40 text-white/60"
-              : "bg-yellow-400 text-gray-900"
-          }`}
-        >
-          Play{selectedCards.length > 0 ? ` ${selectedCards.length}` : ""}
-        </button>
+      {/* match log rail */}
+      <aside
+        class="hidden xl:flex xl:w-80 xl:shrink-0 xl:flex-col xl:gap-3 xl:border-l xl:border-white/8 xl:bg-kadi-ink/45 xl:p-4 xl:backdrop-blur-sm"
+        data-testid="feed-rail"
+      >
+        <StatsCard stats={stats} />
+        <div class="min-h-0 flex-1">
+          <EventBanner events={feed} variant="panel" />
+        </div>
+      </aside>
       </div>
 
       {/* game over */}
       {state.gameOver && (
-        <div class="fixed inset-0 z-40 flex items-end justify-center bg-black/70 p-4">
-          <div class="w-full max-w-sm rounded-3xl bg-green-950 border border-yellow-400/40 p-6 text-center anim-fanfare">
+        <div class="fixed inset-0 z-40 flex items-end justify-center bg-kadi-ink/80 p-4 backdrop-blur-sm sm:items-center">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="game-over-title"
+            data-testid="game-over"
+            class="kadi-panel-strong anim-fanfare w-full max-w-sm rounded-3xl p-6 text-center"
+          >
             <div class="text-5xl">{state.winnerIndex === 0 ? "🏆" : "😅"}</div>
-            <h3 class="mt-2 text-2xl font-black text-yellow-300">
+            <h3
+              id="game-over-title"
+              class="mt-2 text-2xl font-black text-kadi-gold"
+            >
               {state.winnerIndex === 0
-                ? "You win! Niko Kadi!"
+                ? "You win 🎉"
                 : `${BOT_NAMES[(state.winnerIndex ?? 1) - 1]} wins`}
             </h3>
             <div class="mt-3 flex justify-center gap-2">
@@ -906,14 +1397,14 @@ export function App() {
             <button
               type="button"
               onClick={startGame}
-              class="mt-5 w-full rounded-2xl bg-yellow-400 py-3.5 font-black text-gray-900"
+              class="kadi-gold-button mt-5 w-full rounded-2xl py-3.5 font-black"
             >
               Rematch
             </button>
             <button
               type="button"
               onClick={() => quitToHome(true)}
-              class="mt-2 w-full rounded-2xl bg-white/10 py-3 text-sm font-bold"
+              class="kadi-ghost-button mt-2 w-full rounded-2xl py-3 text-sm font-bold"
             >
               Home
             </button>
@@ -922,23 +1413,4 @@ export function App() {
       )}
     </div>
   );
-}
-
-function reasonText(reason: string | null): string {
-  switch (reason) {
-    case "NO_MATCH":
-      return "Must match suit or rank of the top card.";
-    case "QUESTION_NEEDS_ANSWER":
-      return "Q / 8 needs a same-suit answer (4 5 6 7 9 10) in the same move.";
-    case "PENALTY_MUST_STACK_OR_BLOCK":
-      return "Only a matching 2 / 3 / Joker, or an Ace, answers a penalty.";
-    case "SKIP_MUST_COUNTER_OR_ACCEPT":
-      return "Jump! Counter with your own J or accept the skip.";
-    case "UNMET_REQUEST":
-      return "Super Ace demand: play the exact card, an Ace, or pick.";
-    case "NOT_YOUR_TURN":
-      return "Wait for your turn…";
-    default:
-      return "That move is not legal.";
-  }
 }

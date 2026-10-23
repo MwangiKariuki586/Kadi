@@ -1,6 +1,6 @@
 import { cardLabel, type Card, type Suit } from '../engine/cards';
 import { isJumpRank, isKickbackRank, isPenaltyRank } from '../engine/rules';
-import { isSuperAceCombo } from '../engine/validator';
+import { isAceAnswerCombo, isSuperAceCombo } from '../engine/validator';
 import type { GameState } from '../engine/state';
 
 export type FeedTone =
@@ -8,14 +8,55 @@ export type FeedTone =
   | 'skip' | 'reverse' | 'draw' | 'kadi' | 'win' | 'info';
 
 export interface FeedEvent {
+  id: string;
+  turn: number;
+  actor: string;
   icon: string;
   text: string;
   tone: FeedTone;
 }
 
+export interface TurnGroup {
+  turn: number;
+  actor: string;
+  events: FeedEvent[];
+}
+
+/** Chronological grouping: consecutive events sharing turn + actor stay together. */
+export function groupFeed(events: FeedEvent[]): TurnGroup[] {
+  const groups: TurnGroup[] = [];
+  for (const e of events) {
+    const last = groups[groups.length - 1];
+    if (last && last.turn === e.turn && last.actor === e.actor) {
+      last.events.push(e);
+    } else {
+      groups.push({ turn: e.turn, actor: e.actor, events: [e] });
+    }
+  }
+  return groups;
+}
+
+let feedSeq = 0;
+
+function mk(turn: number, actor: string, icon: string, text: string, tone: FeedTone): FeedEvent {
+  feedSeq += 1;
+  return { id: `f${turn}-${feedSeq}`, turn, actor, icon, text, tone };
+}
+
+/** Second-person fix: "You play" vs "Jabari plays". */
+function v(actor: string, third: string, you: string): string {
+  return actor === 'You' ? you : third;
+}
+
+function isVerb(actor: string): string {
+  return actor === 'You' ? 'are' : 'is';
+}
+
 export interface TurnSnapshot {
+  turn: number;
   pendingPenalty: number;
   pendingSkip: number;
+  pendingReverse: number;
   activeSuit: Suit | null;
   activeCardRequest: { rank: Card['rank']; suit: Suit } | null;
   direction: 1 | -1;
@@ -27,8 +68,10 @@ export interface TurnSnapshot {
 export function snapshotState(s: GameState, me: number): TurnSnapshot {
   const top = s.discardPile[s.discardPile.length - 1];
   return {
+    turn: s.turnNumber,
     pendingPenalty: s.pendingPenalty,
     pendingSkip: s.pendingSkip,
+    pendingReverse: s.pendingReverse ?? 0,
     activeSuit: s.activeSuit,
     activeCardRequest: s.activeCardRequest ? { ...s.activeCardRequest } : null,
     direction: s.direction,
@@ -82,37 +125,42 @@ export function describePlay(
   const actor = names[me] ?? `Player ${me + 1}`;
   const next = names[after.currentPlayer] ?? `Player ${after.currentPlayer + 1}`;
   const labels = played.map(cardLabel).join(' + ');
+  const turn = before.turn;
 
-  evts.push({ icon: '▶', text: `${actor} plays ${labels}`, tone: 'play' });
-
-  // Kadi declaration landed with this turn (bots declare inside their move).
+  // Kadi declaration landed with this turn (same-turn calls count, so it
+  // narrates before the dump).
   if (after.kadiCalls[me] && !before.kadi[me]) {
-    evts.push({ icon: '📢', text: `${actor} is KADI! One clean move to win`, tone: 'kadi' });
+    const closer = actor === 'You' ? 'Go out now!' : 'One clean move to win. Stop them!';
+    evts.push(mk(turn, actor, '📢', `${actor} ${isVerb(actor)} KADI! ${closer}`, 'kadi'));
   }
 
+  evts.push(mk(turn, actor, '▶', `${actor} ${v(actor, 'plays', 'play')} ${labels}`, 'play'));
+
   // Penalty consequence: fresh, stacked, or neutralised. The debt always
-  // follows the penalty cards played — never the top card's face value.
+  // follows the penalty cards played, never the top card's face value.
   if (before.pendingPenalty === 0 && after.pendingPenalty > 0) {
     const sources = played
       .filter((c) => isPenaltyRank(c.rank, after.config))
       .map(cardLabel)
       .join(', ');
     const from = sources ? ` (from ${sources})` : '';
-    evts.push({ icon: '🔥', text: `Pick ${after.pendingPenalty} hangs over ${next}${from}`, tone: 'penalty' });
+    evts.push(mk(turn, actor, '🔥', `Pick ${after.pendingPenalty} on ${next}${from}`, 'penalty'));
   } else if (before.pendingPenalty > 0 && after.pendingPenalty > 0) {
-    // Answered (replaced or accumulated) — totals may be identical, so key off the answer itself.
+    // Answered (replaced or accumulated), totals may be identical, so key off the answer itself.
     const sources = played
       .filter((c) => isPenaltyRank(c.rank, after.config))
       .map(cardLabel)
       .join(', ') || 'a penalty';
-    evts.push({ icon: '🔥', text: `${actor} answers with ${sources} — Pick ${after.pendingPenalty} hangs over ${next}`, tone: 'penalty' });
+    evts.push(mk(turn, actor, '🔥', `${actor} ${v(actor, 'answers', 'answer')} with ${sources}. Pick ${after.pendingPenalty} on ${next}`, 'penalty'));
   } else if (before.pendingPenalty > 0 && after.pendingPenalty === 0) {
     const ace = played.find((c) => c.rank === 'A');
-    evts.push({
-      icon: '🛡',
-      text: `${actor} neutralizes the +${before.pendingPenalty} with ${ace ? cardLabel(ace) : 'an Ace'} — no one picks`,
-      tone: 'block',
-    });
+    evts.push(mk(
+      turn,
+      actor,
+      '🛡',
+      `${actor} ${v(actor, 'neutralizes', 'neutralize')} the +${before.pendingPenalty} with ${ace ? cardLabel(ace) : 'an Ace'}, no one picks`,
+      'block',
+    ));
   }
 
   // Exact-card demand state before/after (drives suit, demand and lift narration).
@@ -122,84 +170,117 @@ export function describePlay(
     (reqBefore?.rank !== reqAfter?.rank || reqBefore?.suit !== reqAfter?.suit);
 
   // Suit request (new or changed) on free play. Demand resolutions (lift /
-  // counter) narrate themselves below — the responder never calls a fresh suit.
-  if (!reqBefore && after.activeSuit && after.activeSuit !== before.activeSuit) {
+  // counter) narrate themselves below, the responder never calls a fresh suit.
+  // A penalty block preserves the suit in force, never narrate it as a call.
+  // An Ace answering a question never declares either: the suit auto-follows
+  // the Ace, narrated as an answer instead of a call.
+  const aceAnswerFollow =
+    !reqBefore &&
+    after.activeSuit &&
+    before.pendingPenalty === 0 &&
+    isAceAnswerCombo(played, after) &&
+    !isSuperAceCombo(played, after) &&
+    played.some((c) => c.rank === 'A' && c.suit === after.activeSuit);
+  if (aceAnswerFollow && after.activeSuit) {
+    const ace = [...played].reverse().find((c) => c.rank === 'A');
+    evts.push(mk(
+      turn,
+      actor,
+      '🎯',
+      `${actor} ${v(actor, 'answers', 'answer')} with ${ace ? cardLabel(ace) : 'an Ace'}, follow ${suitName(after.activeSuit)}`,
+      'suit',
+    ));
+  } else if (!reqBefore && after.activeSuit && after.activeSuit !== before.activeSuit && before.pendingPenalty === 0) {
     const prev = before.activeSuit ?? before.topSuit;
-    evts.push({
-      icon: '🎯',
-      text: `${actor} calls ${suitName(after.activeSuit)} (was ${suitName(prev)})`,
-      tone: 'suit',
-    });
+    evts.push(mk(
+      turn,
+      actor,
+      '🎯',
+      `${actor} ${v(actor, 'calls', 'call')} ${suitName(after.activeSuit)} (was ${suitName(prev)})`,
+      'suit',
+    ));
   }
 
   // Exact-card demand (new, raised, answered, or lifted).
   if (reqAfter && reqChanged) {
-    const raised = reqBefore ? 'raises the demand to' : 'demands';
-    evts.push({
-      icon: '⚡',
-      text: `${actor} ${raised} ${reqAfter.rank}${reqAfter.suit === 'hearts' ? '♥' : reqAfter.suit === 'diamonds' ? '♦' : reqAfter.suit === 'spades' ? '♠' : '♣'} — exact card or an Ace`,
-      tone: 'demand',
-    });
+    const raised = reqBefore ? v(actor, 'raises the demand to', 'raise the demand to') : v(actor, 'demands', 'demand');
+    evts.push(mk(
+      turn,
+      actor,
+      '⚡',
+      `${actor} ${raised} ${reqAfter.rank}${reqAfter.suit === 'hearts' ? '♥' : reqAfter.suit === 'diamonds' ? '♦' : reqAfter.suit === 'spades' ? '♠' : '♣'}, exact card or an Ace`,
+      'demand',
+    ));
   } else if (reqBefore && !reqAfter) {
     const ace = played.find((c) => c.rank === 'A');
     if (ace && !isSuperAceCombo(played, after)) {
-      // Lone Ace lifts the rank; the demanded suit persists — never a fresh call.
+      // Lone Ace lifts the rank; the demanded suit persists, never a fresh call.
       if (after.activeSuit) {
-        evts.push({
-          icon: '🛡',
-          text: `${actor} lifts the rank with ${cardLabel(ace)} — follow ${suitName(after.activeSuit)}`,
-          tone: 'block',
-        });
+        evts.push(mk(
+          turn,
+          actor,
+          '🛡',
+          `${actor} ${v(actor, 'lifts', 'lift')} the rank with ${cardLabel(ace)}, follow ${suitName(after.activeSuit)}`,
+          'block',
+        ));
       } else {
-        evts.push({
-          icon: '🛡',
-          text: `${actor} lifts the demand with ${cardLabel(ace)} — open play`,
-          tone: 'block',
-        });
+        evts.push(mk(
+          turn,
+          actor,
+          '🛡',
+          `${actor} ${v(actor, 'lifts', 'lift')} the demand with ${cardLabel(ace)}, open play`,
+          'block',
+        ));
       }
     } else if (!ace) {
-      evts.push({ icon: '✅', text: `${actor} answers the demand with ${cardLabel(played[0])}`, tone: 'demand' });
+      evts.push(mk(turn, actor, '✅', `${actor} ${v(actor, 'answers', 'answer')} the demand with ${cardLabel(played[0])}`, 'demand'));
     }
   }
 
-  // Jump: counter vs fresh, and who is actually up next (final calculation).
+  // Jump: refusal keeps the turn; a fresh single-family debt lands on the
+  // next player (stacks must be sat out).
   const jumps = played.filter((c) => countsAsJump(c, after)).length;
   if (before.pendingSkip > 0 && jumps > 0) {
-    evts.push({ icon: '⏭', text: `${actor} answers jump with jump — skip rolls on`, tone: 'skip' });
+    evts.push(mk(turn, actor, '⏭', `${actor} ${v(actor, 'refuses', 'refuse')} the jump, ${v(actor, 'plays', 'play')} on`, 'skip'));
+  } else if (jumps > 0 && after.pendingSkip > 0) {
+    const big = after.pendingSkip > 1 ? ` ×${after.pendingSkip} (must sit out)` : '';
+    evts.push(mk(turn, actor, '⏭', `Jump${big} on ${next}, J to refuse or sit out`, 'skip'));
   } else if (jumps > 0) {
-    evts.push({
-      icon: '⏭',
-      text: after.currentPlayer === me
-        ? `Jump ×${jumps} skips everyone — ${actor} goes again!`
-        : `Jump ×${jumps} — ${next} is up`,
-      tone: 'skip',
-    });
+    evts.push(mk(turn, actor, '⏭', `Jump ×${jumps}, ${next} ${next === 'You' ? 'are' : 'is'} up`, 'skip'));
   }
 
-  // Reverse (single flips, double restores).
+  // Reversal: refusal keeps the turn; a fresh odd debt lands on the next
+  // player; even counts resolve immediately.
   const flips = played.filter((c) => countsAsReverse(c, after)).length;
-  if (flips > 0) {
-    evts.push({
-      icon: '↺',
-      text: flips % 2 === 0
-        ? `Double kickback — direction unchanged (${dirName(after.direction)})`
-        : `${actor} reverses — now ${dirName(after.direction)}`,
-      tone: 'reverse',
-    });
+  if (before.pendingReverse > 0 && flips > 0) {
+    evts.push(mk(turn, actor, '↺', `${actor} ${v(actor, 'refuses', 'refuse')} the reversal, ${v(actor, 'plays', 'play')} on`, 'reverse'));
+  } else if (flips > 0 && (after.pendingReverse ?? 0) > 0) {
+    evts.push(mk(turn, actor, '↺', `Kickback on ${next}, K to refuse or sit out`, 'reverse'));
+  } else if (flips > 0) {
+    evts.push(mk(
+      turn,
+      actor,
+      '↺',
+      flips % 2 === 0
+        ? `Double kickback, direction unchanged (${dirName(after.direction)})`
+        : `${actor} ${v(actor, 'reverses', 'reverse')}, now ${dirName(after.direction)}`,
+      'reverse',
+    ));
   }
 
   // Bare question: the only draw source inside a play is the no-answer obligation.
   const drawn = after.hands[me].length - (before.handSize - played.length);
   if (drawn > 0) {
-    evts.push({ icon: '❓', text: `${actor} asks without an answer — picks ${drawn}`, tone: 'draw' });
+    evts.push(mk(turn, actor, '❓', `${actor} ${v(actor, 'asks', 'ask')} without an answer, ${v(actor, 'picks', 'pick')} ${drawn}`, 'draw'));
   }
 
   if (outcome.won) {
-    evts.push({ icon: '🏆', text: `${actor} finishes clean — Niko Kadi, wins the round!`, tone: 'win' });
+    const winNote = after.config.mustSayNikoKadi === false ? 'Round won!' : 'Niko Kadi wins the round!';
+    evts.push(mk(turn, actor, '🏆', `${actor} ${v(actor, 'finishes', 'finish')} clean. ${winNote}`, 'win'));
   } else if (outcome.fined) {
-    evts.push({ icon: '📢', text: `${actor} goes out without the call — fined +${outcome.fined}`, tone: 'penalty' });
+    evts.push(mk(turn, actor, '📢', `${actor} ${v(actor, 'goes', 'go')} out without the call, fined +${outcome.fined}`, 'penalty'));
   } else if (outcome.cardless) {
-    evts.push({ icon: '🃏', text: `${actor} empties on a non-finisher — cardless, play continues`, tone: 'draw' });
+    evts.push(mk(turn, actor, '🃏', `${actor} ${v(actor, 'empties', 'empty')} on a non-finisher. Cardless, play continues`, 'draw'));
   }
 
   return evts;
@@ -212,40 +293,77 @@ export function describePick(
   names: string[],
   picked: number,
   skipped: boolean,
+  kadiVoided = false,
 ): FeedEvent[] {
   const actor = names[me] ?? `Player ${me + 1}`;
+  const turn = before.turn;
+  const evts: FeedEvent[] = [];
   if (skipped) {
-    return [{ icon: '⏭', text: `${actor} sits out the jump`, tone: 'skip' }];
-  }
-  if (before.pendingPenalty > 0) {
-    return [{ icon: '🔥', text: `${actor} eats +${picked}`, tone: 'penalty' }];
-  }
-  if (before.activeCardRequest) {
+    if (before.pendingReverse > 0) {
+      evts.push(mk(turn, actor, '↺', `${actor} ${v(actor, 'sits', 'sit')} out the reversal`, 'reverse'));
+    } else {
+      evts.push(mk(turn, actor, '⏭', `${actor} ${v(actor, 'sits', 'sit')} out the jump`, 'skip'));
+    }
+  } else if (before.pendingPenalty > 0) {
+    evts.push(mk(turn, actor, '🔥', `${actor} ${v(actor, 'eats', 'eat')} +${picked}`, 'penalty'));
+  } else if (before.activeCardRequest) {
     const req = before.activeCardRequest;
-    return [{ icon: '⚡', text: `No ${req.rank} — ${actor} picks ${picked}`, tone: 'demand' }];
+    evts.push(mk(turn, actor, '⚡', `No ${req.rank}, ${actor} ${v(actor, 'picks', 'pick')} ${picked}`, 'demand'));
+  } else {
+    evts.push(mk(turn, actor, '🃏', `${actor} ${v(actor, 'picks', 'pick')} a card`, 'draw'));
   }
-  return [{ icon: '🃏', text: `${actor} picks a card`, tone: 'draw' }];
+  if (kadiVoided) {
+    evts.push(mk(turn, actor, '📢', `${actor} ${v(actor, 'drew', 'draw')} and voided the KADI call`, 'kadi'));
+  }
+  return evts;
 }
 
-export function describeWrongPlay(actor: string, played: Card[], fined: number): FeedEvent {
-  return {
-    icon: '⛔',
-    text: `${actor} plays wrong (${played.map(cardLabel).join(' + ')}) — fined +${fined}`,
-    tone: 'penalty',
-  };
+export function describeWrongPlay(actor: string, played: Card[], fined: number, turn = 0): FeedEvent {
+  return mk(
+    turn,
+    actor,
+    '⛔',
+    `${actor} ${v(actor, 'plays', 'play')} wrong (${played.map(cardLabel).join(' + ')}), fined +${fined}`,
+    'penalty',
+  );
 }
 
-export function describeKadi(name: string): FeedEvent {
-  return { icon: '📢', text: `${name} is KADI! One clean move to win`, tone: 'kadi' };
+export function describeKadi(name: string, turn = 0): FeedEvent {
+  const closer = name === 'You' ? 'Go out now!' : 'One clean move to win. Stop them!';
+  return mk(turn, name, '📢', `${name} ${name === 'You' ? 'are' : 'is'} KADI! ${closer}`, 'kadi');
 }
 
-export function describeDeal(top: Card): FeedEvent {
-  return { icon: '🂡', text: `New match — ${cardLabel(top)} opens the pile`, tone: 'info' };
+export function describeFalseKadi(name: string, fined: number, turn = 0): FeedEvent {
+  return mk(
+    turn,
+    name,
+    '⛔',
+    `${name} ${v(name, 'calls', 'call')} KADI too early, no winnable hand, fined +${fined}, locked until next turn`,
+    'penalty',
+  );
 }
 
-export function describeResume(currentPlayer: number, names: string[]): FeedEvent {
-  const whose = currentPlayer === 0 ? 'your move' : `${names[currentPlayer] ?? 'bot'} to play`;
-  return { icon: '↩️', text: `Back to the table — ${whose}`, tone: 'info' };
+export function describeDeal(top: Card, turn = 0): FeedEvent {
+  return mk(turn, 'Table', '🂡', `New match, ${cardLabel(top)} opens the pile`, 'info');
+}
+
+export function describeResume(currentPlayer: number, names: string[], turn = 0): FeedEvent {
+  const whose = currentPlayer === 0 ? 'you to play' : `${names[currentPlayer] ?? 'bot'} to play`;
+  const actor = currentPlayer === 0 ? 'You' : (names[currentPlayer] ?? 'bot');
+  return mk(turn, actor, '↩️', `Back at the table, ${whose}`, 'info');
+}
+
+export function describeStall(name: string, detail: string, turn = 0): FeedEvent {
+  return mk(turn, name, '🐞', `${name} stalls, illegal move blocked (${detail})`, 'info');
+}
+
+/**
+ * Generic tap-notice for actions that change no state (out-of-turn taps,
+ * already-called / cardless KADI presses). Routed through the event feed so
+ * the panel stays the single in-game notification channel.
+ */
+export function describeNotice(actor: string, text: string, turn = 0): FeedEvent {
+  return mk(turn, actor, 'ℹ️', text, 'info');
 }
 
 export type CoachTone = 'action' | 'ok' | 'bad' | 'wait' | 'win';
@@ -264,6 +382,7 @@ export interface CoachInput {
   busyThinking: boolean;
   pendingPenalty: number;
   pendingSkip: number;
+  pendingReverse: number;
   activeSuit: Suit | null;
   prevSuit: Suit | null;
   request: { rank: Card['rank']; suit: Suit } | null;
@@ -293,23 +412,27 @@ export function turnCoach(i: CoachInput): CoachMsg {
   if (i.myTurn && i.selectedCount > 0 && i.comboValid) {
     return {
       icon: '✅',
-      text: i.selectedCount > 1 ? `Legal stack — hit Play (${i.selectedCount})` : 'Legal — hit Play',
+      text: i.selectedCount > 1 ? `Legal stack. Hit Play (${i.selectedCount})` : 'Legal. Hit Play',
       tone: 'ok',
     };
   }
   if (!i.myTurn) {
     let extra = '';
-    if (i.pendingPenalty > 0) extra = ` — owes +${i.pendingPenalty}`;
-    else if (i.pendingSkip > 0) extra = ' — was jumped';
-    else if (i.request) extra = ` — must bring ${i.request.rank}${suitGlyphLocal(i.request.suit)}`;
-    else if (i.activeSuit) extra = ` — must follow ${suitName(i.activeSuit)}`;
+    if (i.pendingPenalty > 0) extra = `, owes +${i.pendingPenalty}`;
+    else if (i.pendingSkip > 0) extra = ', was jumped';
+    else if (i.pendingReverse > 0) extra = ', was reversed';
+    else if (i.request) extra = `, must bring ${i.request.rank}${suitGlyphLocal(i.request.suit)}`;
+    else if (i.activeSuit) extra = `, must follow ${suitName(i.activeSuit)}`;
     return { icon: '⏳', text: `Waiting on ${i.waitingOn}${i.busyThinking ? '…' : ''}${extra}`, tone: 'wait' };
   }
   if (i.pendingPenalty > 0) {
-    return { icon: '🔥', text: `You owe +${i.pendingPenalty} — stack, block with Ace, or Eat`, tone: 'action' };
+    return { icon: '🔥', text: `You owe +${i.pendingPenalty}, stack, block with Ace, or Eat`, tone: 'action' };
   }
   if (i.pendingSkip > 0) {
-    return { icon: '⏭', text: 'You were jumped — counter with J or Accept skip', tone: 'action' };
+    return { icon: '⏭', text: 'You were jumped, refuse with a J (keep your turn) or Accept', tone: 'action' };
+  }
+  if (i.pendingReverse > 0) {
+    return { icon: '↺', text: 'You were reversed, refuse with a K (keep your turn) or Accept', tone: 'action' };
   }
   if (i.request) {
     return {
@@ -321,15 +444,15 @@ export function turnCoach(i: CoachInput): CoachMsg {
   if (i.selectedCount > 0 && !i.comboValid) {
     return { icon: '⛔', text: i.invalidReason ?? 'That combo is not legal', tone: 'bad' };
   }
-  if (i.legalCount === 0) {
-    return { icon: '🃏', text: 'No playable card — Pick from the pile', tone: 'action' };
-  }
   if (i.kadiReady) {
-    return { icon: '📢', text: 'Say KADI — you can finish next turn!', tone: 'ok' };
+    return { icon: '📢', text: 'Say KADI before your winning dump!', tone: 'ok' };
+  }
+  if (i.legalCount === 0) {
+    return { icon: '🃏', text: 'No playable card. Pick from the pile', tone: 'action' };
   }
   if (i.activeSuit) {
     const was = i.prevSuit ? ` (was ${suitName(i.prevSuit)})` : '';
-    return { icon: '🎯', text: `Follow ${suitName(i.activeSuit)}${was} — ${i.legalCount} playable`, tone: 'wait' };
+    return { icon: '🎯', text: `Follow ${suitName(i.activeSuit)}${was}, ${i.legalCount} playable`, tone: 'wait' };
   }
-  return { icon: '👉', text: `Match ${i.topLabel} — ${i.legalCount} playable`, tone: 'wait' };
+  return { icon: '👉', text: `Match ${i.topLabel}, ${i.legalCount} playable`, tone: 'wait' };
 }

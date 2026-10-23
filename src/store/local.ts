@@ -1,6 +1,7 @@
 import { del, get, set } from 'idb-keyval';
-import { migrateRules, type RulesConfig } from '../engine/rules';
+import { migrateRules, PRESETS, STANDARD_MAUA, type RulesConfig } from '../engine/rules';
 import type { GameState } from '../engine/state';
+import { appendMatch, normalizeHistory, type MatchRecord } from './history';
 
 /** Backend-ready seam: UI only talks to this interface.
  *  v1 = LocalStore. v2 online = SupabaseStore with the same shape. */
@@ -21,6 +22,12 @@ export interface Settings {
   coach: boolean;
   /** Strict tables: wrong plays are fined + turn passes. Off by default. */
   strict: boolean;
+  /** Joker mode overlay (applies to all presets). On by default. */
+  jokersEnabled: boolean;
+  /** Vibration on taps/penalties/wins. On by default. */
+  haptics: boolean;
+  /** Full card/buzzer animations. Off forces calm mode. On by default. */
+  animations: boolean;
 }
 
 export interface ActiveGameMeta {
@@ -52,20 +59,66 @@ export function isResumable(save: unknown): save is ActiveGameSave {
   return true;
 }
 
+/**
+ * Resolve a profile name against built-ins first, then saved customs.
+ * Unknown names fall back to Standard Maua (migrated). Pure — unit-testable.
+ */
+export function resolveProfile(name: string, customs: RulesConfig[]): RulesConfig {
+  const preset = PRESETS.find((p) => p.name === name);
+  if (preset) return migrateRules({ ...preset });
+  const custom = customs.find((c) => c.name === name);
+  if (custom) return migrateRules({ ...custom });
+  return migrateRules({ ...STANDARD_MAUA, name: 'Standard Maua' });
+}
+
+/**
+ * Bring a resumed table onto current rules. Saves snapshot their RulesConfig,
+ * so a built-in preset would otherwise keep stale flags forever (e.g. the old
+ * 2-player J/K-as-question). Re-apply the live preset and keep only the
+ * player's own overlays (special-ace mode, strict table). Unknown profiles
+ * (incl. saved customs, which may have been edited after the save) keep the
+ * snapshotted config via the migrateRules path, so in-flight games never
+ * change rules mid-match. Safe mid-match: no question-mode debt
+ * persists in state (bare questions draw immediately), so nothing in flight
+ * contradicts the refreshed flags.
+ */
+export function refreshResumeConfig(save: ActiveGameSave): void {
+  const preset = PRESETS.find((p) => p.name === save.meta.presetName);
+  if (!preset) {
+    save.state.config = migrateRules({ ...save.state.config, name: save.state.config.name });
+    return;
+  }
+  save.state.config = {
+    ...preset,
+    superAceEnabled: save.meta.superAce,
+    strictWrongPlay: save.state.config.strictWrongPlay,
+  };
+  // Fields that did not exist when older saves were written.
+  if (typeof save.state.pendingReverse !== 'number') save.state.pendingReverse = 0;
+  if (typeof save.state.pendingSkip !== 'number') save.state.pendingSkip = 0;
+  if (typeof save.state.pendingPenaltySuit === 'undefined') save.state.pendingPenaltySuit = null;
+}
+
 export interface GameStore {
   getStats(): Promise<Stats>;
   recordResult(won: boolean): Promise<Stats>;
+  resetStats(): Promise<Stats>;
+  getMatchHistory(): Promise<MatchRecord[]>;
+  recordMatch(record: MatchRecord): Promise<MatchRecord[]>;
+  clearMatchHistory(): Promise<void>;
   getSettings(): Promise<Settings>;
   saveSettings(s: Partial<Settings>): Promise<Settings>;
   getCustomRules(): Promise<RulesConfig[]>;
-  saveCustomRules(r: RulesConfig): Promise<RulesConfig[]>;
+  saveCustomRules(r: RulesConfig, previousName?: string | null): Promise<RulesConfig[]>;
+  deleteCustomRules(name: string): Promise<RulesConfig[]>;
+  clearAllCustomRules(): Promise<void>;
   saveActiveGame(save: ActiveGameSave): Promise<void>;
   loadActiveGame(): Promise<ActiveGameSave | null>;
   clearActiveGame(): Promise<void>;
 }
 
 const DEFAULT_STATS: Stats = { games: 0, wins: 0, bestStreak: 0, streak: 0 };
-export const DEFAULT_SETTINGS: Settings = { sound: true, difficulty: 'medium', presetName: 'Standard Maua', superAce: false, coach: false, strict: false };
+export const DEFAULT_SETTINGS: Settings = { sound: true, difficulty: 'medium', presetName: 'Standard Maua', superAce: false, coach: false, strict: false, jokersEnabled: true, haptics: true, animations: true };
 
 export class LocalStore implements GameStore {
   async getStats(): Promise<Stats> {
@@ -86,6 +139,35 @@ export class LocalStore implements GameStore {
     return s;
   }
 
+  async resetStats(): Promise<Stats> {
+    const fresh = { ...DEFAULT_STATS };
+    await set('kadi-stats', fresh);
+    return fresh;
+  }
+
+  async getMatchHistory(): Promise<MatchRecord[]> {
+    try {
+      return normalizeHistory(await get('kadi-history'));
+    } catch {
+      return [];
+    }
+  }
+
+  async recordMatch(record: MatchRecord): Promise<MatchRecord[]> {
+    const current = await this.getMatchHistory();
+    const next = appendMatch(current, record);
+    await set('kadi-history', next);
+    return next;
+  }
+
+  async clearMatchHistory(): Promise<void> {
+    try {
+      await del('kadi-history');
+    } catch {
+      /* ignore */
+    }
+  }
+
   async getSettings(): Promise<Settings> {
     const stored = await get<Partial<Settings>>('kadi-settings');
     return { ...DEFAULT_SETTINGS, ...stored };
@@ -103,11 +185,25 @@ export class LocalStore implements GameStore {
     return raw.map(migrateRules);
   }
 
-  async saveCustomRules(r: RulesConfig): Promise<RulesConfig[]> {
+  async saveCustomRules(r: RulesConfig, previousName?: string | null): Promise<RulesConfig[]> {
     const cur = await this.getCustomRules();
-    const next = [...cur.filter((x) => x.name !== r.name), migrateRules(r)];
+    const next = [
+      ...cur.filter((x) => x.name !== r.name && x.name !== previousName),
+      migrateRules(r),
+    ];
     await set('kadi-rules', next);
     return next;
+  }
+
+  async deleteCustomRules(name: string): Promise<RulesConfig[]> {
+    const cur = await this.getCustomRules();
+    const next = cur.filter((x) => x.name !== name);
+    await set('kadi-rules', next);
+    return next;
+  }
+
+  async clearAllCustomRules(): Promise<void> {
+    await set('kadi-rules', []);
   }
 
   async saveActiveGame(save: ActiveGameSave): Promise<void> {
@@ -123,7 +219,7 @@ export class LocalStore implements GameStore {
     }
     if (!isResumable(raw)) return null;
     // Upgrade stored rules without breaking old saves.
-    raw.state.config = migrateRules({ ...raw.state.config, name: raw.state.config.name });
+    refreshResumeConfig(raw);
     return raw;
   }
 

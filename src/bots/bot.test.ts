@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { STANDARD_MAUA } from '../engine/rules';
+import { BOM_NI_BOM, STANDARD_MAUA } from '../engine/rules';
 import { createGame } from '../engine/state';
-import { playCombo } from '../engine/validator';
-import { bestSuit, chooseMove, chooseRequestCard, shouldDeclareKadi } from './bot';
+import { declareKadi, playCombo } from '../engine/validator';
+import { bestSuit, chooseMove, chooseRequestCard, isDeclaredThreat, shouldDeclareKadi } from './bot';
 
 describe('bots', () => {
   it('always returns a legal move or null (all difficulties)', () => {
@@ -37,13 +37,73 @@ describe('bots', () => {
     expect(move?.cards[0].rank).toBe('2');
   });
 
+  it('Bom ni Bom: bot moves stay legal (any-stack + dodge + accumulate)', () => {
+    for (let i = 0; i < 40; i++) {
+      const s = createGame({ numPlayers: 2 + (i % 3), config: BOM_NI_BOM });
+      for (const diff of ['easy', 'medium', 'hard'] as const) {
+        const move = chooseMove(s, s.currentPlayer, diff, () => 0.5);
+        if (!move) continue;
+        const r = playCombo(
+          structuredClone(s),
+          s.currentPlayer,
+          move.cards.map((c) => ({ ...c })),
+          move.declaredSuit,
+          move.requestedCard ?? null,
+        );
+        expect(r.ok, `${diff} illegal ${move.cards.map((c) => c.rank + c.suit)}`).toBe(true);
+      }
+    }
+  });
+
+  it('Bom ni Bom: medium+ dodges a penalty with a lone J instead of eating it', () => {
+    const s = createGame({ numPlayers: 3, config: BOM_NI_BOM, random: () => 0.1 });
+    s.discardPile = [{ id: '2-hearts-top', suit: 'hearts', rank: '2' }];
+    s.pendingPenalty = 2;
+    s.hands[1] = [
+      { id: 'j-spades', suit: 'spades', rank: 'J' },
+      { id: '9-hearts', suit: 'hearts', rank: '9' },
+    ];
+    s.currentPlayer = 1;
+    const move = chooseMove(s, 1, 'medium', () => 0.9);
+    expect(move?.cards[0].rank).toBe('J');
+  });
+
   it('declares Kadi with a winnable hand', () => {
     const s = createGame({ numPlayers: 2, random: () => 0.1 });
     s.hands[0] = [
+      { id: 'q-hearts', suit: 'hearts', rank: 'Q' },
       { id: '5-hearts', suit: 'hearts', rank: '5' },
-      { id: '6-spades', suit: 'spades', rank: '6' },
     ];
     expect(shouldDeclareKadi(s, 0)).toBe(true);
+  });
+
+  it('does not declare when the table allows silent finishes', () => {
+    const s = createGame({
+      numPlayers: 2,
+      config: { ...STANDARD_MAUA, mustSayNikoKadi: false },
+      random: () => 0.1,
+    });
+    s.hands[0] = [
+      { id: 'q-hearts', suit: 'hearts', rank: 'Q' },
+      { id: '5-hearts', suit: 'hearts', rank: '5' },
+    ];
+    expect(shouldDeclareKadi(s, 0)).toBe(false);
+  });
+
+  it('takes the same-turn winning dump after declaring', () => {
+    const s = createGame({ numPlayers: 2, random: () => 0.1 });
+    s.discardPile = [{ id: '9-hearts-top', suit: 'hearts', rank: '9' }];
+    s.hands[0] = [
+      { id: '5-hearts', suit: 'hearts', rank: '5' },
+      { id: '5-diamonds', suit: 'diamonds', rank: '5' },
+    ];
+    s.hands[1] = [{ id: '4-clubs', suit: 'clubs', rank: '4' }];
+    s.currentPlayer = 0;
+    expect(declareKadi(s, 0)).toBe(true);
+    const move = chooseMove(s, 0, 'hard', () => 0.1);
+    expect(move?.cards).toHaveLength(2);
+    const r = playCombo(s, 0, move!.cards, move!.declaredSuit, move!.requestedCard ?? null);
+    expect(r.won).toBe(true);
   });
 
   it('bestSuit picks the majority suit', () => {
@@ -59,6 +119,28 @@ describe('bots', () => {
     const s = createGame({ numPlayers: 4 });
     const deckCount = s.drawPile.length + s.discardPile.length + s.hands.flat().length;
     expect(deckCount).toBe(54);
+  });
+
+  it('refuses a jump/reversal with one card at medium+, easy sometimes sits out', () => {
+    const s = createGame({ numPlayers: 3, random: () => 0.1 });
+    s.discardPile = [{ id: 'j-top', suit: 'hearts', rank: 'J' }];
+    s.pendingSkip = 1;
+    s.hands[1] = [
+      { id: 'j-clubs', suit: 'clubs', rank: 'J' },
+      { id: '9-clubs', suit: 'clubs', rank: '9' },
+    ];
+    s.currentPlayer = 1;
+    expect(chooseMove(s, 1, 'medium', () => 0.9)?.cards[0]).toMatchObject({ rank: 'J' });
+    expect(chooseMove(s, 1, 'easy', () => 0.9)).toBeNull();
+
+    s.pendingSkip = 0;
+    s.pendingReverse = 1;
+    s.hands[1] = [
+      { id: 'k-spades', suit: 'spades', rank: 'K' },
+      { id: '9-clubs', suit: 'clubs', rank: '9' },
+    ];
+    expect(chooseMove(s, 1, 'medium', () => 0.9)?.cards[0]).toMatchObject({ rank: 'K' });
+    expect(chooseMove(s, 1, 'easy', () => 0.9)).toBeNull();
   });
 
   it('answers 2♥ with same-suit 3♥ when holding no other 2', () => {
@@ -136,5 +218,52 @@ describe('bots', () => {
     ]);
     expect(req.suit).toBe('spades');
     expect(['5', '6']).toContain(req.rank);
+  });
+
+  it('declared KADI paints a target: threat detected and attacks preferred', () => {
+    const s = createGame({ numPlayers: 3, random: () => 0.1 });
+    s.discardPile = [{ id: '10-hearts-top', suit: 'hearts', rank: '10' }];
+    s.hands[0] = [
+      { id: '5-hearts', suit: 'hearts', rank: '5' },
+      { id: '5-diamonds', suit: 'diamonds', rank: '5' },
+      { id: '5-spades', suit: 'spades', rank: '5' },
+    ];
+    s.hands[1] = [
+      { id: '2-hearts', suit: 'hearts', rank: '2' },
+      { id: '10-spades', suit: 'spades', rank: '10' },
+      { id: '4-clubs', suit: 'clubs', rank: '4' },
+    ];
+    s.hands[2] = [
+      { id: '4-spades', suit: 'spades', rank: '4' },
+      { id: '5-clubs', suit: 'clubs', rank: '5' },
+      { id: '6-diamonds', suit: 'diamonds', rank: '6' },
+      { id: '7-clubs', suit: 'clubs', rank: '7' },
+    ];
+    s.kadiCalls[0] = true;
+    s.currentPlayer = 1;
+    expect(isDeclaredThreat(s, 0)).toBe(true);
+    expect(isDeclaredThreat(s, 1)).toBe(false);
+    // Direction -1 from seat 1 routes to seat 0 (the declarer) next.
+    s.direction = -1;
+    const move = chooseMove(s, 1, 'hard', () => 0.0);
+    expect(move?.cards[0]).toMatchObject({ rank: '2', suit: 'hearts' });
+  });
+
+  it('ace answering a question carries no suit declaration (suit follows the Ace)', () => {
+    const s = createGame({ numPlayers: 2, random: () => 0.1 });
+    s.discardPile = [{ id: '9-spades-top', suit: 'spades', rank: '9' }];
+    s.hands[0] = [
+      { id: 'q-spades', suit: 'spades', rank: 'Q' },
+      { id: 'a-diamonds', suit: 'diamonds', rank: 'A' },
+    ];
+    s.hands[1] = [
+      { id: 'o1', suit: 'clubs', rank: '4' },
+      { id: 'o2', suit: 'hearts', rank: '5' },
+    ];
+    s.currentPlayer = 0;
+    const move = chooseMove(s, 0, 'hard', () => 0.0);
+    expect(move?.cards.map((c) => c.id).sort()).toEqual(['a-diamonds', 'q-spades']);
+    expect(move?.declaredSuit ?? null).toBeNull();
+    expect(move?.requestedCard ?? null).toBeNull();
   });
 });
