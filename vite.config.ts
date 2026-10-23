@@ -10,6 +10,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      useCredentials: true,
       includeManifestIcons: false,
       manifest: {
         id: '/',
