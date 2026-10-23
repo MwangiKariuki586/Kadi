@@ -21,7 +21,7 @@ export interface RulesBuilderProps {
   /** Names of other saved customs (uniqueness guard). */
   customNames: string[];
   onBack: () => void;
-  onSave: (profile: RulesConfig) => void;
+  onSave: (profile: RulesConfig, previousName: string | null) => void;
   onDelete: (name: string) => void;
 }
 
@@ -215,7 +215,7 @@ export function RulesBuilder({
     const picksOut = { ...draft.penaltyPicks };
     if (!draft.jokersEnabled) delete picksOut["JOKER"];
     else if (picksOut["JOKER"] == null) picksOut["JOKER"] = 5;
-    onSave(migrateRules({ ...draft, name: trimmed, penaltyPicks: picksOut }));
+    onSave(migrateRules({ ...draft, name: trimmed, penaltyPicks: picksOut }), editingName);
   };
 
   const handleImport = () => {

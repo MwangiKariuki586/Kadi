@@ -4,6 +4,7 @@ import {
   BOM_NI_BOM,
   PRESETS,
   STANDARD_MAUA,
+  SHARE_CODE_PREFIX,
   decodeRulesConfig,
   describeRules,
   encodeRulesConfig,
@@ -11,11 +12,24 @@ import {
   validateRulesConfig,
 } from './rules';
 
+function shareCode(value: unknown): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  let bin = '';
+  for (const byte of bytes) bin += String.fromCharCode(byte);
+  return SHARE_CODE_PREFIX + btoa(bin);
+}
+
 describe('validateRulesConfig', () => {
   it('accepts every built-in preset', () => {
     for (const p of PRESETS) {
       expect(validateRulesConfig(p)).toEqual([]);
     }
+  });
+
+  it('rejects non-object input instead of throwing', () => {
+    expect(validateRulesConfig(null as never)).toEqual([
+      'Rules data is invalid.',
+    ]);
   });
 
   it('rejects unplayable profiles with plain reasons', () => {
@@ -69,6 +83,24 @@ describe('share codec', () => {
     expect(() => decodeRulesConfig(encodeRulesConfig({ ...STANDARD_MAUA, name: 'X', winningRanks: [] }))).toThrow(
       /not playable/,
     );
+  });
+
+  it('rejects malformed field types instead of leaking a TypeError', () => {
+    const malformed: Array<Record<string, unknown>> = [
+      { penaltyPicks: { '2': '2' } },
+      { penaltyPicks: null },
+      { jumpRanks: 'J' },
+      { winningRanks: '456' },
+      { dealCount: '5' },
+      { penaltyMatchMode: 'wild' },
+      { specialAceSuit: 'stars' },
+    ];
+
+    for (const patch of malformed) {
+      expect(() =>
+        decodeRulesConfig(shareCode({ ...STANDARD_MAUA, name: 'Bad', ...patch })),
+      ).toThrow(/not playable/);
+    }
   });
 });
 

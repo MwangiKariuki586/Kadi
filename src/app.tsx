@@ -32,6 +32,7 @@ import {
   type Settings,
   type Stats,
 } from "./store/local";
+import { loadBootData } from "./store/boot";
 import { createMatchId, type MatchRecord } from "./store/history";
 import {
   CardRequestPicker,
@@ -302,8 +303,8 @@ export function App() {
   }, [preset]);
 
   const saveCustomProfile = useCallback(
-    (profile: RulesConfig) => {
-      void store.saveCustomRules(profile).then((next) => {
+    (profile: RulesConfig, previousName: string | null) => {
+      void store.saveCustomRules(profile, previousName).then((next) => {
         setCustoms(next);
         customsRef.current = next;
         setPreset({ ...profile });
@@ -335,35 +336,32 @@ export function App() {
   useEffect(() => {
     void store.getStats().then(setStats);
     void store.getMatchHistory().then(setHistory);
-    void store
-      .getCustomRules()
-      .then((cs) => {
-        setCustoms(cs);
-        customsRef.current = cs;
-        return store.getSettings();
+    void loadBootData(store)
+      .then(({ customs, settings, save }) => {
+        setCustoms(customs);
+        customsRef.current = customs;
+        if (settings) {
+          setDifficulty(settings.difficulty);
+          setPreset(resolveProfile(settings.presetName, customs));
+          setSuperAceOn(settings.superAce);
+          setCoachOn(settings.coach);
+          setStrictOn(settings.strict);
+          setJokersOn(settings.jokersEnabled);
+          setMutedState(!settings.sound);
+          setMuted(!settings.sound);
+          setHapticsOn(settings.haptics);
+          setHapticsEnabled(settings.haptics);
+          setAnimationsOn(settings.animations);
+          applyMotionPreference(settings.animations);
+        }
+        if (save) {
+          setResumable(save);
+          restoreSave(save);
+          flash("Resumed!");
+        }
       })
-      .then((s) => {
-        setDifficulty(s.difficulty);
-        setPreset(resolveProfile(s.presetName, customsRef.current));
-        setSuperAceOn(s.superAce);
-        setCoachOn(s.coach);
-        setStrictOn(s.strict);
-        setJokersOn(s.jokersEnabled);
-        setMutedState(!s.sound);
-        setMuted(!s.sound);
-        setHapticsOn(s.haptics);
-        setHapticsEnabled(s.haptics);
-        setAnimationsOn(s.animations);
-        applyMotionPreference(s.animations);
-      });
-    void store.loadActiveGame().then((save) => {
-      if (save) {
-        setResumable(save);
-        restoreSave(save);
-        flash("Resumed!");
-      }
-      setBooted(true);
-    });
+      .catch(() => undefined)
+      .finally(() => setBooted(true));
   }, [restoreSave, flash]);
 
   // ---- bot loop: any non-human turn advances after a thinking delay ----
@@ -681,6 +679,10 @@ export function App() {
             void store.clearAllCustomRules().then(() => {
               setCustoms([]);
               customsRef.current = [];
+              if (isCustomActive) {
+                setPreset({ ...STANDARD_MAUA });
+                void store.saveSettings({ presetName: STANDARD_MAUA.name });
+              }
               flash("Custom rules cleared 🗑");
             });
           }}

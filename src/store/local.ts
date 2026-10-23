@@ -109,7 +109,7 @@ export interface GameStore {
   getSettings(): Promise<Settings>;
   saveSettings(s: Partial<Settings>): Promise<Settings>;
   getCustomRules(): Promise<RulesConfig[]>;
-  saveCustomRules(r: RulesConfig): Promise<RulesConfig[]>;
+  saveCustomRules(r: RulesConfig, previousName?: string | null): Promise<RulesConfig[]>;
   deleteCustomRules(name: string): Promise<RulesConfig[]>;
   clearAllCustomRules(): Promise<void>;
   saveActiveGame(save: ActiveGameSave): Promise<void>;
@@ -185,9 +185,12 @@ export class LocalStore implements GameStore {
     return raw.map(migrateRules);
   }
 
-  async saveCustomRules(r: RulesConfig): Promise<RulesConfig[]> {
+  async saveCustomRules(r: RulesConfig, previousName?: string | null): Promise<RulesConfig[]> {
     const cur = await this.getCustomRules();
-    const next = [...cur.filter((x) => x.name !== r.name), migrateRules(r)];
+    const next = [
+      ...cur.filter((x) => x.name !== r.name && x.name !== previousName),
+      migrateRules(r),
+    ];
     await set('kadi-rules', next);
     return next;
   }

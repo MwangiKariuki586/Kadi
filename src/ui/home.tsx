@@ -1,7 +1,9 @@
+import { useEffect, useRef } from "preact/hooks";
 import type { ActiveGameSave, Stats } from "../store/local";
 import { relativeTime, type MatchRecord } from "../store/history";
 import { Icon } from "./icons";
 import { InstallButton, InstallCard } from "./installPrompt";
+import { useDialogFocus } from "./dialogFocus";
 import {
   BrandMark,
   HeroCardFan,
@@ -139,6 +141,17 @@ export function ChallengeFriendsModal({
   onClose: () => void;
   onPlay: () => void;
 }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useDialogFocus(closeRef);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   return (
     <div
       class="fixed inset-0 z-50 flex items-end justify-center bg-kadi-deep/80 p-4 backdrop-blur-sm sm:items-center"
@@ -152,6 +165,7 @@ export function ChallengeFriendsModal({
         onClick={(e) => e.stopPropagation()}
       >
         <button
+          ref={closeRef}
           type="button"
           onClick={onClose}
           aria-label="Close"
