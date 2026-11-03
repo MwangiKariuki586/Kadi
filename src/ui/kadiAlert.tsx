@@ -24,7 +24,7 @@ export function KadiAlert({ name }: { name: string }) {
             {name.toUpperCase()} IS KADI!
           </p>
           <p class="text-xs font-semibold text-white/75 sm:text-sm">
-            One move from winning — stop them!
+            Called KADI — stop them before their next turn!
           </p>
         </div>
         <span aria-hidden="true" class="ml-auto shrink-0 text-2xl sm:text-3xl">

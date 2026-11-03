@@ -127,10 +127,10 @@ export function describePlay(
   const labels = played.map(cardLabel).join(' + ');
   const turn = before.turn;
 
-  // Kadi declaration landed with this turn (same-turn calls count, so it
-  // narrates before the dump).
+  // Kadi declaration landed with this turn (the call narrates before the
+  // setup move; the winning dump comes on a later turn).
   if (after.kadiCalls[me] && !before.kadi[me]) {
-    const closer = actor === 'You' ? 'Go out now!' : 'One clean move to win. Stop them!';
+    const closer = actor === 'You' ? 'Survive the round, then finish!' : 'Stop them before their next turn!';
     evts.push(mk(turn, actor, '📢', `${actor} ${isVerb(actor)} KADI! ${closer}`, 'kadi'));
   }
 
@@ -329,7 +329,7 @@ export function describeWrongPlay(actor: string, played: Card[], fined: number, 
 }
 
 export function describeKadi(name: string, turn = 0): FeedEvent {
-  const closer = name === 'You' ? 'Go out now!' : 'One clean move to win. Stop them!';
+  const closer = name === 'You' ? 'Survive the round, then finish!' : 'Stop them before their next turn!';
   return mk(turn, name, '📢', `${name} ${name === 'You' ? 'are' : 'is'} KADI! ${closer}`, 'kadi');
 }
 
@@ -392,6 +392,8 @@ export interface CoachInput {
   invalidReason: string | null;
   legalCount: number;
   kadiReady: boolean;
+  kadiCalled: boolean;
+  kadiFinishNow: boolean;
 }
 
 function suitGlyphLocal(suit: Suit): string {
@@ -444,11 +446,16 @@ export function turnCoach(i: CoachInput): CoachMsg {
   if (i.selectedCount > 0 && !i.comboValid) {
     return { icon: '⛔', text: i.invalidReason ?? 'That combo is not legal', tone: 'bad' };
   }
+  if (i.kadiFinishNow) {
+    return { icon: '📢', text: 'KADI called — play your last cards and win!', tone: 'ok' };
+  }
   if (i.kadiReady) {
-    return { icon: '📢', text: 'Say KADI before your winning dump!', tone: 'ok' };
+    return { icon: '📢', text: 'Call KADI, play a setup, finish next turn', tone: 'ok' };
   }
   if (i.legalCount === 0) {
-    return { icon: '🃏', text: 'No playable card. Pick from the pile', tone: 'action' };
+    return i.kadiCalled
+      ? { icon: '🃏', text: 'No playable card — picking voids the KADI call', tone: 'bad' }
+      : { icon: '🃏', text: 'No playable card. Pick from the pile', tone: 'action' };
   }
   if (i.activeSuit) {
     const was = i.prevSuit ? ` (was ${suitName(i.prevSuit)})` : '';

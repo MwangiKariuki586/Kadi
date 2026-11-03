@@ -85,17 +85,23 @@ but it must land before the dump.
    selected cards show 1/2/3 badges. K/J stacks chain by suit-or-rank; next player follows
    the net calculation (J+J in 3P anti-clockwise returns to self; K+K restores direction).
    Bots try pairs in both orders.
-7. **KADI! badge = valid call AND finishable now.** `canFinishNow` (bounded permutation search,
-   cap 7, recomputed per move) requires a call (same-turn is enough), no outstanding debts,
-   a legal full-hand winning dump vs the current table, and no cardless blocker. `canCallKadi`
-   ignores the current table and checks the future winning dump; it allows 4+ same-rank cards
-   and question stacks, and rejects mixed Aces, penalties, bare questions, and chains that do
-   not actually go out. The button stays manual, but a false call fines and locks it until the
-   offender's next turn.
-8. **No win without the call, and no delay window.** Press KADI first, then dump; same-turn
-   works. Clean dumps with no call: dump stands, win denied, draw `lateCallPickCount` (default
-   1) instead of wandering cardless. Calling with no winnable hand: draw `falseKadiPickCount`
-   once and lock the button. The old 2s window and delay fine were removed.
+7. **KADI finish cue = call survived a round AND finishable now.** `canFinishNow` (bounded
+   permutation search, cap 7, recomputed per move) requires an active call made on an earlier
+   turn (`kadiCallTurn < turnNumber`), no outstanding debts, a legal full-hand winning dump vs
+   the current table, and no cardless blocker. `canCallKadi` ignores the current table and
+   checks the future winning dump; it allows 4+ same-rank cards and question stacks, and rejects
+   mixed Aces, penalties, bare questions, and chains that do not actually go out. The button
+   stays manual, but a false call fines and locks it until the offender's next turn. (The
+   public seat badge is keyed to `kadiCalls` alone — see UI decisions.)
+8. **No win without the call, and the call must survive a round.** Press KADI, play a
+   non-winning setup, let opponents take their turns and try to ruin the hand, then dump on a
+   later turn if it still closes. A same-turn whole-hand dump is rejected (`KADI_WAIT`).
+   Same-turn continuation is only possible through plays that leave and return the turn to the
+   caller while advancing the turn counter — jumping everyone or a kickback bounce back; a
+   refused jump/kickback keeps the turn without advancing it. Clean dumps with no call: dump
+   stands, win denied, draw `lateCallPickCount` (default 1) instead of wandering cardless.
+   Calling with no winnable hand: draw `falseKadiPickCount` once and lock the button. Silent
+   tables (`mustSayNikoKadi: false`) bypass the call and the wait.
 9. **Strict tables (opt-in).** Toggle (default off): illegal submissions stay tappable and are
    fined via the previously-dormant `penaliseIllegalPlay` (draw + turn passes). Casual tables
    keep protective disabled-Play + inline reason. Count reuses `invalidPlayPickCount`.
@@ -108,7 +114,8 @@ but it must land before the dump.
 1 human + 1–3 bots (2–4 seats, engine supports 5). Difficulties:
 * **Easy** — mostly random legal moves, sometimes eats penalties it could answer.
 * **Medium/Hard** — stack penalties, save Aces, pair Q+answers, shed max cards, attack close
-  rivals with penalties/super aces, declare Kadi on winnable shape, demand cards they hold
+  rivals with penalties/super aces, declare Kadi on winnable shape, play a non-winning setup,
+  then finish on a later turn if the hand still closes, demand cards they hold
   (single deck ⇒ unanswerable), meet exact demands when able else downgrade else draw.
 * All bot moves are generated through `validateCombo`, so illegal bot moves are impossible by
   construction (fuzz-tested). A visible `🐞 stalls` tripwire narrates any rejected bot move
@@ -127,16 +134,18 @@ but it must land before the dump.
   only on Home/Settings confirmations (Resumed!, Stats cleared…) which have no panel.
 * **KADI threat surfacing:** opponent seats show `⚠ 1 move` whenever the seat
   can dump its whole hand against the current table (call-agnostic, so it is
-  visible before a bot's claim/dump tick) and `📢 KADI!` once it has called.
+  visible before a bot's claim tick) and `📢 KADI!` once it has called.
   The claim badge is keyed to `kadiCalls`, not current finishability, so it
-  survives the toast, the bot's turn, and the winning dump (it clears only if
-  that seat picks cards). Only opponent claims raise the large, non-blocking
-  top banner — the one deliberate in-game exception to "feed only" — with a
-  ~900ms beat before a bot's winning dump. Bots only declare when the current
-  table lets them dump, so a claim is always followed by the win rather than a
-  claim-voiding pick. Your own claim is status-only: feed line plus the
-  buzzer's "KADI called" state, never the banner. If a bot wins after calling,
-  the result dialog repeats the claim because the overlay covers the seat cards.
+  survives the toast, the setup move, the opponents' response turns, and the
+  winning dump (it clears only if that seat picks cards). Only opponent claims
+  raise the large, non-blocking top banner — the one deliberate in-game
+  exception to "feed only" — with a ~900ms beat before the bot's setup move.
+  Bots only declare when the current table lets the whole hand go out and a
+  legal non-emptying setup exists; they play that setup, give opponents a
+  turn, and take the win later only if the hand still closes. Your own claim
+  is status-only: feed line plus the buzzer's "KADI called" state, never the
+  banner. If a bot wins after calling, the result dialog repeats the claim
+  because the overlay covers the seat cards.
 * **Turn coach is opt-in (default off):** contextual `turnCoach` line (debts → corrections →
   opportunities) behind Home's `💡 Hints` toggle. Default table shows only `👉 Your turn`.
 * **Quit confirmation modal:** Quit → "Keep playing / Save & exit". Exiting preserves the game;

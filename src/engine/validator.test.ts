@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BACKSTREET_PESA, BOM_NI_BOM, STANDARD_MAUA, migrateRules } from './rules';
 import { advanceTurn, createGame, type GameState } from './state';
-import { canCallKadi, canDumpWinningNow, canFinishNow, declareKadi, isKadiLocked, isSuperAceCombo, legalSingles, passOrPick, playCombo, resolveWrongPlay, tryDeclareKadi, validateCombo } from './validator';
+import { canCallKadi, canDumpWinningNow, canFinishNow, declareKadi, isKadiLocked, isSuperAceCombo, kadiWaitSatisfied, legalSingles, passOrPick, playCombo, resolveWrongPlay, tryDeclareKadi, validateCombo } from './validator';
 import type { Card } from './cards';
 
 const C = (rank: Card['rank'], suit: Card['suit'] = 'hearts', id?: string): Card => ({
@@ -81,15 +81,16 @@ describe('question + answer', () => {
     expect(s.lastEffect).toMatch(/No call, fined \+1/);
   });
 
-  it('same-turn declaration counts when pressed before the dump', () => {
+  it('same-turn declaration cannot dump: KADI_WAIT', () => {
     const fin = C('5', 'hearts', 'f1');
-    const s = rigged([fin, C('4', 'clubs', 'k')], C('9', 'hearts'), [C('6', 'spades')]);
+    const s = rigged([fin], C('9', 'hearts'), [C('6', 'spades')]);
     expect(declareKadi(s, 0)).toBe(true);
-    s.hands[0] = [fin];
+    expect(validateCombo([fin], s, 0)).toMatchObject({ ok: false, reason: 'KADI_WAIT' });
     const r = playCombo(s, 0, [fin]);
-    expect(r.won).toBe(true);
-    expect(r.fined).toBeFalsy();
-    expect(s.gameOver).toBe(true);
+    expect(r.ok).toBe(false);
+    expect(s.hands[0]).toHaveLength(1);
+    expect(s.gameOver).toBe(false);
+    expect(s.currentPlayer).toBe(0);
   });
 
   it('declared-earlier clean dump still wins with no fine', () => {
@@ -572,6 +573,94 @@ describe('winning, Niko Kadi', () => {
   });
 });
 
+describe('KADI wait: survive a round', () => {
+  it('a setup on the call turn passes to opponents; the finish wins later', () => {
+    const setup = C('9', 'clubs', 'setup');
+    const fin = C('5', 'clubs', 'fin');
+    const s = rigged([setup, fin], C('9', 'hearts'), [C('4', 'diamonds'), C('6', 'spades')]);
+    expect(declareKadi(s, 0)).toBe(true);
+    const r = playCombo(s, 0, [setup]);
+    expect(r.ok).toBe(true);
+    expect(r.won).toBeFalsy();
+    expect(s.hands[0]).toEqual([fin]);
+    expect(s.currentPlayer).toBe(1);
+    // The opponent gets a turn to ruin the hand, then play returns to the caller.
+    passOrPick(s, 1);
+    expect(s.currentPlayer).toBe(0);
+    const win = playCombo(s, 0, [fin]);
+    expect(win.won).toBe(true);
+    expect(s.winnerIndex).toBe(0);
+  });
+
+  it('same call turn fails the wait; leaving and returning satisfies it', () => {
+    const s = rigged([C('5', 'hearts', 'f')], C('9', 'hearts'), [C('4', 'clubs')]);
+    declareKadi(s, 0);
+    expect(kadiWaitSatisfied(s, 0)).toBe(false);
+    advanceTurn(s);
+    expect(kadiWaitSatisfied(s, 0)).toBe(true);
+  });
+
+  it('a jump-all can return the turn and satisfy the wait in the same round', () => {
+    const s = rigged(
+      [C('J', 'hearts', 'j1'), C('J', 'spades', 'j2'), C('J', 'clubs', 'j3'), C('5', 'clubs', 'fin')],
+      C('9', 'hearts'),
+      [C('4', 'diamonds', 'o1')],
+      4,
+    );
+    expect(declareKadi(s, 0)).toBe(true);
+    const r = playCombo(s, 0, s.hands[0].slice(0, 3));
+    expect(r.ok).toBe(true);
+    expect(r.won).toBeFalsy();
+    expect(s.pendingSkip).toBe(3);
+    expect(s.currentPlayer).toBe(1);
+    // Three skipped seats later, the caller is up again.
+    passOrPick(s, 1);
+    expect(s.pendingSkip).toBe(0);
+    expect(s.currentPlayer).toBe(0);
+    const win = playCombo(s, 0, [s.hands[0][0]]);
+    expect(win.won).toBe(true);
+  });
+
+  it('a kickback bounce can return the turn and satisfy the wait', () => {
+    const s = rigged(
+      [C('K', 'hearts', 'k'), C('5', 'hearts', 'fin')],
+      C('9', 'hearts'),
+      [C('4', 'diamonds', 'o1')],
+      3,
+    );
+    expect(declareKadi(s, 0)).toBe(true);
+    const r = playCombo(s, 0, [s.hands[0][0]]);
+    expect(r.ok).toBe(true);
+    expect(r.won).toBeFalsy();
+    expect(s.pendingReverse).toBe(1);
+    expect(s.currentPlayer).toBe(1);
+    // The opponent accepts the reversal; the flip routes back to the caller.
+    passOrPick(s, 1);
+    expect(s.direction).toBe(-1);
+    expect(s.currentPlayer).toBe(0);
+    const win = playCombo(s, 0, [s.hands[0][0]]);
+    expect(win.won).toBe(true);
+  });
+
+  it('a refused jump keeps the turn counter, so the wait is not satisfied', () => {
+    const s = rigged(
+      [C('4', 'clubs', 'k')],
+      C('9', 'hearts'),
+      [C('J', 'hearts', 'j'), C('4', 'diamonds', 'o')],
+      3,
+    );
+    s.currentPlayer = 1;
+    s.turnNumber = 5;
+    s.pendingSkip = 1;
+    s.kadiCalls[1] = true;
+    s.kadiCallTurn[1] = 5;
+    const r = playCombo(s, 1, [s.hands[1][0]]);
+    expect(r.keptTurn).toBe(true);
+    expect(s.turnNumber).toBe(5);
+    expect(kadiWaitSatisfied(s, 1)).toBe(false);
+  });
+});
+
 describe('hints', () => {  it('legalSingles only returns playable cards', () => {
     const s = rigged([C('5', 'hearts', 'a'), C('9', 'clubs', 'b')], C('7', 'hearts'));
     const legal = legalSingles(s, 0);
@@ -610,11 +699,14 @@ describe('canFinishNow (live KADI! threat)', () => {
     expect(canFinishNow(s, 0)).toBe(true);
   });
 
-  it('false without a declaration; true as soon as it is called same-turn', () => {
+  it('false without a declaration and on the call turn; true once the call matures', () => {
     const s = rigged([C('5', 'hearts', 'f')], C('9', 'hearts'), [C('4', 'clubs')]);
     expect(canDumpWinningNow(s, 0)).toBe(true);
     expect(canFinishNow(s, 0)).toBe(false);
     declareKadi(s, 0);
+    expect(canFinishNow(s, 0)).toBe(false);
+    advanceTurn(s);
+    s.currentPlayer = 0;
     expect(canFinishNow(s, 0)).toBe(true);
   });
 
