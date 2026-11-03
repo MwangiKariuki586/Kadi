@@ -125,6 +125,18 @@ but it must land before the dump.
   tap 📜 for history. Penalty lines
   name source cards; suit calls always name the previous suit. Toasts survive
   only on Home/Settings confirmations (Resumed!, Stats cleared…) which have no panel.
+* **KADI threat surfacing:** opponent seats show `⚠ 1 move` whenever the seat
+  can dump its whole hand against the current table (call-agnostic, so it is
+  visible before a bot's claim/dump tick) and `📢 KADI!` once it has called.
+  The claim badge is keyed to `kadiCalls`, not current finishability, so it
+  survives the toast, the bot's turn, and the winning dump (it clears only if
+  that seat picks cards). Only opponent claims raise the large, non-blocking
+  top banner — the one deliberate in-game exception to "feed only" — with a
+  ~900ms beat before a bot's winning dump. Bots only declare when the current
+  table lets them dump, so a claim is always followed by the win rather than a
+  claim-voiding pick. Your own claim is status-only: feed line plus the
+  buzzer's "KADI called" state, never the banner. If a bot wins after calling,
+  the result dialog repeats the claim because the overlay covers the seat cards.
 * **Turn coach is opt-in (default off):** contextual `turnCoach` line (debts → corrections →
   opportunities) behind Home's `💡 Hints` toggle. Default table shows only `👉 Your turn`.
 * **Quit confirmation modal:** Quit → "Keep playing / Save & exit". Exiting preserves the game;

@@ -1,6 +1,6 @@
 import type { Card, Suit } from '../engine/cards';
 import { isJumpRank, isKickbackRank, isPenaltyRank, isWinningRank } from '../engine/rules';
-import { isAceAnswerCombo, isSuperAceCombo, comboLeavesQuestionOpen, canCallKadi, canDeclareKadi, canFinishNow, hasValidKadiCall, legalSingles, validateCombo, winningDumpOrder } from '../engine/validator';
+import { isAceAnswerCombo, isSuperAceCombo, comboLeavesQuestionOpen, canDeclareKadi, canDumpWinningNow, canFinishNow, hasValidKadiCall, legalSingles, validateCombo, winningDumpOrder } from '../engine/validator';
 import { topCard, type GameState } from '../engine/state';
 
 // Re-export for single import path (validator lives in engine/validator)
@@ -111,10 +111,11 @@ export function isDeclaredThreat(state: GameState, playerIndex: number): boolean
 }
 
 export function shouldDeclareKadi(state: GameState, playerIndex: number): boolean {
-  // Single definition of "legally winnable hand" lives in the engine so
-  // humans (tryDeclareKadi) and bots agree. canDeclareKadi also covers silent
-  // tables, cardless players, and finished games.
-  return canDeclareKadi(state, playerIndex) && canCallKadi(state, playerIndex);
+  // Bots only call when the current table lets them dump the whole hand.
+  // Calling early and then picking would void the claim (drawCards) and make
+  // the claim toast/card badge lie. Humans may still call early via
+  // tryDeclareKadi; this guard is bot policy, not a rule change.
+  return canDeclareKadi(state, playerIndex) && canDumpWinningNow(state, playerIndex);
 }
 
 export function chooseMove(

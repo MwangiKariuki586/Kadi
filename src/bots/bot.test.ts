@@ -68,13 +68,24 @@ describe('bots', () => {
     expect(move?.cards[0].rank).toBe('J');
   });
 
-  it('declares Kadi with a winnable hand', () => {
+  it('declares Kadi when the current table allows the dump', () => {
     const s = createGame({ numPlayers: 2, random: () => 0.1 });
+    s.discardPile = [{ id: '9-hearts-top', suit: 'hearts', rank: '9' }];
     s.hands[0] = [
       { id: 'q-hearts', suit: 'hearts', rank: 'Q' },
       { id: '5-hearts', suit: 'hearts', rank: '5' },
     ];
     expect(shouldDeclareKadi(s, 0)).toBe(true);
+  });
+
+  it('does not declare when the current table blocks the dump', () => {
+    const s = createGame({ numPlayers: 2, random: () => 0.1 });
+    s.discardPile = [{ id: 'k-clubs-top', suit: 'clubs', rank: 'K' }];
+    s.hands[0] = [
+      { id: 'q-hearts', suit: 'hearts', rank: 'Q' },
+      { id: '5-hearts', suit: 'hearts', rank: '5' },
+    ];
+    expect(shouldDeclareKadi(s, 0)).toBe(false);
   });
 
   it('does not declare when the table allows silent finishes', () => {

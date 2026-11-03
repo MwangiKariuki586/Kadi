@@ -203,6 +203,15 @@ textarea,
     transform: scale(1);
   }
 }
+@keyframes kadi-alert-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
 @keyframes kadi-buzzer-pulse {
   0%,
   100% {
@@ -232,6 +241,9 @@ textarea,
 }
 .anim-fanfare {
   animation: kadi-fanfare 350ms ease-out;
+}
+.anim-kadi-pulse {
+  animation: kadi-alert-pulse 1.1s ease-in-out infinite;
 }
 
 /* Arcade buzzer — gold ring, glossy dome, floor reflection */
@@ -365,6 +377,7 @@ textarea,
 @media (prefers-reduced-motion: reduce) {
   .anim-fly-in,
   .anim-kadi-glow,
+  .anim-kadi-pulse,
   .anim-shake,
   .anim-fanfare,
   .kadi-buzzer-urgent .kadi-buzzer-base,
@@ -376,6 +389,7 @@ textarea,
 /* Manual calm mode from Settings (overrides system when animations are off) */
 [data-motion="reduced"] .anim-fly-in,
 [data-motion="reduced"] .anim-kadi-glow,
+[data-motion="reduced"] .anim-kadi-pulse,
 [data-motion="reduced"] .anim-shake,
 [data-motion="reduced"] .anim-fanfare,
 [data-motion="reduced"] .kadi-buzzer-urgent .kadi-buzzer-base,

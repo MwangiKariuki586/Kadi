@@ -157,6 +157,7 @@ describe('feed', () => {
   it('kadi call points the caller at the dump; false call names the fine and lock', () => {
     expect(describeKadi('You').text).toMatch(/Go out now/);
     expect(describeKadi('You').text).toMatch(/You are KADI/);
+    expect(describeKadi('Jabari').text).toMatch(/Jabari is KADI/);
     expect(describeKadi('Jabari').text).toMatch(/Stop them/);
     expect(describeFalseKadi('You', 1).text).toBe('You call KADI too early, no winnable hand, fined +1, locked until next turn');
     expect(describeFalseKadi('Jabari', 1).text).toBe('Jabari calls KADI too early, no winnable hand, fined +1, locked until next turn');

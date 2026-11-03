@@ -13,7 +13,6 @@ import { createGame, topCard, type GameState } from "./engine/state";
 import {
   canDeclareKadi,
   canDumpWinningNow,
-  canFinishNow,
   declareKadi,
   isAceAnswerCombo,
   isKadiLocked,
@@ -46,6 +45,8 @@ import {
   SuitPicker,
   Toast,
 } from "./ui/components";
+import { KadiAlert } from "./ui/kadiAlert";
+import { seatThreat } from "./ui/threat";
 import { SettingsScreen } from "./ui/settings";
 import { RulesBuilder } from "./ui/rulesBuilder";
 import { HowToScreen } from "./ui/howto";
@@ -112,6 +113,7 @@ export function App() {
   const [tick, setTick] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
+  const [kadiAlert, setKadiAlert] = useState<number | null>(null);
   const [suitPickerFor, setSuitPickerFor] = useState<Card[] | null>(null);
   const [superPickerFor, setSuperPickerFor] = useState<Card[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -154,6 +156,7 @@ export function App() {
   const stateRef = useRef<GameState | null>(null);
   const recordedRef = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
+  const kadiAlertTimer = useRef<number | undefined>(undefined);
   const state = stateRef.current;
 
   // Home/Settings-only transient confirmations (Resumed!, Stats cleared…).
@@ -164,6 +167,26 @@ export function App() {
     window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(null), 2200);
   }, []);
+
+  /** Large, non-blocking claim banner; auto-dismisses after 3s. */
+  const clearKadiAlert = useCallback(() => {
+    window.clearTimeout(kadiAlertTimer.current);
+    setKadiAlert(null);
+  }, []);
+
+  const showKadiAlert = useCallback((seat: number) => {
+    setKadiAlert(seat);
+    window.clearTimeout(kadiAlertTimer.current);
+    kadiAlertTimer.current = window.setTimeout(() => setKadiAlert(null), 3000);
+  }, []);
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(toastTimer.current);
+      window.clearTimeout(kadiAlertTimer.current);
+    },
+    [],
+  );
 
   const bump = useCallback(() => setTick((t) => t + 1), []);
   void tick;
@@ -181,6 +204,7 @@ export function App() {
       setSelected([]);
       setSuitPickerFor(null);
       setSuperPickerFor(null);
+      clearKadiAlert();
       setBusy(false);
       setScreen("game");
       setFeed([
@@ -188,7 +212,7 @@ export function App() {
       ]);
       bump();
     },
-    [bump],
+    [bump, clearKadiAlert],
   );
 
   /**
@@ -216,11 +240,12 @@ export function App() {
         }
       }
       setConfirmQuit(false);
+      clearKadiAlert();
       stateRef.current = null;
       setScreen("home");
       bump();
     },
-    [bump, difficulty, preset],
+    [bump, difficulty, preset, clearKadiAlert],
   );
 
   const startGame = useCallback(() => {
@@ -241,12 +266,13 @@ export function App() {
     setSuitPickerFor(null);
     setSuperPickerFor(null);
     setConfirmQuit(false);
+    clearKadiAlert();
     setScreen("game");
     setFeed([describeDeal(topCard(st), st.turnNumber)]);
     sfx.shuffle();
     haptics.tap();
     bump();
-  }, [numBots, preset, superAceOn, strictOn, jokersOn, bump]);
+  }, [numBots, preset, superAceOn, strictOn, jokersOn, bump, clearKadiAlert]);
 
   /** Single write-through for all Settings page + quick toggles. */
   const savePatch = useCallback((patch: Partial<Settings>) => {
@@ -412,14 +438,26 @@ export function App() {
         bump();
         return;
       }
-      actions += 1;
-      const before = snapshotState(s, me);
-      if (difficulty !== "easy" || Math.random() < 0.6) {
-        if (shouldDeclareKadi(s, me)) {
-          declareKadi(s, me);
-          sfx.kadi();
-        }
+      // Claim phase: narrate the call immediately (previously it only
+      // surfaced via describePlay's diff, so a claim followed by a pick was
+      // silent) and give the banner a readable beat before the dump.
+      const wantsToDeclare =
+        shouldDeclareKadi(s, me) &&
+        (difficulty !== "easy" || Math.random() < 0.6);
+      if (wantsToDeclare && declareKadi(s, me)) {
+        sfx.kadi();
+        haptics.penalty();
+        pushFeed(describeKadi(NAMES[me], s.turnNumber));
+        showKadiAlert(me);
+        bump();
+        id = window.setTimeout(runBot, 900);
+        return;
       }
+
+      actions += 1;
+      // Snapshot AFTER the call so describePlay does not emit a duplicate
+      // KADI line for a same-turn declaration.
+      const before = snapshotState(s, me);
       const move = chooseMove(s, me, difficulty);
       let keepGoing = false;
       if (move) {
@@ -475,7 +513,7 @@ export function App() {
     };
     id = window.setTimeout(runBot, 650 + Math.random() * 350);
     return () => window.clearTimeout(id);
-  }, [paused, screen, currentPlayer, gameOver, difficulty, bump, pushFeed]);
+  }, [paused, screen, currentPlayer, gameOver, difficulty, bump, pushFeed, showKadiAlert]);
 
   // ---- record result once (finished games are never resumed) ----
   useEffect(() => {
@@ -528,11 +566,11 @@ export function App() {
     return new Set(legalSingles(state, 0).map((c) => c.id));
   }, [state, currentPlayer, gameOver]);
 
-  // Live KADI! threat per seat: declared AND finishable in one move right now.
-  // Recomputed per committed move (tick), not per tap/selection render.
+  // Live KADI threat per seat: call-agnostic so it is visible before a bot's
+  // claim/dump tick. Recomputed per committed move (tick), not per tap render.
   // (state identity is stable, contents are read fresh on each tick.)
-  const threats = useMemo(
-    () => (state ? state.hands.map((_, i) => canFinishNow(state, i)) : []),
+  const seatThreats = useMemo(
+    () => (state ? state.hands.map((_, i) => seatThreat(state, i)) : []),
     [tick],
   );
 
@@ -1042,6 +1080,9 @@ export function App() {
     <div class="kadi-shell relative flex h-dvh flex-col overflow-hidden text-white safe-top safe-bottom">
       <PageBackdrop />
       <GameShortcutLayer layer={shortcutLayer} onAction={onShortcut} />
+      {!paused && kadiAlert !== null && (
+        <KadiAlert name={NAMES[kadiAlert] ?? `Player ${kadiAlert + 1}`} />
+      )}
       {suitPickerFor && (
         <SuitPicker
           onCancel={() => setSuitPickerFor(null)}
@@ -1084,8 +1125,12 @@ export function App() {
               </div>
             </div>
             <div class="flex items-center gap-1.5">
-              {state.config.mustSayNikoKadi !== false &&
-                threats.some(Boolean) && <Pill tone="amber">KADI!</Pill>}
+              {seatThreats.some((t, i) => i > 0 && t === "kadi") && (
+                <Pill tone="amber">KADI!</Pill>
+              )}
+              {seatThreats.some((t, i) => i > 0 && t === "finish") && (
+                <Pill tone="red">⚠ 1 move</Pill>
+              )}
               <button
                 type="button"
                 onClick={() => setShortcutsOpen(true)}
@@ -1140,11 +1185,7 @@ export function App() {
                     cards={hand.length}
                     isTurn={isTurn}
                     thinking={isTurn && busy}
-                    kadi={Boolean(
-                      state.config.mustSayNikoKadi !== false &&
-                        state.kadiCalls[i] &&
-                        threats[i],
-                    )}
+                    threat={seatThreats[i] ?? null}
                     slot={slot}
                     className="lg:max-w-[13rem]"
                   />
@@ -1389,6 +1430,16 @@ export function App() {
                 ? "You win 🎉"
                 : `${BOT_NAMES[(state.winnerIndex ?? 1) - 1]} wins`}
             </h3>
+            {state.winnerIndex != null &&
+              state.winnerIndex > 0 &&
+              state.kadiCalls[state.winnerIndex] && (
+                <p
+                  class="mt-2 text-sm font-bold text-amber-300"
+                  data-testid="winner-kadi"
+                >
+                  📢 {BOT_NAMES[state.winnerIndex - 1]} called KADI before going out
+                </p>
+              )}
             <div class="mt-3 flex justify-center gap-2">
               <Pill>{stats.games} games</Pill>
               <Pill tone="amber">{stats.wins} wins</Pill>
