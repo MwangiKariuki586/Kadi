@@ -4,7 +4,7 @@ import { STANDARD_MAUA } from '../engine/rules';
 import { createGame, type GameState } from '../engine/state';
 import { passOrPick, playCombo } from '../engine/validator';
 import {
-  describeDeal, describeFalseKadi, describeKadi, describeNotice, describePick, describePlay, describeResume, describeWrongPlay, groupFeed, snapshotState, turnCoach,
+  describeDeal, describeDelayKadi, describeFalseKadi, describeKadi, describeNotice, describePick, describePlay, describeResume, describeWrongPlay, groupFeed, snapshotState, turnCoach,
   type CoachInput,
 } from './feed';
 
@@ -161,6 +161,12 @@ describe('feed', () => {
     expect(describeKadi('Jabari').text).toMatch(/Stop them for a full round/);
     expect(describeFalseKadi('You', 1).text).toBe('You call KADI too early, no winnable hand, fined +1, locked until next turn');
     expect(describeFalseKadi('Jabari', 1).text).toBe('Jabari calls KADI too early, no winnable hand, fined +1, locked until next turn');
+  });
+
+  it('late kadi shout names the delay fine but keeps the call', () => {
+    expect(describeDelayKadi('You', 1).text).toBe('You shout KADI late, fined +1, the call still counts');
+    expect(describeDelayKadi('Jabari', 2).text).toBe('Jabari shouts KADI late, fined +2, the call still counts');
+    expect(describeDelayKadi('You', 0).text).toBe('You shout KADI late, the call still counts');
   });
 
   it('ace answering a question narrates the follow, never a call', () => {

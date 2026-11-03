@@ -54,6 +54,20 @@ function waitingSave(): ActiveGameSave {
   };
 }
 
+/** A setup hand: 4♥ leaves 5♥ + 5♦ as a one-play finisher. */
+function windowSave(): ActiveGameSave {
+  const save = waitingSave();
+  save.state.hands = [
+    [
+      C("4", "hearts", "e2e-4h"),
+      C("5", "hearts", "e2e-5h"),
+      C("5", "diamonds", "e2e-5d"),
+    ],
+    [C("K", "spades", "e2e-ks")],
+  ];
+  return save;
+}
+
 /** Put a save straight into idb-keyval's store, then reload into the table. */
 async function seedSave(page: Page, save: ActiveGameSave) {
   await page.goto("/");
@@ -91,9 +105,12 @@ test("KADI must survive every opponent before the winning dump", async ({
   await seedSave(page, waitingSave());
 
   const buzzer = page.getByTestId("kadi-buzzer");
+  await expect(page.getByTestId("kadi-window")).toBeVisible();
   await expect(buzzer).toHaveAttribute("data-kadi-state", "urgent");
   await buzzer.click();
   await expect(buzzer).toHaveAttribute("data-kadi-state", "called");
+  // An on-time shout is free: the fine never touches the hand.
+  await expect(page.getByTestId("hand").getByRole("button")).toHaveCount(2);
   await expect(page.getByTestId("feed-panel")).toContainText(
     /Survive all opponents/,
   );
@@ -125,4 +142,31 @@ test("KADI must survive every opponent before the winning dump", async ({
   await expect(
     page.getByRole("heading", { name: "You win 🎉" }),
   ).toBeVisible();
+});
+
+test("late KADI shout after the call-window still declares and draws the fine", async ({
+  page,
+}) => {
+  await seedSave(page, windowSave());
+
+  const hand = page.getByTestId("hand");
+  const buzzer = page.getByTestId("kadi-buzzer");
+  // 4♥ is a legal setup: it leaves 5♥ + 5♦ as a one-play finisher.
+  await hand.getByRole("button", { name: "4♥" }).click();
+  await page.getByTestId("play-button").click();
+  await expect(hand.getByRole("button")).toHaveCount(2);
+  await expect(page.getByTestId("kadi-window")).toBeVisible();
+
+  // The window expires while the hand is still ready. A late shout still
+  // declares, but the delay fine is drawn before the claim is set.
+  await expect(page.getByTestId("kadi-window")).toBeHidden({ timeout: 5000 });
+  await expect(
+    page.getByText(/Late shout costs \+1, but it counts/i),
+  ).toBeVisible();
+  await buzzer.click();
+  await expect(buzzer).toHaveAttribute("data-kadi-state", "called");
+  await expect(page.getByTestId("feed-panel")).toContainText(
+    /shout KADI late, fined \+1, the call still counts/i,
+  );
+  await expect(hand.getByRole("button")).toHaveCount(3);
 });

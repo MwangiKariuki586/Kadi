@@ -96,9 +96,12 @@ cardless blocker. The call may happen anytime, but never wins on the same round 
    let every opponent take a turn, then dump only if the hand still closes. A jump that skips a
    seat does not count as that seat's response; an out-of-turn call does not pre-count the player
    already on turn (their action counts, a skip victim who sits out does not). Picking voids the
-   claim. Clean dumps with no call: dump stands, win denied, draw
-   `lateCallPickCount` (default 1) instead of wandering cardless. Calling with no winnable hand:
-   draw `falseKadiPickCount` once and lock the button.
+   claim. The human gets a ~2s call-window when the hand first becomes winnable, even between
+   turns, so a setup that leaves a finisher can be claimed before the opponents act. Calling
+   inside is free; calling after still declares but draws `lateCallPickCount`. The full-round wait
+   still starts at the call, so opponent actions from before the shout never count. Clean dumps
+   with no call: dump stands, win denied, draw `lateCallPickCount` (default 1) instead of wandering
+   cardless. Calling with no winnable hand: draw `falseKadiPickCount` once and lock the button.
 9. **Strict tables (opt-in).** Toggle (default off): illegal submissions stay tappable and are
    fined via the previously-dormant `penaliseIllegalPlay` (draw + turn passes). Casual tables
    keep protective disabled-Play + inline reason. Count reuses `invalidPlayPickCount`.
@@ -130,6 +133,11 @@ cardless blocker. The call may happen anytime, but never wins on the same round 
   tap 📜 for history. Penalty lines
   name source cards; suit calls always name the previous suit. Toasts survive
   only on Home/Settings confirmations (Resumed!, Stats cleared…) which have no panel.
+* **KADI call-window:** a thin 2s drain bar sits above the buzzer whenever the human's hand
+  first becomes winnable, even during a bot's turn. Calling inside is free; after it expires a
+  "Late shout costs +N, but it counts" cue stays until the hand changes, and a late press draws
+  the fine before declaring so the new claim survives. The bar is status-only; the feed narrates
+  the fine and the call.
 * **KADI threat surfacing:** opponent seats show `⚠ 1 move` whenever the seat
   can dump its whole hand against the current table (call-agnostic, so it is
   visible before a bot's claim/setup tick) and `📢 KADI!` once it has called.

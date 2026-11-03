@@ -180,6 +180,14 @@ textarea,
     box-shadow: 0 0 0 10px rgba(245, 197, 24, 0);
   }
 }
+@keyframes kadi-window-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
 @keyframes kadi-shake {
   0%,
   100% {
@@ -244,6 +252,11 @@ textarea,
 }
 .anim-kadi-pulse {
   animation: kadi-alert-pulse 1.1s ease-in-out infinite;
+}
+.anim-kadi-window {
+  transform-origin: left center;
+  /* keep duration in sync with KADI_WINDOW_MS in app.tsx */
+  animation: kadi-window-drain 2s linear forwards;
 }
 
 /* Arcade buzzer — gold ring, glossy dome, floor reflection */
@@ -378,6 +391,7 @@ textarea,
   .anim-fly-in,
   .anim-kadi-glow,
   .anim-kadi-pulse,
+  .anim-kadi-window,
   .anim-shake,
   .anim-fanfare,
   .kadi-buzzer-urgent .kadi-buzzer-base,
@@ -390,6 +404,7 @@ textarea,
 [data-motion="reduced"] .anim-fly-in,
 [data-motion="reduced"] .anim-kadi-glow,
 [data-motion="reduced"] .anim-kadi-pulse,
+[data-motion="reduced"] .anim-kadi-window,
 [data-motion="reduced"] .anim-shake,
 [data-motion="reduced"] .anim-fanfare,
 [data-motion="reduced"] .kadi-buzzer-urgent .kadi-buzzer-base,

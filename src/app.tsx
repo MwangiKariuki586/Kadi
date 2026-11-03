@@ -11,9 +11,12 @@ import { cardLabel } from "./engine/cards";
 import { PRESETS, STANDARD_MAUA, type RulesConfig } from "./engine/rules";
 import { createGame, topCard, type GameState } from "./engine/state";
 import {
+  canCallKadi,
   canDeclareKadi,
   canDumpWinningNow,
   canFinishNow,
+  declareKadi,
+  fineKadiDelay,
   isAceAnswerCombo,
   isKadiLocked,
   isSuperAceCombo,
@@ -62,6 +65,7 @@ import { GameShortcutLayer, ShortcutHelp } from "./ui/keyboardShortcuts";
 import { reasonText } from "./ui/reasons";
 import {
   describeDeal,
+  describeDelayKadi,
   describeFalseKadi,
   describeKadi,
   describeNotice,
@@ -89,6 +93,13 @@ type Screen =
 
 const NAMES = [...PLAYER_NAMES];
 
+/**
+ * Call-window: when your hand first becomes legally winnable you have this
+ * long to shout KADI before a late press pays the delay fine. Keep in sync
+ * with the `.anim-kadi-window` drain animation in index.css.
+ */
+const KADI_WINDOW_MS = 2000;
+
 export function App() {
   const [screen, setScreen] = useState<Screen>("home");
   const [numBots, setNumBots] = useState(2);
@@ -115,6 +126,7 @@ export function App() {
   const [selected, setSelected] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [kadiAlert, setKadiAlert] = useState<number | null>(null);
+  const [kadiWindowOpen, setKadiWindowOpen] = useState(false);
   const [suitPickerFor, setSuitPickerFor] = useState<Card[] | null>(null);
   const [superPickerFor, setSuperPickerFor] = useState<Card[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -158,7 +170,25 @@ export function App() {
   const recordedRef = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
   const kadiAlertTimer = useRef<number | undefined>(undefined);
+  const kadiTimerRef = useRef<number>(0);
+  const kadiWindowRef = useRef<{
+    /** Identifies the hand that opened this window. */
+    key: string;
+    status: "idle" | "open" | "missed";
+    deadline: number;
+    armed: boolean;
+  }>({ key: "", status: "idle", deadline: 0, armed: false });
   const state = stateRef.current;
+
+  // Hand identity for the call-window: it belongs to the moment this exact
+  // set of cards first becomes winnable, not to a turn number.
+  const myHandKey = state
+    ? state.hands[0].map((c) => c.id).sort().join("|")
+    : "";
+  const kadiCallable = useMemo(
+    () => (state && !state.gameOver ? canCallKadi(state, 0) : false),
+    [myHandKey, state?.gameOver, state?.config],
+  );
 
   // Home/Settings-only transient confirmations (Resumed!, Stats cleared…).
   // The game screen uses pushFeed/pushNotice so the event panel stays the
@@ -185,12 +215,24 @@ export function App() {
     () => () => {
       window.clearTimeout(toastTimer.current);
       window.clearTimeout(kadiAlertTimer.current);
+      window.clearTimeout(kadiTimerRef.current);
     },
     [],
   );
 
   const bump = useCallback(() => setTick((t) => t + 1), []);
   void tick;
+
+  /** Hide the call-window bar and stop its timer (pressed, acted, or spent). */
+  const closeKadiWindow = useCallback(() => {
+    window.clearTimeout(kadiTimerRef.current);
+    kadiTimerRef.current = 0;
+    kadiWindowRef.current.armed = false;
+    if (kadiWindowRef.current.status === "open") {
+      kadiWindowRef.current.status = "idle";
+    }
+    setKadiWindowOpen(false);
+  }, []);
 
   /** Restore a saved match into the live table (transient UI reset). */
   const restoreSave = useCallback(
@@ -206,6 +248,7 @@ export function App() {
       setSuitPickerFor(null);
       setSuperPickerFor(null);
       clearKadiAlert();
+      closeKadiWindow();
       setBusy(false);
       setScreen("game");
       setFeed([
@@ -213,7 +256,7 @@ export function App() {
       ]);
       bump();
     },
-    [bump, clearKadiAlert],
+    [bump, clearKadiAlert, closeKadiWindow],
   );
 
   /**
@@ -268,12 +311,13 @@ export function App() {
     setSuperPickerFor(null);
     setConfirmQuit(false);
     clearKadiAlert();
+    closeKadiWindow();
     setScreen("game");
     setFeed([describeDeal(topCard(st), st.turnNumber)]);
     sfx.shuffle();
     haptics.tap();
     bump();
-  }, [numBots, preset, superAceOn, strictOn, jokersOn, bump, clearKadiAlert]);
+  }, [numBots, preset, superAceOn, strictOn, jokersOn, bump, clearKadiAlert, closeKadiWindow]);
 
   /** Single write-through for all Settings page + quick toggles. */
   const savePatch = useCallback((patch: Partial<Settings>) => {
@@ -523,6 +567,79 @@ export function App() {
     id = window.setTimeout(runBot, 650 + Math.random() * 350);
     return () => window.clearTimeout(id);
   }, [paused, screen, currentPlayer, gameOver, difficulty, bump, pushFeed, showKadiAlert]);
+
+  // ---- KADI call-window: shout within 2s of your hand becoming winnable ----
+  // Opens once per winnable hand, even between turns: a setup that leaves a
+  // finisher can be claimed before the opponents act, so the call's full-round
+  // wait does not restart. Acting, calling, or the hand changing closes it
+  // quietly; expiry only marks the hand missed. Sitting out is free, a late
+  // press afterwards still declares but pays the delay fine.
+  useEffect(() => {
+    const s = stateRef.current;
+    const key = s ? s.hands[0].map((c) => c.id).sort().join("|") : "";
+    const w = kadiWindowRef.current;
+    if (w.key !== key) {
+      window.clearTimeout(kadiTimerRef.current);
+      kadiTimerRef.current = 0;
+      w.key = key;
+      w.status = "idle";
+      w.deadline = 0;
+      w.armed = false;
+      setKadiWindowOpen(false);
+    }
+    // Tie the window to the call rule itself, not the current table: a
+    // setup that leaves a finisher can be a penalty/jump/kickback/ace, and
+    // the call is still legal while those debts sit on the next seat.
+    const eligible =
+      screen === "game" &&
+      s != null &&
+      canDeclareKadi(s, 0) &&
+      !isKadiLocked(s, 0) &&
+      kadiCallable;
+    if (!eligible) {
+      if (w.status === "open") w.status = "idle";
+      window.clearTimeout(kadiTimerRef.current);
+      kadiTimerRef.current = 0;
+      w.armed = false;
+      setKadiWindowOpen(false);
+      return;
+    }
+    if (w.status === "idle") {
+      w.status = "open";
+      w.deadline = Date.now() + KADI_WINDOW_MS;
+      w.armed = false;
+      setKadiWindowOpen(true);
+    }
+    if (w.status === "open") {
+      if (Date.now() >= w.deadline) {
+        w.status = "missed";
+        w.armed = false;
+        window.clearTimeout(kadiTimerRef.current);
+        kadiTimerRef.current = 0;
+        setKadiWindowOpen(false);
+        return;
+      }
+      if (!w.armed) {
+        window.clearTimeout(kadiTimerRef.current);
+        kadiTimerRef.current = window.setTimeout(
+          () => {
+            const cur = kadiWindowRef.current;
+            if (cur.status !== "open") return;
+            cur.status = "missed";
+            cur.armed = false;
+            setKadiWindowOpen(false);
+          },
+          Math.max(0, w.deadline - Date.now()),
+        );
+        w.armed = true;
+      }
+    }
+    return () => {
+      window.clearTimeout(kadiTimerRef.current);
+      kadiTimerRef.current = 0;
+      kadiWindowRef.current.armed = false;
+    };
+  }, [screen, currentPlayer, tick, gameOver, kadiCallable, myHandKey]);
 
   // ---- record result once (finished games are never resumed) ----
   useEffect(() => {
@@ -793,6 +910,17 @@ export function App() {
   const kadiFinishNow = kadiEnabled && myTurn && canFinishNow(state, 0);
   const kadiUrgent =
     kadiCanDumpNow && kadiEnabled && !kadiCalled && !kadiLocked;
+  const lateFine =
+    state.config.lateCallPickCount ??
+    state.config.falseKadiPickCount ??
+    1;
+  // Late cue: this hand's window expired unpressed, but it is still ready.
+  // Shouting now still declares, at the delay fine.
+  const kadiLate =
+    kadiCanCall &&
+    kadiCallable &&
+    kadiWindowRef.current.status === "missed" &&
+    kadiWindowRef.current.key === myHandKey;
   const kadiTitle = !kadiEnabled
     ? "KADI calls are off for this table"
     : myHand.length === 0
@@ -805,9 +933,13 @@ export function App() {
             : "KADI called, play on"
         : kadiLocked
           ? "False KADI, locked until your next turn"
-          : kadiCanDumpNow
-            ? "Your hand can go out — call KADI, then survive all opponents."
-            : `Say KADI anytime, a wrong call is fined +${state.config.falseKadiPickCount} and locks the button`;
+          : kadiLate
+            ? lateFine > 0
+              ? `Late KADI, the call counts but you draw +${lateFine}`
+              : "Late KADI, the call still counts"
+            : kadiCanDumpNow
+              ? "Your hand can go out — call KADI, then survive all opponents."
+              : `Say KADI anytime, a wrong call is fined +${state.config.falseKadiPickCount} and locks the button`;
   const kadiStateLabel = !kadiEnabled || myHand.length === 0
     ? "off"
     : kadiCalled
@@ -989,6 +1121,24 @@ export function App() {
     }
     if (myHand.length === 0) {
       pushNotice("Cardless, nothing to declare with.", state.turnNumber);
+      return;
+    }
+    const latePress =
+      kadiWindowRef.current.status === "missed" &&
+      kadiWindowRef.current.key === myHandKey;
+    closeKadiWindow();
+    // Late shout after a missed window: fine the delay FIRST (no flag set,
+    // so the shared pickup rule cannot void anything), then declare. A late
+    // press with no winnable hand falls through to the false-call path, one
+    // fine only, never stacked.
+    if (latePress && kadiCallable) {
+      const fined = fineKadiDelay(state, 0);
+      declareKadi(state, 0);
+      pushFeed(describeDelayKadi("You", fined, state.turnNumber));
+      pushFeed(describeKadi("You", state.turnNumber));
+      sfx.penalty();
+      haptics.penalty();
+      bump();
       return;
     }
     const r = tryDeclareKadi(state, 0);
@@ -1313,6 +1463,22 @@ export function App() {
           <div class="flex min-w-0 shrink-0 flex-col justify-end px-1 pb-1 pt-1 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-end lg:gap-8 lg:px-0 lg:pb-0 [@media(max-height:520px)]:pb-0 [@media(max-height:520px)]:pt-0">
             {!state.gameOver && (
               <div class="flex shrink-0 flex-col items-center justify-center py-2 lg:order-2 lg:w-40 lg:justify-self-center lg:pb-3 [@media(max-height:520px)]:py-0">
+                {kadiWindowOpen && (
+                  <div
+                    class="mb-1 flex w-40 flex-col items-center gap-1"
+                    data-testid="kadi-window"
+                    key={myHandKey}
+                  >
+                    <div class="h-1.5 w-full overflow-hidden rounded-full bg-white/15">
+                      <div class="anim-kadi-window h-full w-full rounded-full bg-gradient-to-r from-yellow-300 to-red-500" />
+                    </div>
+                  </div>
+                )}
+                {kadiLate && (
+                  <p class="mb-1 text-center text-[11px] font-bold uppercase tracking-widest text-amber-300">
+                    Late shout{lateFine > 0 ? ` costs +${lateFine}` : ""}, but it counts
+                  </p>
+                )}
                 {kadiCalled && myHand.length > 0 && (
                   <p class="mb-1 text-center text-[11px] font-bold uppercase tracking-widest text-amber-300">
                     {kadiFinishNow

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BACKSTREET_PESA, BOM_NI_BOM, STANDARD_MAUA, migrateRules } from './rules';
 import { advanceTurn, createGame, type GameState } from './state';
-import { canCallKadi, canDumpWinningNow, canFinishNow, declareKadi, isKadiLocked, isSuperAceCombo, kadiWaitSatisfied, legalSingles, passOrPick, playCombo, resolveWrongPlay, tryDeclareKadi, validateCombo } from './validator';
+import { canCallKadi, canDumpWinningNow, canFinishNow, declareKadi, fineKadiDelay, isKadiLocked, isSuperAceCombo, kadiWaitSatisfied, legalSingles, passOrPick, playCombo, resolveWrongPlay, tryDeclareKadi, validateCombo } from './validator';
 import type { Card } from './cards';
 
 const C = (rank: Card['rank'], suit: Card['suit'] = 'hearts', id?: string): Card => ({
@@ -1186,6 +1186,52 @@ describe('kadi declaration consequences', () => {
     advanceTurn(s);
     expect(s.currentPlayer).toBe(0);
     expect(isKadiLocked(s, 0)).toBe(false);
+  });
+
+  it('late-call fine draws the configured count without advancing the turn', () => {
+    const s = rigged([C('5', 'hearts', 'a'), C('5', 'diamonds', 'b')], C('9', 'hearts'), [C('4', 'clubs')]);
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    const turn = s.turnNumber;
+    const current = s.currentPlayer;
+    expect(fineKadiDelay(s, 0)).toBe(1);
+    expect(s.hands[0].length).toBe(3);
+    expect(s.kadiCalls[0]).toBe(false);
+    expect(s.turnNumber).toBe(turn);
+    expect(s.currentPlayer).toBe(current);
+
+    const cfg = { ...STANDARD_MAUA, lateCallPickCount: 2 };
+    const s2 = rigged([C('5', 'hearts', 'a')], C('9', 'hearts'), [C('4', 'clubs')], 2, cfg);
+    s2.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `e${i}`));
+    expect(fineKadiDelay(s2, 0)).toBe(2);
+    expect(s2.hands[0].length).toBe(3);
+
+    const cfg0 = { ...STANDARD_MAUA, lateCallPickCount: 0 };
+    const s3 = rigged([C('5', 'hearts', 'a')], C('9', 'hearts'), [C('4', 'clubs')], 2, cfg0);
+    s3.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `f${i}`));
+    expect(fineKadiDelay(s3, 0)).toBe(0);
+    expect(s3.hands[0].length).toBe(1);
+  });
+
+  it('late-press order (fine first, then declare) keeps the new claim', () => {
+    const s = rigged([C('5', 'hearts', 'a'), C('5', 'diamonds', 'b')], C('9', 'hearts'), [C('4', 'clubs')]);
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    expect(canCallKadi(s, 0)).toBe(true);
+    expect(fineKadiDelay(s, 0)).toBe(1);
+    expect(s.kadiCalls[0]).toBe(false);
+    expect(declareKadi(s, 0)).toBe(true);
+    expect(s.kadiCalls[0]).toBe(true);
+    expect(s.hands[0].length).toBe(3);
+    // The full-round wait still starts at the call, not before the fine.
+    expect(kadiWaitSatisfied(s, 0)).toBe(false);
+  });
+
+  it('late-call fine never draws over a live claim', () => {
+    const s = rigged([C('5', 'hearts', 'a'), C('5', 'diamonds', 'b')], C('9', 'hearts'), [C('4', 'clubs')]);
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    expect(declareKadi(s, 0)).toBe(true);
+    expect(fineKadiDelay(s, 0)).toBe(0);
+    expect(s.kadiCalls[0]).toBe(true);
+    expect(s.hands[0].length).toBe(2);
   });
 
   it('picking up cards voids the KADI claim, stale calls cannot win later', () => {

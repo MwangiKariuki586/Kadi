@@ -672,6 +672,29 @@ export function tryDeclareKadi(state: GameState, playerIndex: number): DeclareRe
   return { ok: false, falseCall: true, locked: true };
 }
 
+/**
+ * Fine for letting the KADI call-window expire without shouting: draws
+ * `lateCallPickCount` (falling back to the false-call fine). The UI only
+ * fires this while undeclared, then declares, so the draw cannot void the
+ * new claim. The turn does NOT advance (the fine is not a move).
+ */
+export function fineKadiDelay(state: GameState, playerIndex: number): number {
+  if (state.gameOver || state.kadiCalls[playerIndex]) return 0;
+  if (state.hands[playerIndex].length === 0) return 0;
+  const owed =
+    state.config.lateCallPickCount ??
+    state.config.falseKadiPickCount ??
+    1;
+  if (owed <= 0) return 0;
+  const drawn = drawCards(state, playerIndex, owed);
+  if (drawn.length > 0) {
+    state.lastEffect =
+      (state.lastEffect ? state.lastEffect + ' • ' : '') +
+      `Late KADI, fined +${drawn.length}`;
+  }
+  return drawn.length;
+}
+
 function winsBlockedByCardless(state: GameState, playerIndex: number): boolean {
   if (!state.config.cardlessBlocksWin) return false;
   return state.hands.some((h, i) => i !== playerIndex && h.length === 0);

@@ -349,6 +349,17 @@ export function describeFalseKadi(name: string, fined: number, turn = 0): FeedEv
   );
 }
 
+export function describeDelayKadi(name: string, fined: number, turn = 0): FeedEvent {
+  const fine = fined > 0 ? `, fined +${fined}` : '';
+  return mk(
+    turn,
+    name,
+    '⏱',
+    `${name} ${v(name, 'shouts', 'shout')} KADI late${fine}, the call still counts`,
+    'penalty',
+  );
+}
+
 export function describeDeal(top: Card, turn = 0): FeedEvent {
   return mk(turn, 'Table', '🂡', `New match, ${cardLabel(top)} opens the pile`, 'info');
 }
