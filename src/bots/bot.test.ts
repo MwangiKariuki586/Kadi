@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { BOM_NI_BOM, STANDARD_MAUA } from '../engine/rules';
 import { createGame } from '../engine/state';
-import { canDumpWinningNow, declareKadi, passOrPick, playCombo } from '../engine/validator';
-import { bestSuit, chooseMove, chooseRequestCard, hasSetupMove, isDeclaredThreat, shouldDeclareKadi } from './bot';
+import { declareKadi, playCombo } from '../engine/validator';
+import { bestSuit, chooseMove, chooseRequestCard, isDeclaredThreat, shouldDeclareKadi } from './bot';
 
 describe('bots', () => {
   it('always returns a legal move or null (all difficulties)', () => {
@@ -101,7 +101,7 @@ describe('bots', () => {
     expect(shouldDeclareKadi(s, 0)).toBe(false);
   });
 
-  it('plays a non-emptying setup on the call turn, then wins later', () => {
+  it('takes the same-turn winning dump after declaring', () => {
     const s = createGame({ numPlayers: 2, random: () => 0.1 });
     s.discardPile = [{ id: '9-hearts-top', suit: 'hearts', rank: '9' }];
     s.hands[0] = [
@@ -110,34 +110,11 @@ describe('bots', () => {
     ];
     s.hands[1] = [{ id: '4-clubs', suit: 'clubs', rank: '4' }];
     s.currentPlayer = 0;
-    expect(shouldDeclareKadi(s, 0)).toBe(true);
     expect(declareKadi(s, 0)).toBe(true);
-    const setup = chooseMove(s, 0, 'hard', () => 0.1);
-    expect(setup?.cards).toHaveLength(1);
-    const r = playCombo(s, 0, setup!.cards, setup!.declaredSuit, setup!.requestedCard ?? null);
-    expect(r.ok).toBe(true);
-    expect(r.won).toBeFalsy();
-    expect(s.hands[0]).toHaveLength(1);
-    // Opponents get their turn before the finish.
-    passOrPick(s, 1);
-    expect(s.currentPlayer).toBe(0);
-    const finish = chooseMove(s, 0, 'hard', () => 0.1);
-    expect(finish?.cards).toHaveLength(1);
-    const win = playCombo(s, 0, finish!.cards, finish!.declaredSuit, finish!.requestedCard ?? null);
-    expect(win.won).toBe(true);
-  });
-
-  it('does not call when the dump has no safe setup single', () => {
-    const s = createGame({ numPlayers: 2, random: () => 0.1 });
-    s.discardPile = [{ id: '9-hearts-top', suit: 'hearts', rank: '9' }];
-    s.hands[0] = [
-      { id: 'q-hearts', suit: 'hearts', rank: 'Q' },
-      { id: 'q-spades', suit: 'spades', rank: 'Q' },
-      { id: '5-spades', suit: 'spades', rank: '5' },
-    ];
-    expect(canDumpWinningNow(s, 0)).toBe(true);
-    expect(hasSetupMove(s, 0)).toBe(false);
-    expect(shouldDeclareKadi(s, 0)).toBe(false);
+    const move = chooseMove(s, 0, 'hard', () => 0.1);
+    expect(move?.cards).toHaveLength(2);
+    const r = playCombo(s, 0, move!.cards, move!.declaredSuit, move!.requestedCard ?? null);
+    expect(r.won).toBe(true);
   });
 
   it('bestSuit picks the majority suit', () => {
@@ -283,23 +260,12 @@ describe('bots', () => {
     expect(move?.cards[0]).toMatchObject({ rank: '2', suit: 'hearts' });
   });
 
-  it('an active caller stays a threat even without a finish', () => {
-    const s = createGame({ numPlayers: 3, random: () => 0.1 });
-    s.discardPile = [{ id: '9-hearts-top', suit: 'hearts', rank: '9' }];
-    s.hands[1] = [{ id: 'junk', suit: 'clubs', rank: '4' }];
-    s.kadiCalls[1] = true;
-    expect(isDeclaredThreat(s, 1)).toBe(true);
-    s.hands[1] = [];
-    expect(isDeclaredThreat(s, 1)).toBe(false);
-  });
-
   it('ace answering a question carries no suit declaration (suit follows the Ace)', () => {
     const s = createGame({ numPlayers: 2, random: () => 0.1 });
     s.discardPile = [{ id: '9-spades-top', suit: 'spades', rank: '9' }];
     s.hands[0] = [
       { id: 'q-spades', suit: 'spades', rank: 'Q' },
       { id: 'a-diamonds', suit: 'diamonds', rank: 'A' },
-      { id: 'keep', suit: 'clubs', rank: '4' },
     ];
     s.hands[1] = [
       { id: 'o1', suit: 'clubs', rank: '4' },

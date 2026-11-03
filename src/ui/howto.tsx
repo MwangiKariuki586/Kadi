@@ -385,7 +385,7 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
           <Section
             id="kadi"
             title="📢 Niko Kadi"
-            line="Shout Niko Kadi when your whole hand can go out, then survive a round. Play a non-winning setup; opponents get a turn to ruin the hand, and you finish later only if it still closes. A false call makes you kula +1 and locks the button until your next turn."
+            line="Shout Niko Kadi before you dump your whole hand. Same turn is fine. A false call makes you kula +1 and locks the button until your next turn."
           >
             <ChoiceBoardView board={choiceBoard("kadi-shout-now")} />
             <ChoiceBoardView board={choiceBoard("kadi-too-early")} />
@@ -450,7 +450,7 @@ export function HowToScreen({ onBack }: { onBack: () => void }) {
           <Section
             id="win"
             title="🏆 Winning"
-            line="Dump everything in one move, ending clean. Shout Niko Kadi on an earlier turn and survive the round first."
+            line="Dump everything in one move, ending clean. Shout Niko Kadi first; same turn counts."
           >
             <TryBoard board={playBoard("win-clean")} />
             <TryBoard board={playBoard("win-ace-answer")} />

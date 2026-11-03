@@ -9,7 +9,7 @@ export type InvalidReason =
   | 'NOT_YOUR_TURN' | 'CARD_NOT_IN_HAND' | 'GAME_OVER'
   | 'NO_MATCH' | 'QUESTION_NEEDS_ANSWER' | 'PENALTY_MUST_STACK_OR_BLOCK'
   | 'ACE_ONLY_STACKS_WITH_ACE' | 'MUST_BE_SAME_RANK'
-  | 'SKIP_MUST_COUNTER_OR_ACCEPT' | 'REVERSE_MUST_COUNTER_OR_ACCEPT' | 'CANNOT_WIN_YET' | 'KADI_WAIT' | 'UNMET_REQUEST';
+  | 'SKIP_MUST_COUNTER_OR_ACCEPT' | 'REVERSE_MUST_COUNTER_OR_ACCEPT' | 'CANNOT_WIN_YET' | 'UNMET_REQUEST';
 
 export interface ComboCheck {
   ok: boolean;
@@ -302,21 +302,7 @@ export function validateCombo(cards: Card[], state: GameState, playerIndex: numb
     if (!hand.some((h) => h.id === c.id)) return { ok: false, reason: 'CARD_NOT_IN_HAND' };
   }
 
-  const table = validateVsTable(cards, state);
-  if (!table.ok) return table;
-
-  // A whole-hand winning dump is only legal once the call has survived a
-  // round. Same-turn call + dump is rejected before any state changes.
-  if (
-    cards.length === hand.length &&
-    kadiRequired(state.config) &&
-    state.kadiCalls[playerIndex] === true &&
-    !kadiWaitSatisfied(state, playerIndex) &&
-    canDumpWinningNow(state, playerIndex)
-  ) {
-    return { ok: false, reason: 'KADI_WAIT' };
-  }
-  return { ok: true };
+  return validateVsTable(cards, state);
 }
 
 /** Table legality of a combo, ignoring whose turn it is (powers capability search). */
@@ -494,22 +480,9 @@ export function kadiRequired(config: RulesConfig): boolean {
   return config.mustSayNikoKadi !== false;
 }
 
-/** The call itself is active; the wait is checked separately by kadiWaitSatisfied. */
+/** The call itself is valid; a same-turn call is enough (the dump follows it). */
 export function hasValidKadiCall(state: GameState, playerIndex: number): boolean {
   return !kadiRequired(state.config) || state.kadiCalls[playerIndex] === true;
-}
-
-/**
- * A KADI call must survive a round before it can win. The turn counter
- * advances whenever play leaves the caller and comes back — a normal round,
- * a jump-all, or a kickback bounce — so a legal same-turn return still
- * satisfies the wait. A refusal that keeps the turn does not advance it.
- */
-export function kadiWaitSatisfied(state: GameState, playerIndex: number): boolean {
-  if (!kadiRequired(state.config)) return true;
-  if (state.kadiCalls[playerIndex] !== true) return false;
-  const calledTurn = state.kadiCallTurn?.[playerIndex] ?? -1;
-  return calledTurn < state.turnNumber;
 }
 
 export function isKadiLocked(state: GameState, playerIndex: number): boolean {
@@ -558,8 +531,8 @@ export function canCallKadi(state: GameState, playerIndex: number): boolean {
 /**
  * Find an order that dumps the entire hand in one winning move against the
  * current table, ignoring whether the player called. Used by bots to take
- * the win once the call has matured and by the pre-call finish cue;
- * `canFinishNow` adds the call + wait requirements for the live threat badge.
+ * the same-turn win and by the pre-call finish cue; `canFinishNow` adds the
+ * call requirement for the live threat badge.
  */
 export function winningDumpOrder(state: GameState, playerIndex: number): Card[] | null {
   const { config } = state;
@@ -595,17 +568,13 @@ export function canDumpWinningNow(state: GameState, playerIndex: number): boolea
 }
 
 /**
- * Live finish check: the player has a call that has survived a round and can
+ * Live threat check for the KADI! badge: the player has a valid call and can
  * dump their entire hand in one legal, winning-only combo against the current
- * table. Anything else (debt to answer, same-turn call, cardless blocker,
- * oversized hand) reads as not-finishable.
+ * table. Anything else (debt to answer, undeclared on a call table, cardless
+ * blocker, oversized hand) reads as not-finishable.
  */
 export function canFinishNow(state: GameState, playerIndex: number): boolean {
-  return (
-    hasValidKadiCall(state, playerIndex) &&
-    kadiWaitSatisfied(state, playerIndex) &&
-    canDumpWinningNow(state, playerIndex)
-  );
+  return hasValidKadiCall(state, playerIndex) && canDumpWinningNow(state, playerIndex);
 }
 
 export function canDeclareKadi(state: GameState, playerIndex: number): boolean {
@@ -618,7 +587,7 @@ export function declareKadi(state: GameState, playerIndex: number): boolean {
   if (!canDeclareKadi(state, playerIndex)) return false;
   state.kadiCalls[playerIndex] = true;
   state.kadiCallTurn[playerIndex] = state.turnNumber;
-  state.lastEffect = playerIndex === 0 ? 'You are KADI! Survive the round!' : `Player ${playerIndex + 1} is KADI! Stop them before their next turn!`;
+  state.lastEffect = playerIndex === 0 ? 'You are KADI! Go out now!' : `Player ${playerIndex + 1} is KADI! Stop them!`;
   return true;
 }
 
@@ -893,14 +862,13 @@ export function playCombo(
   }
 
   // Win check: hand empty AND final combo is winning-only AND Kadi was called
-  // on an earlier turn (kadiCallTurn < turnNumber; validateCombo rejects a
-  // same-turn dump before this point) AND no cardless blocker.
+  // (a same-turn call counts: the press must come before the dump) AND no
+  // cardless blocker.
   if (hand.length === 0) {
     const kadiOk = hasValidKadiCall(state, playerIndex);
-    const waited = kadiWaitSatisfied(state, playerIndex);
     const winningCombo = comboIsWinningOnly(cards, state);
     const blocked = winsBlockedByCardless(state, playerIndex);
-    if (kadiOk && waited && winningCombo && !blocked) {
+    if (kadiOk && winningCombo && !blocked) {
       state.gameOver = true;
       state.winnerIndex = playerIndex;
       return { ok: true, won: true };

@@ -5,12 +5,7 @@ import {
   useRef,
   useState,
 } from "preact/hooks";
-import {
-  chooseMove,
-  hasSetupMove,
-  shouldDeclareKadi,
-  type Difficulty,
-} from "./bots/bot";
+import { chooseMove, shouldDeclareKadi, type Difficulty } from "./bots/bot";
 import type { Card, Rank, Suit } from "./engine/cards";
 import { cardLabel } from "./engine/cards";
 import { PRESETS, STANDARD_MAUA, type RulesConfig } from "./engine/rules";
@@ -18,12 +13,10 @@ import { createGame, topCard, type GameState } from "./engine/state";
 import {
   canDeclareKadi,
   canDumpWinningNow,
-  canFinishNow,
   declareKadi,
   isAceAnswerCombo,
   isKadiLocked,
   isSuperAceCombo,
-  kadiWaitSatisfied,
   legalSingles,
   passOrPick,
   playCombo,
@@ -445,9 +438,9 @@ export function App() {
         bump();
         return;
       }
-      // Claim phase: narrate the call immediately and give the banner a
-      // readable beat before the setup move (not the winning dump — the
-      // call must survive a round before the hand can go out).
+      // Claim phase: narrate the call immediately (previously it only
+      // surfaced via describePlay's diff, so a claim followed by a pick was
+      // silent) and give the banner a readable beat before the dump.
       const wantsToDeclare =
         shouldDeclareKadi(s, me) &&
         (difficulty !== "easy" || Math.random() < 0.6);
@@ -777,17 +770,17 @@ export function App() {
   const top = topCard(state);
   const myHand = state.hands[0];
   const myTurn = state.currentPlayer === 0 && !state.gameOver;
-  // The buzzer is live only on your turn, until you call or get locked.
-  // A call is a claim that must survive a round before the dump can win.
+  // The buzzer is live until you call, get locked by a false call, or the
+  // table has the declaration rule off. One call per turn is the safe rule:
+  // a false call fines once and locks the button until your next turn.
   const kadiEnabled = state.config.mustSayNikoKadi !== false;
   const kadiCalled = state.kadiCalls[0] === true;
   const kadiLocked = kadiEnabled && !kadiCalled && isKadiLocked(state, 0);
   const kadiCanCall =
-    kadiEnabled && myTurn && !kadiCalled && !kadiLocked && myHand.length > 0;
-  const kadiCanDumpNow = myTurn && canDumpWinningNow(state, 0);
-  const kadiSetup = kadiCanDumpNow && hasSetupMove(state, 0);
-  const kadiFinishNow = myTurn && canFinishNow(state, 0);
-  const kadiUrgent = kadiSetup && kadiEnabled && !kadiCalled && !kadiLocked;
+    kadiEnabled && !kadiCalled && !kadiLocked && myHand.length > 0;
+  const kadiFinishNow = myTurn && canDumpWinningNow(state, 0);
+  const kadiUrgent =
+    kadiFinishNow && kadiEnabled && !kadiCalled && !kadiLocked;
   const kadiTitle = !kadiEnabled
     ? "KADI calls are off for this table"
     : myHand.length === 0
@@ -795,16 +788,12 @@ export function App() {
       : kadiCalled
         ? kadiFinishNow
           ? "KADI called, finish now!"
-          : "KADI called, play on — finish when the table opens"
-        : !myTurn
-          ? "Wait for your turn to call KADI"
-          : kadiLocked
-            ? "False KADI, locked until your next turn"
-            : kadiUrgent
-              ? "Call KADI now, play a setup, finish next turn"
-              : kadiCanDumpNow
-                ? "No safe single setup — calling now may be voided. Play on."
-                : `Say KADI anytime, a wrong call is fined +${state.config.falseKadiPickCount} and locks the button`;
+          : "KADI called, play on"
+        : kadiLocked
+          ? "False KADI, locked until your next turn"
+          : kadiFinishNow
+            ? "Your hand can go out, press KADI first!"
+            : `Say KADI anytime, a wrong call is fined +${state.config.falseKadiPickCount} and locks the button`;
   const kadiStateLabel = !kadiEnabled || myHand.length === 0
     ? "off"
     : kadiCalled
@@ -830,20 +819,17 @@ export function App() {
         selectedCards.some((c) => c.rank === "JOKER"),
       )
     : null;
-  const wholeHandWin =
+  const winningDumpBlocked =
     kadiEnabled &&
+    !kadiCalled &&
     myTurn &&
     myHand.length > 0 &&
     selectedCards.length === myHand.length &&
-    kadiCanDumpNow;
-  const kadiWaitBlocked = kadiCalled && !kadiWaitSatisfied(state, 0);
-  const winningDumpBlocked = wholeHandWin && (!kadiCalled || kadiWaitBlocked);
+    canDumpWinningNow(state, 0);
   const winningDumpNote = winningDumpBlocked
     ? kadiLocked
       ? "False KADI: this dump cannot win until your next turn."
-      : kadiCalled
-        ? "KADI called — survive the round before this dump wins."
-        : "Press KADI first - this dump wins."
+      : "Press KADI first - this dump wins."
     : null;
 
   const toggleSelect = (card: Card) => {
@@ -867,17 +853,15 @@ export function App() {
   ) => {
     if (
       kadiEnabled &&
+      !kadiCalled &&
       cards.length === myHand.length &&
-      canDumpWinningNow(state, 0) &&
-      (!kadiCalled || !kadiWaitSatisfied(state, 0))
+      canDumpWinningNow(state, 0)
     ) {
       sfx.error();
       pushNotice(
         kadiLocked
           ? "False KADI - this dump cannot win until your next turn."
-          : kadiCalled
-            ? "KADI called - survive the round before this dump wins."
-            : "Press KADI first - this dump wins.",
+          : "Press KADI first - this dump wins.",
         state.turnNumber,
       );
       return;
@@ -974,10 +958,6 @@ export function App() {
     if (state.gameOver) return;
     if (!kadiEnabled) {
       pushNotice("KADI calls are off for this table.", state.turnNumber);
-      return;
-    }
-    if (!myTurn) {
-      pushNotice("Wait for your turn to call KADI.", state.turnNumber);
       return;
     }
     if (state.kadiCalls[0]) {
@@ -1089,8 +1069,6 @@ export function App() {
       canDeclareKadi(state, 0) &&
       !isKadiLocked(state, 0) &&
       shouldDeclareKadi(state, 0),
-    kadiCalled,
-    kadiFinishNow,
   });
   const turnLine = state.gameOver
     ? "Game over"

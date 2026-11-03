@@ -303,11 +303,11 @@ export function OpponentSeat({
 }) {
   const threatLabel =
     threat === "kadi"
-      ? "KADI called, survive the round"
+      ? "KADI called"
       : threat === "finish"
         ? isTurn
-          ? "Can call KADI and finish"
-          : "One move from calling KADI"
+          ? "Can finish this turn"
+          : "One move from finishing"
         : "";
   const statusIcon = threat === "kadi" ? "📢" : threat ? "⚠" : "🂠";
 
@@ -341,7 +341,7 @@ export function OpponentSeat({
                 isTurn ? "anim-kadi-pulse text-red-300" : "text-amber-300"
               }`}
             >
-              {isTurn ? "CAN CALL" : "1 move"} · {cards} cards
+              {isTurn ? "CAN FINISH" : "1 move"} · {cards} cards
             </span>
           ) : thinking ? (
             "thinking…"

@@ -154,8 +154,8 @@ describe('feed', () => {
     expect(describeDeal(top).text).toContain('opens the pile');
   });
 
-  it('kadi call points the caller at surviving the round; false call names the fine and lock', () => {
-    expect(describeKadi('You').text).toMatch(/Survive the round/);
+  it('kadi call points the caller at the dump; false call names the fine and lock', () => {
+    expect(describeKadi('You').text).toMatch(/Go out now/);
     expect(describeKadi('You').text).toMatch(/You are KADI/);
     expect(describeKadi('Jabari').text).toMatch(/Jabari is KADI/);
     expect(describeKadi('Jabari').text).toMatch(/Stop them/);
@@ -247,8 +247,6 @@ describe('turnCoach', () => {
     invalidReason: null,
     legalCount: 3,
     kadiReady: false,
-    kadiCalled: false,
-    kadiFinishNow: false,
   };
 
   it('confirms a legal selection first, even with table state around', () => {
@@ -273,11 +271,7 @@ describe('turnCoach', () => {
 
   it('no plays, kadi chance, suit memory, default', () => {
     expect(turnCoach({ ...base, legalCount: 0 }).text).toMatch(/No playable card/);
-    expect(turnCoach({ ...base, legalCount: 0, kadiCalled: true }).text)
-      .toMatch(/picking voids the KADI call/);
-    expect(turnCoach({ ...base, kadiReady: true }).text).toMatch(/Call KADI.*setup/);
-    expect(turnCoach({ ...base, kadiCalled: true, kadiFinishNow: true }).text)
-      .toMatch(/KADI called.*win/);
+    expect(turnCoach({ ...base, kadiReady: true }).text).toMatch(/KADI/);
     expect(turnCoach({ ...base, activeSuit: 'spades', prevSuit: 'hearts', legalCount: 2 }).text)
       .toMatch(/Follow Spades.*was Hearts.*2 playable/);
     expect(turnCoach(base).text).toMatch(/Match 10♥, 3 playable/);

@@ -10,13 +10,11 @@ export type SeatThreat = "kadi" | "finish" | null;
  *            finishability: the call is public and must stay on the card after
  *            the toast, after the seat's turn, and through the winning dump.
  *            kadiCalls only clears when that seat picks cards.
- * "finish" — the seat can dump its whole hand now but has not called, so it
- *            is one turn from calling KADI and finishing.
+ * "finish" — the seat can dump its whole hand now but has not called.
  *
- * Uses canDumpWinningNow (call-agnostic) instead of canFinishNow: a caller
- * that has not survived a round yet reads "kadi", and a not-yet-caller that
- * can go out reads "finish" even before the call. On silent-finish tables
- * kadiCalls stays false, so the seat reads "finish".
+ * Uses canDumpWinningNow (call-agnostic) instead of canFinishNow: bots call
+ * and finish in the same tick, so a call-gated check is never observable.
+ * On silent-finish tables kadiCalls stays false, so the seat reads "finish".
  */
 export function seatThreat(state: GameState, seat: number): SeatThreat {
   const called =

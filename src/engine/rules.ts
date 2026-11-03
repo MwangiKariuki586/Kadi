@@ -51,7 +51,7 @@ export interface RulesConfig {
   unansweredQuestionPickCount: number;
   /** Ranks that alone can finish a game. */
   winningRanks: Rank[];
-  /** Must say Niko Kadi and survive a round before finishing. */
+  /** Must say Niko Kadi before finishing; same-turn calls count. */
   mustSayNikoKadi: boolean;
   /** Someone cardless at the table blocks every win. */
   cardlessBlocksWin: boolean;
