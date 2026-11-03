@@ -92,6 +92,18 @@ describe('question + answer', () => {
     expect(s.gameOver).toBe(true);
   });
 
+  it('same-turn call wins with a pair on a 4-player table', () => {
+    // Regression: screenshot case — top 10♥, hand 5♦ + 5♥, KADI called on
+    // the same turn the pair goes out.
+    const s = rigged([C('5', 'hearts', '5h'), C('5', 'diamonds', '5d')], C('10', 'hearts', '10h'), [], 4);
+    s.turnNumber = 15;
+    expect(declareKadi(s, 0)).toBe(true);
+    const r = playCombo(s, 0, [...s.hands[0]]);
+    expect(r.won).toBe(true);
+    expect(r.fined).toBeFalsy();
+    expect(s.winnerIndex).toBe(0);
+  });
+
   it('declared-earlier clean dump still wins with no fine', () => {
     const q = C('Q', 'hearts', 'q1');
     const ans = C('5', 'hearts', 'a1');
