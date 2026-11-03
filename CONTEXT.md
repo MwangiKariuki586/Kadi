@@ -108,8 +108,9 @@ but it must land before the dump.
 1 human + 1–3 bots (2–4 seats, engine supports 5). Difficulties:
 * **Easy** — mostly random legal moves, sometimes eats penalties it could answer.
 * **Medium/Hard** — stack penalties, save Aces, pair Q+answers, shed max cards, attack close
-  rivals with penalties/super aces, declare Kadi on winnable shape, demand cards they hold
-  (single deck ⇒ unanswerable), meet exact demands when able else downgrade else draw.
+  rivals with penalties/super aces, use the same checked KADI declaration as the player
+  (ready calls always, early claims by difficulty), demand cards they hold (single deck ⇒
+  unanswerable), meet exact demands when able else downgrade else draw.
 * All bot moves are generated through `validateCombo`, so illegal bot moves are impossible by
   construction (fuzz-tested). A visible `🐞 stalls` tripwire narrates any rejected bot move
   instead of swallowing it, so future ghosts leave evidence.
@@ -132,9 +133,10 @@ but it must land before the dump.
   survives the toast, the bot's turn, and the winning dump (it clears only if
   that seat picks cards). Only opponent claims raise the large, non-blocking
   top banner — the one deliberate in-game exception to "feed only" — with a
-  ~900ms beat before a bot's winning dump. Bots only declare when the current
-  table lets them dump, so a claim is always followed by the win rather than a
-  claim-voiding pick. Your own claim is status-only: feed line plus the
+  ~900ms beat before a bot's next move. Bots use the same checked declaration
+  path as the player: ready calls are always taken, and harder bots may stake an
+  early claim when the hand can finish later. Picking voids that claim exactly
+  as it does for the player. Your own claim is status-only: feed line plus the
   buzzer's "KADI called" state, never the banner. If a bot wins after calling,
   the result dialog repeats the claim because the overlay covers the seat cards.
 * **Turn coach is opt-in (default off):** contextual `turnCoach` line (debts → corrections →

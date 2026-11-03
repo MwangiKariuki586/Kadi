@@ -1,6 +1,6 @@
 import type { Card, Suit } from '../engine/cards';
 import { isJumpRank, isKickbackRank, isPenaltyRank, isWinningRank } from '../engine/rules';
-import { isAceAnswerCombo, isSuperAceCombo, comboLeavesQuestionOpen, canDeclareKadi, canDumpWinningNow, canFinishNow, hasValidKadiCall, legalSingles, validateCombo, winningDumpOrder } from '../engine/validator';
+import { isAceAnswerCombo, isSuperAceCombo, comboLeavesQuestionOpen, canCallKadi, canDeclareKadi, canDumpWinningNow, canFinishNow, hasValidKadiCall, isKadiLocked, legalSingles, validateCombo, winningDumpOrder } from '../engine/validator';
 import { topCard, type GameState } from '../engine/state';
 
 // Re-export for single import path (validator lives in engine/validator)
@@ -110,12 +110,32 @@ export function isDeclaredThreat(state: GameState, playerIndex: number): boolean
   return canFinishNow(state, playerIndex);
 }
 
-export function shouldDeclareKadi(state: GameState, playerIndex: number): boolean {
-  // Bots only call when the current table lets them dump the whole hand.
-  // Calling early and then picking would void the claim (drawCards) and make
-  // the claim toast/card badge lie. Humans may still call early via
-  // tryDeclareKadi; this guard is bot policy, not a rule change.
-  return canDeclareKadi(state, playerIndex) && canDumpWinningNow(state, playerIndex);
+/**
+ * Bot call policy. This is a decision, not a rule: the bot uses the same
+ * checked declaration path as the human (`tryDeclareKadi`), so a call is
+ * legal only when the hand can eventually go out in one play. A ready call
+ * is always taken (Easy sometimes hesitates); an early call stakes the claim
+ * before the table opens, with difficulty controlling the appetite for that
+ * risk. Picking later voids the claim exactly as it does for the human.
+ */
+export function shouldDeclareKadi(
+  state: GameState,
+  playerIndex: number,
+  difficulty: Difficulty = 'medium',
+  random: () => number = Math.random,
+): boolean {
+  if (!canDeclareKadi(state, playerIndex) || isKadiLocked(state, playerIndex)) {
+    return false;
+  }
+  // Same false-call gate as the human: the hand must be able to finish in one
+  // legal winning play, even if the current table does not allow it yet.
+  if (!canCallKadi(state, playerIndex)) return false;
+  if (canDumpWinningNow(state, playerIndex)) {
+    return difficulty !== 'easy' || random() < 0.6;
+  }
+  const earlyCallChance =
+    difficulty === 'hard' ? 0.65 : difficulty === 'medium' ? 0.35 : 0.15;
+  return random() < earlyCallChance;
 }
 
 export function chooseMove(

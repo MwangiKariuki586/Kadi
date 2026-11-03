@@ -13,7 +13,6 @@ import { createGame, topCard, type GameState } from "./engine/state";
 import {
   canDeclareKadi,
   canDumpWinningNow,
-  declareKadi,
   isAceAnswerCombo,
   isKadiLocked,
   isSuperAceCombo,
@@ -440,18 +439,26 @@ export function App() {
       }
       // Claim phase: narrate the call immediately (previously it only
       // surfaced via describePlay's diff, so a claim followed by a pick was
-      // silent) and give the banner a readable beat before the dump.
-      const wantsToDeclare =
-        shouldDeclareKadi(s, me) &&
-        (difficulty !== "easy" || Math.random() < 0.6);
-      if (wantsToDeclare && declareKadi(s, me)) {
-        sfx.kadi();
-        haptics.penalty();
-        pushFeed(describeKadi(NAMES[me], s.turnNumber));
-        showKadiAlert(me);
-        bump();
-        id = window.setTimeout(runBot, 900);
-        return;
+      // silent) and give the banner a readable beat before the next move.
+      // Bots use the same checked declaration path as the human, so a false
+      // call would be fined/locked exactly like the player's.
+      if (shouldDeclareKadi(s, me, difficulty)) {
+        const call = tryDeclareKadi(s, me);
+        if (call.ok) {
+          sfx.kadi();
+          haptics.penalty();
+          pushFeed(describeKadi(NAMES[me], s.turnNumber));
+          showKadiAlert(me);
+          bump();
+          id = window.setTimeout(runBot, 900);
+          return;
+        }
+        if (call.falseCall) {
+          sfx.error();
+          haptics.penalty();
+          pushFeed(describeFalseKadi(NAMES[me], call.fined ?? 0, s.turnNumber));
+          bump();
+        }
       }
 
       actions += 1;
@@ -1068,7 +1075,7 @@ export function App() {
     kadiReady:
       canDeclareKadi(state, 0) &&
       !isKadiLocked(state, 0) &&
-      shouldDeclareKadi(state, 0),
+      canDumpWinningNow(state, 0),
   });
   const turnLine = state.gameOver
     ? "Game over"

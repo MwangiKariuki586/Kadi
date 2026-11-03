@@ -602,12 +602,11 @@ export interface DeclareResult {
 }
 
 /**
- * Checked Kadi declaration for UI use (bots keep using
- * shouldDeclareKadi + declareKadi, which is already capability-checked).
- * The buzzer stays pressable anytime, but a press without a legally
- * winnable hand is a false call: no flag is set, the player is fined
- * `falseKadiPickCount` immediately, and the buzzer is locked until their
- * next turn. The turn does NOT advance (calling is a speech act, not a move).
+ * Checked Kadi declaration for the player and bots. The buzzer stays
+ * pressable anytime, but a press without a legally winnable hand is a false
+ * call: no flag is set, the player is fined `falseKadiPickCount` immediately,
+ * and the buzzer is locked until their next turn. The turn does NOT advance
+ * (calling is a speech act, not a move).
  */
 export function tryDeclareKadi(state: GameState, playerIndex: number): DeclareResult {
   if (!canDeclareKadi(state, playerIndex)) return { ok: false };

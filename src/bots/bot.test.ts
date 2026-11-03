@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BOM_NI_BOM, STANDARD_MAUA } from '../engine/rules';
 import { createGame } from '../engine/state';
-import { declareKadi, playCombo } from '../engine/validator';
+import { declareKadi, playCombo, tryDeclareKadi } from '../engine/validator';
 import { bestSuit, chooseMove, chooseRequestCard, isDeclaredThreat, shouldDeclareKadi } from './bot';
 
 describe('bots', () => {
@@ -75,17 +75,31 @@ describe('bots', () => {
       { id: 'q-hearts', suit: 'hearts', rank: 'Q' },
       { id: '5-hearts', suit: 'hearts', rank: '5' },
     ];
-    expect(shouldDeclareKadi(s, 0)).toBe(true);
+    expect(shouldDeclareKadi(s, 0, 'medium', () => 0.9)).toBe(true);
   });
 
-  it('does not declare when the current table blocks the dump', () => {
+  it('may call early when the hand can finish later', () => {
     const s = createGame({ numPlayers: 2, random: () => 0.1 });
     s.discardPile = [{ id: 'k-clubs-top', suit: 'clubs', rank: 'K' }];
     s.hands[0] = [
       { id: 'q-hearts', suit: 'hearts', rank: 'Q' },
       { id: '5-hearts', suit: 'hearts', rank: '5' },
     ];
-    expect(shouldDeclareKadi(s, 0)).toBe(false);
+    // Hard takes the early-call risk; with a high roll it waits instead.
+    expect(shouldDeclareKadi(s, 0, 'hard', () => 0.1)).toBe(true);
+    expect(shouldDeclareKadi(s, 0, 'hard', () => 0.9)).toBe(false);
+    // Easy is far less willing to stake an early claim.
+    expect(shouldDeclareKadi(s, 0, 'easy', () => 0.2)).toBe(false);
+  });
+
+  it('does not call when the hand can never finish', () => {
+    const s = createGame({ numPlayers: 2, random: () => 0.1 });
+    s.discardPile = [{ id: 'k-clubs-top', suit: 'clubs', rank: 'K' }];
+    s.hands[0] = [
+      { id: 'q-hearts', suit: 'hearts', rank: 'Q' },
+      { id: '5-clubs', suit: 'clubs', rank: '5' },
+    ];
+    expect(shouldDeclareKadi(s, 0, 'hard', () => 0.1)).toBe(false);
   });
 
   it('does not declare when the table allows silent finishes', () => {
@@ -98,7 +112,24 @@ describe('bots', () => {
       { id: 'q-hearts', suit: 'hearts', rank: 'Q' },
       { id: '5-hearts', suit: 'hearts', rank: '5' },
     ];
-    expect(shouldDeclareKadi(s, 0)).toBe(false);
+    expect(shouldDeclareKadi(s, 0, 'medium', () => 0.1)).toBe(false);
+  });
+
+  it('turns an early call into a win once the table opens', () => {
+    const s = createGame({ numPlayers: 2, random: () => 0.1 });
+    s.discardPile = [{ id: 'k-clubs-top', suit: 'clubs', rank: 'K' }];
+    s.hands[0] = [
+      { id: 'q-hearts', suit: 'hearts', rank: 'Q' },
+      { id: '5-hearts', suit: 'hearts', rank: '5' },
+    ];
+    s.currentPlayer = 0;
+    expect(tryDeclareKadi(s, 0).ok).toBe(true);
+    // The table opens on a later turn; the standing claim is still live.
+    s.discardPile = [{ id: '9-hearts-top', suit: 'hearts', rank: '9' }];
+    const move = chooseMove(s, 0, 'hard', () => 0.1);
+    expect(move?.cards).toHaveLength(2);
+    const r = playCombo(s, 0, move!.cards, move!.declaredSuit, move!.requestedCard ?? null);
+    expect(r.won).toBe(true);
   });
 
   it('takes the same-turn winning dump after declaring', () => {
