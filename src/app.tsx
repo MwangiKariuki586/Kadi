@@ -13,9 +13,11 @@ import { createGame, topCard, type GameState } from "./engine/state";
 import {
   canDeclareKadi,
   canDumpWinningNow,
+  canFinishNow,
   isAceAnswerCombo,
   isKadiLocked,
   isSuperAceCombo,
+  kadiWaitSatisfied,
   legalSingles,
   passOrPick,
   playCombo,
@@ -778,16 +780,19 @@ export function App() {
   const myHand = state.hands[0];
   const myTurn = state.currentPlayer === 0 && !state.gameOver;
   // The buzzer is live until you call, get locked by a false call, or the
-  // table has the declaration rule off. One call per turn is the safe rule:
-  // a false call fines once and locks the button until your next turn.
+  // table has the declaration rule off. A call is a claim that must survive
+  // every opponent's turn before the winning dump can land.
   const kadiEnabled = state.config.mustSayNikoKadi !== false;
   const kadiCalled = state.kadiCalls[0] === true;
   const kadiLocked = kadiEnabled && !kadiCalled && isKadiLocked(state, 0);
   const kadiCanCall =
     kadiEnabled && !kadiCalled && !kadiLocked && myHand.length > 0;
-  const kadiFinishNow = myTurn && canDumpWinningNow(state, 0);
+  const kadiCanDumpNow = myTurn && canDumpWinningNow(state, 0);
+  const kadiWait =
+    kadiEnabled && kadiCalled && !kadiWaitSatisfied(state, 0);
+  const kadiFinishNow = kadiEnabled && myTurn && canFinishNow(state, 0);
   const kadiUrgent =
-    kadiFinishNow && kadiEnabled && !kadiCalled && !kadiLocked;
+    kadiCanDumpNow && kadiEnabled && !kadiCalled && !kadiLocked;
   const kadiTitle = !kadiEnabled
     ? "KADI calls are off for this table"
     : myHand.length === 0
@@ -795,11 +800,13 @@ export function App() {
       : kadiCalled
         ? kadiFinishNow
           ? "KADI called, finish now!"
-          : "KADI called, play on"
+          : kadiWait
+            ? "KADI called — all opponents must play before you can finish."
+            : "KADI called, play on"
         : kadiLocked
           ? "False KADI, locked until your next turn"
-          : kadiFinishNow
-            ? "Your hand can go out, press KADI first!"
+          : kadiCanDumpNow
+            ? "Your hand can go out — call KADI, then survive all opponents."
             : `Say KADI anytime, a wrong call is fined +${state.config.falseKadiPickCount} and locks the button`;
   const kadiStateLabel = !kadiEnabled || myHand.length === 0
     ? "off"
@@ -826,17 +833,20 @@ export function App() {
         selectedCards.some((c) => c.rank === "JOKER"),
       )
     : null;
-  const winningDumpBlocked =
+  const wholeHandWin =
     kadiEnabled &&
-    !kadiCalled &&
     myTurn &&
     myHand.length > 0 &&
     selectedCards.length === myHand.length &&
-    canDumpWinningNow(state, 0);
+    kadiCanDumpNow;
+  const winningDumpBlocked =
+    wholeHandWin && (!kadiCalled || kadiWait);
   const winningDumpNote = winningDumpBlocked
     ? kadiLocked
       ? "False KADI: this dump cannot win until your next turn."
-      : "Press KADI first - this dump wins."
+      : kadiCalled
+        ? "KADI called — all opponents must play before this dump wins."
+        : "Press KADI first - this dump wins."
     : null;
 
   const toggleSelect = (card: Card) => {
@@ -860,15 +870,17 @@ export function App() {
   ) => {
     if (
       kadiEnabled &&
-      !kadiCalled &&
       cards.length === myHand.length &&
-      canDumpWinningNow(state, 0)
+      canDumpWinningNow(state, 0) &&
+      (!kadiCalled || kadiWait)
     ) {
       sfx.error();
       pushNotice(
         kadiLocked
           ? "False KADI - this dump cannot win until your next turn."
-          : "Press KADI first - this dump wins.",
+          : kadiCalled
+            ? "KADI called - all opponents must play before this dump wins."
+            : "Press KADI first - this dump wins.",
         state.turnNumber,
       );
       return;
@@ -1076,6 +1088,9 @@ export function App() {
       canDeclareKadi(state, 0) &&
       !isKadiLocked(state, 0) &&
       canDumpWinningNow(state, 0),
+    kadiCalled,
+    kadiWait,
+    kadiFinishNow,
   });
   const turnLine = state.gameOver
     ? "Game over"
@@ -1302,9 +1317,11 @@ export function App() {
                   <p class="mb-1 text-center text-[11px] font-bold uppercase tracking-widest text-amber-300">
                     {kadiFinishNow
                       ? "KADI called, finish now!"
-                      : myTurn
-                        ? "KADI called, play on"
-                        : "KADI called"}
+                      : kadiWait
+                        ? "KADI called — survive all opponents"
+                        : myTurn
+                          ? "KADI called, play on"
+                          : "KADI called"}
                   </p>
                 )}
                 <KadiBuzzer
