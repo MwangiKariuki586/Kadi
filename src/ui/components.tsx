@@ -335,7 +335,7 @@ export function OpponentSeat({
           <span aria-hidden="true">{statusIcon}</span>
           {threat === "kadi" ? (
             <span class="flex items-center gap-1 font-black text-red-300">
-              📢 KADI!
+              KADI!
             </span>
           ) : threat === "finish" ? (
             <span
