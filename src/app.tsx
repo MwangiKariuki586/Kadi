@@ -1264,9 +1264,6 @@ export function App() {
       {!paused && kadiAlert !== null && (
         <KadiAlert name={NAMES[kadiAlert] ?? `Player ${kadiAlert + 1}`} />
       )}
-      {!paused && centerKadiName && (
-        <KadiCenterAlert name={centerKadiName} />
-      )}
       {suitPickerFor && (
         <SuitPicker
           onCancel={() => setSuitPickerFor(null)}
@@ -1467,6 +1464,9 @@ export function App() {
                   >
                     {turnLine}
                   </p>
+                )}
+                {!paused && centerKadiName && (
+                  <KadiCenterAlert name={centerKadiName} />
                 )}
               </div>
             </div>
