@@ -219,12 +219,8 @@ test("an opponent's KADI shows the center alert and a dominant on-card band", as
 
   await seedSave(page, save);
 
-  // Center-stage alert is obvious right after the human's turn.
-  await expect(page.getByTestId("kadi-center-alert")).toBeVisible();
-  await expect(page.getByTestId("kadi-center-alert")).toContainText(
-    "JABARI IS KADI!",
-  );
-  // The opponent's seat card carries a dominant KADI band.
+  // The opponent's seat card flashes red with a dominant KADI band.
   await expect(page.getByTestId("seat-left")).toContainText("KADI!");
   await expect(page.getByTestId("seat-left")).toContainText("Jabari");
+  await expect(page.getByTestId("seat-left")).toHaveClass(/border-red-500/);
 });

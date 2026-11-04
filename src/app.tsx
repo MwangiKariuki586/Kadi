@@ -49,7 +49,7 @@ import {
   SuitPicker,
   Toast,
 } from "./ui/components";
-import { KadiAlert, KadiCenterAlert } from "./ui/kadiAlert";
+import { KadiAlert } from "./ui/kadiAlert";
 import { seatThreat } from "./ui/threat";
 import { SettingsScreen } from "./ui/settings";
 import { RulesBuilder } from "./ui/rulesBuilder";
@@ -699,15 +699,6 @@ export function App() {
     () => (state ? state.hands.map((_, i) => seatThreat(state, i)) : []),
     [tick],
   );
-  /** First opponent seat that has called KADI — drives the center-stage alert. */
-  const kadiOpponentIdx = useMemo(
-    () => seatThreats.findIndex((t, i) => i > 0 && t === "kadi"),
-    [seatThreats],
-  );
-  const centerKadiName =
-    kadiOpponentIdx >= 0
-      ? BOT_NAMES[(kadiOpponentIdx - 1 + BOT_NAMES.length) % BOT_NAMES.length]
-      : null;
 
   if (!booted) {
     return (
@@ -1464,9 +1455,6 @@ export function App() {
                   >
                     {turnLine}
                   </p>
-                )}
-                {!paused && centerKadiName && (
-                  <KadiCenterAlert name={centerKadiName} />
                 )}
               </div>
             </div>

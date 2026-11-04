@@ -34,32 +34,3 @@ export function KadiAlert({ name }: { name: string }) {
     </div>
   );
 }
-
-/**
- * Center-stage KADI warning for an opponent. Persists for as long as an
- * opponent has called KADI so it is impossible to miss — especially right
- * after the human's turn, when the KADI opponent is about to play.
- * Renders inline in the table flow (not a fixed overlay) so it sits after
- * the "Your turn" message and never overlaps the topbar or player cards.
- */
-export function KadiCenterAlert({ name }: { name: string }) {
-  return (
-    <div
-      data-testid="kadi-center-alert"
-      role="alert"
-      aria-live="assertive"
-      class="mx-auto anim-fanfare anim-kadi-pulse flex w-full max-w-md flex-col items-center gap-2 rounded-2xl border-2 border-red-500/90 bg-red-900/95 px-5 py-4 shadow-[0_20px_60px_rgba(217,45,45,0.7)] backdrop-blur-md sm:flex-row sm:gap-5 sm:px-7 sm:py-5"
-    >
-      <Avatar name={name} size="lg" />
-      <div class="text-center min-w-0 sm:text-left">
-        <p class="font-black leading-tight text-red-100 sm:text-xl">
-          {name.toUpperCase()} IS KADI!
-        </p>
-        <p class="text-xs font-semibold text-white/80 sm:text-sm">
-          Stop them for a full round
-        </p>
-      </div>
-      <span aria-hidden="true" class="text-3xl sm:text-4xl">📢</span>
-    </div>
-  );
-}

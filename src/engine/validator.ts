@@ -632,7 +632,7 @@ export function declareKadi(state: GameState, playerIndex: number): boolean {
   state.lastEffect =
     playerIndex === 0
       ? 'You are KADI! Survive all opponents!'
-      : `Player ${playerIndex + 1} is KADI! Stop them for a full round!`;
+      : `Player ${playerIndex + 1} is KADI! Stop them!`;
   return true;
 }
 
