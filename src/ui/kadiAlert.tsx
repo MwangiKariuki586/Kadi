@@ -21,10 +21,10 @@ export function KadiAlert({ name }: { name: string }) {
         <Avatar name={name} size="lg" />
         <div class="min-w-0">
           <p class="text-lg font-black leading-tight text-red-200 sm:text-2xl">
-            {name.toUpperCase()} IS KADI!
+            {name.toUpperCase()} ako KADI!
           </p>
           <p class="text-xs font-semibold text-white/75 sm:text-sm">
-            Called KADI — stop them for a full round!
+            stop them!
           </p>
         </div>
         <span aria-hidden="true" class="ml-auto shrink-0 text-2xl sm:text-3xl">
