@@ -1136,7 +1136,6 @@ export function App() {
       declareKadi(state, 0);
       pushFeed(describeDelayKadi("You", fined, state.turnNumber));
       pushFeed(describeKadi("You", state.turnNumber));
-      showKadiAlert(0);
       sfx.penalty();
       haptics.penalty();
       bump();
@@ -1147,7 +1146,6 @@ export function App() {
       sfx.kadi();
       haptics.play();
       pushFeed(describeKadi("You", state.turnNumber));
-      showKadiAlert(0);
       bump();
     } else if (r.falseCall && r.fined) {
       sfx.penalty();
