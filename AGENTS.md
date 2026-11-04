@@ -11,6 +11,15 @@ interaction involving code changes. Do NOT skip or relax these.
 - Commit messages follow Conventional Commits: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
 - Squash-merge into `main`. Delete the branch after merge.
 
+## Pushing (explicit permission only)
+
+- Never push to any remote unless I explicitly say "push" (or an equivalent
+  direct instruction such as "push it" / "push this branch").
+- A request to commit, finish, review, or open a PR is **not** permission to
+  push. Stop and ask first.
+- This applies to every branch, including feature branches and `staging/*`.
+- Never force-push.
+
 ## Pull Requests (even for yourself)
 
 - Every change goes through a PR, no exceptions.
@@ -44,8 +53,9 @@ interaction involving code changes. Do NOT skip or relax these.
 
 - Merging feature/fix branches into `staging` is allowed at any time — no PR
   required, CI is not a gate there.
-- Merge locally (`git merge --no-ff`) and push, or open a PR with base
-  `staging` for visibility on bigger changes.
+- Merge locally (`git merge --no-ff`) and stop; push only on my explicit
+  command. If I ask for a PR with base `staging` for visibility on bigger
+  changes, that request includes permission to push that branch.
 - Never force-push a shared branch. Never commit directly to `main`.
 - Feature branches may be deleted right after merging to `staging`.
 - `main` rules stay strict no matter what staging allowed: every change via
@@ -60,7 +70,9 @@ interaction involving code changes. Do NOT skip or relax these.
 
 ## What I want from you
 
-- When I say "I'm done with X", help me: commit → push → open PR → verify CI.
+- When I say "I'm done with X", help me: commit locally, then stop and ask
+  before pushing. Only after I explicitly say "push" do you push, open the PR,
+  and verify CI.
 - When I say "merge it", verify the PR is green first. If not, tell me what's failing.
 - When I say "deploy", confirm I've validated staging before touching prod.
 - If I try to push to `main` directly or skip a PR, stop me and explain why.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BACKSTREET_PESA, BOM_NI_BOM, STANDARD_MAUA, migrateRules } from './rules';
 import { advanceTurn, createGame, type GameState } from './state';
-import { canCallKadi, canDumpWinningNow, canFinishNow, declareKadi, isKadiLocked, isSuperAceCombo, legalSingles, passOrPick, playCombo, resolveWrongPlay, tryDeclareKadi, validateCombo } from './validator';
+import { canCallKadi, canDumpWinningNow, canFinishNow, declareKadi, fineKadiDelay, isKadiLocked, isSuperAceCombo, kadiWaitSatisfied, legalSingles, passOrPick, playCombo, resolveWrongPlay, tryDeclareKadi, validateCombo } from './validator';
 import type { Card } from './cards';
 
 const C = (rank: Card['rank'], suit: Card['suit'] = 'hearts', id?: string): Card => ({
@@ -29,6 +29,17 @@ function callable(hand0: Card[], config = STANDARD_MAUA): boolean {
 function dumpable(hand0: Card[], config = STANDARD_MAUA): boolean {
   const s = rigged(hand0, C('9', 'hearts'), [C('4', 'clubs')], 2, config);
   return canDumpWinningNow(s, 0);
+}
+
+/**
+ * Simulate every opponent taking a turn after seat `p` called KADI.
+ * `kadiSeen[p]` is a bitmask of opponent seats that have acted.
+ */
+function surviveRound(s: GameState, p = 0): GameState {
+  const all = (1 << s.hands.length) - 1;
+  s.kadiSeen[p] = all & ~(1 << p);
+  s.currentPlayer = p;
+  return s;
 }
 
 describe('starter + matching', () => {
@@ -81,15 +92,38 @@ describe('question + answer', () => {
     expect(s.lastEffect).toMatch(/No call, fined \+1/);
   });
 
-  it('same-turn declaration counts when pressed before the dump', () => {
+  it('same-turn declaration cannot win; the dump waits for the round', () => {
     const fin = C('5', 'hearts', 'f1');
     const s = rigged([fin, C('4', 'clubs', 'k')], C('9', 'hearts'), [C('6', 'spades')]);
     expect(declareKadi(s, 0)).toBe(true);
     s.hands[0] = [fin];
+    const tooEarly = playCombo(s, 0, [fin]);
+    expect(tooEarly.ok).toBe(false);
+    expect(tooEarly.reason).toBe('KADI_WAIT');
+    expect(s.gameOver).toBe(false);
+    expect(s.hands[0].length).toBe(1);
+    surviveRound(s);
     const r = playCombo(s, 0, [fin]);
     expect(r.won).toBe(true);
     expect(r.fined).toBeFalsy();
     expect(s.gameOver).toBe(true);
+  });
+
+  it('a pair call waits for all opponents on a 4-player table', () => {
+    // Regression: screenshot case — top 10♥, hand 5♦ + 5♥, KADI called on
+    // the same turn the pair goes out. Three opponents must respond.
+    const s = rigged([C('5', 'hearts', '5h'), C('5', 'diamonds', '5d')], C('10', 'hearts', '10h'), [], 4);
+    s.turnNumber = 15;
+    expect(declareKadi(s, 0)).toBe(true);
+    const tooEarly = playCombo(s, 0, [...s.hands[0]]);
+    expect(tooEarly.ok).toBe(false);
+    expect(tooEarly.reason).toBe('KADI_WAIT');
+    expect(s.gameOver).toBe(false);
+    surviveRound(s);
+    const r = playCombo(s, 0, [...s.hands[0]]);
+    expect(r.won).toBe(true);
+    expect(r.fined).toBeFalsy();
+    expect(s.winnerIndex).toBe(0);
   });
 
   it('declared-earlier clean dump still wins with no fine', () => {
@@ -97,8 +131,7 @@ describe('question + answer', () => {
     const ans = C('5', 'hearts', 'a1');
     const s = rigged([q, ans], C('9', 'hearts'), [C('4', 'clubs'), C('6', 'spades')]);
     declareKadi(s, 0);
-    s.turnNumber += 1;
-    s.currentPlayer = 0;
+    surviveRound(s);
     const r = playCombo(s, 0, [q, ans]);
     expect(r.won).toBe(true);
     expect(r.fined).toBeFalsy();
@@ -534,9 +567,8 @@ describe('winning, Niko Kadi', () => {
     const fin = C('5', 'hearts', 'f1');
     const s = rigged([keep, fin], C('9', 'hearts'), [C('6', 'spades'), C('7', 'clubs')]);
     declareKadi(s, 0);
-    // play non-final first to advance a turn
-    s.currentPlayer = 0;
-    s.turnNumber += 1;
+    // The claim survives the opponent's response before the finish.
+    surviveRound(s);
     s.hands[0] = [fin];
     const r = playCombo(s, 0, [fin]);
     expect(r.won).toBe(true);
@@ -555,7 +587,7 @@ describe('winning, Niko Kadi', () => {
     s.hands[1] = [C('4', 'clubs', 'o1')];
     s.hands[2] = [C('5', 'spades', 'o2')];
     declareKadi(s, 0);
-    s.turnNumber += 1;
+    surviveRound(s);
     // 3P so J is a real jump, but J is not a winning rank -> no win
     const r = playCombo(s, 0, [last]);
     expect(r.won).toBeFalsy();
@@ -566,7 +598,7 @@ describe('winning, Niko Kadi', () => {
     const s = rigged([fin], C('9', 'hearts'), [C('4', 'clubs')]);
     s.hands.push([]); // third player cardless
     declareKadi(s, 0);
-    s.turnNumber += 1;
+    surviveRound(s);
     const r = playCombo(s, 0, [fin]);
     expect(r.won).toBeFalsy();
   });
@@ -600,8 +632,7 @@ describe('strict wrong-play', () => {
 describe('canFinishNow (live KADI! threat)', () => {
   function declared(s: GameState, p: number): GameState {
     declareKadi(s, p);
-    s.turnNumber += 1;
-    s.currentPlayer = p;
+    surviveRound(s, p);
     return s;
   }
 
@@ -610,11 +641,13 @@ describe('canFinishNow (live KADI! threat)', () => {
     expect(canFinishNow(s, 0)).toBe(true);
   });
 
-  it('false without a declaration; true as soon as it is called same-turn', () => {
+  it('false without a declaration; false on the call turn; true after the round', () => {
     const s = rigged([C('5', 'hearts', 'f')], C('9', 'hearts'), [C('4', 'clubs')]);
     expect(canDumpWinningNow(s, 0)).toBe(true);
     expect(canFinishNow(s, 0)).toBe(false);
     declareKadi(s, 0);
+    expect(canFinishNow(s, 0)).toBe(false);
+    surviveRound(s);
     expect(canFinishNow(s, 0)).toBe(true);
   });
 
@@ -1003,8 +1036,7 @@ describe('kadi declaration consequences', () => {
     const s = rigged([q, ace], C('9', 'spades'), [C('4', 'clubs'), C('6', 'spades')]);
     s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'clubs', `d${i}`));
     declareKadi(s, 0);
-    s.turnNumber += 1;
-    s.currentPlayer = 0;
+    surviveRound(s);
     const r = playCombo(s, 0, [q, ace], null);
     expect(r.won).toBe(true);
     expect(s.gameOver).toBe(true);
@@ -1027,11 +1059,12 @@ describe('kadi declaration consequences', () => {
     const ace = C('A', 'clubs', 'a1');
     const s = rigged([ace], C('9', 'clubs'), [C('4', 'spades'), C('6', 'spades')]);
     declareKadi(s, 0);
-    s.turnNumber += 1;
-    s.currentPlayer = 0;
+    surviveRound(s);
     const r = playCombo(s, 0, [ace], 'clubs');
     expect(r.won).toBeFalsy();
     expect(r.becameCardless).toBe(true);
+    // The claim cannot survive an empty hand, so it is cleared.
+    expect(s.kadiCalls[0]).toBe(false);
   });
 
   it('true call sets the flag with no fine; turn does not advance', () => {
@@ -1046,6 +1079,80 @@ describe('kadi declaration consequences', () => {
     expect(s.hands[0].length).toBe(2);
     expect(s.turnNumber).toBe(turn);
     expect(s.currentPlayer).toBe(current);
+  });
+
+  it('a jump-skipped seat does not count as a response', () => {
+    const s = rigged(
+      [C('J', 'spades', 'j'), C('5', 'spades', 'a'), C('4', 'spades', 'b')],
+      C('9', 'spades'),
+      [C('4', 'clubs')],
+      3,
+    );
+    declareKadi(s, 0);
+    playCombo(s, 0, [s.hands[0][0]]); // seat 1 is the skip victim
+    expect(s.currentPlayer).toBe(1);
+    expect(s.pendingSkip).toBe(1);
+    passOrPick(s, 1); // seat 1 sits out; that is not a turn
+    expect(s.currentPlayer).toBe(2);
+    expect(kadiWaitSatisfied(s, 0)).toBe(false);
+    passOrPick(s, 2); // seat 2 acts
+    expect(s.currentPlayer).toBe(0);
+    expect(kadiWaitSatisfied(s, 0)).toBe(false); // seat 1 still owed
+    // Caller plays on (a pick would void the claim), then seat 1 gets a turn.
+    playCombo(s, 0, [s.hands[0][0]]);
+    expect(s.currentPlayer).toBe(1);
+    passOrPick(s, 1);
+    expect(kadiWaitSatisfied(s, 0)).toBe(true);
+  });
+
+  it('an out-of-turn call waits for the player already on turn to act', () => {
+    const s = rigged(
+      [C('5', 'hearts', 'a'), C('5', 'diamonds', 'b')],
+      C('9', 'hearts'),
+      [C('4', 'clubs')],
+      3,
+    );
+    s.currentPlayer = 1;
+    declareKadi(s, 0);
+    expect(kadiWaitSatisfied(s, 0)).toBe(false);
+    passOrPick(s, 1); // seat 1 acts, so it counts
+    expect(s.currentPlayer).toBe(2);
+    expect(kadiWaitSatisfied(s, 0)).toBe(false);
+    passOrPick(s, 2); // seat 2 acts too
+    expect(kadiWaitSatisfied(s, 0)).toBe(true);
+  });
+
+  it('an out-of-turn call does not count a current player who sits out', () => {
+    const s = rigged(
+      [C('5', 'hearts', 'a'), C('5', 'diamonds', 'b')],
+      C('9', 'hearts'),
+      [C('4', 'clubs')],
+      3,
+    );
+    s.currentPlayer = 1;
+    s.pendingSkip = 1;
+    declareKadi(s, 0);
+    expect(kadiWaitSatisfied(s, 0)).toBe(false);
+    passOrPick(s, 1); // accepts the skip, so seat 1 never took a turn
+    expect(s.currentPlayer).toBe(2);
+    expect(kadiWaitSatisfied(s, 0)).toBe(false);
+    passOrPick(s, 2); // seat 2 acts
+    expect(kadiWaitSatisfied(s, 0)).toBe(false); // seat 1 still owes a turn
+  });
+
+  it('an out-of-turn call does not count the current player for another claim', () => {
+    const s = rigged(
+      [C('5', 'hearts', 'a'), C('5', 'diamonds', 'b')],
+      C('9', 'hearts'),
+      [C('4', 'clubs')],
+      3,
+    );
+    declareKadi(s, 2);
+    s.currentPlayer = 1;
+    declareKadi(s, 0);
+    // Seat 1 is on turn but has not acted; seat 2's older claim is unchanged.
+    expect(s.kadiSeen[2] & (1 << 1)).toBe(0);
+    expect(s.kadiSeen[0] & (1 << 1)).toBe(0);
   });
 
   it('false call is fined once, sets no flag, and locks the button for the turn', () => {
@@ -1079,6 +1186,52 @@ describe('kadi declaration consequences', () => {
     advanceTurn(s);
     expect(s.currentPlayer).toBe(0);
     expect(isKadiLocked(s, 0)).toBe(false);
+  });
+
+  it('late-call fine draws the configured count without advancing the turn', () => {
+    const s = rigged([C('5', 'hearts', 'a'), C('5', 'diamonds', 'b')], C('9', 'hearts'), [C('4', 'clubs')]);
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    const turn = s.turnNumber;
+    const current = s.currentPlayer;
+    expect(fineKadiDelay(s, 0)).toBe(1);
+    expect(s.hands[0].length).toBe(3);
+    expect(s.kadiCalls[0]).toBe(false);
+    expect(s.turnNumber).toBe(turn);
+    expect(s.currentPlayer).toBe(current);
+
+    const cfg = { ...STANDARD_MAUA, lateCallPickCount: 2 };
+    const s2 = rigged([C('5', 'hearts', 'a')], C('9', 'hearts'), [C('4', 'clubs')], 2, cfg);
+    s2.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `e${i}`));
+    expect(fineKadiDelay(s2, 0)).toBe(2);
+    expect(s2.hands[0].length).toBe(3);
+
+    const cfg0 = { ...STANDARD_MAUA, lateCallPickCount: 0 };
+    const s3 = rigged([C('5', 'hearts', 'a')], C('9', 'hearts'), [C('4', 'clubs')], 2, cfg0);
+    s3.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `f${i}`));
+    expect(fineKadiDelay(s3, 0)).toBe(0);
+    expect(s3.hands[0].length).toBe(1);
+  });
+
+  it('late-press order (fine first, then declare) keeps the new claim', () => {
+    const s = rigged([C('5', 'hearts', 'a'), C('5', 'diamonds', 'b')], C('9', 'hearts'), [C('4', 'clubs')]);
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    expect(canCallKadi(s, 0)).toBe(true);
+    expect(fineKadiDelay(s, 0)).toBe(1);
+    expect(s.kadiCalls[0]).toBe(false);
+    expect(declareKadi(s, 0)).toBe(true);
+    expect(s.kadiCalls[0]).toBe(true);
+    expect(s.hands[0].length).toBe(3);
+    // The full-round wait still starts at the call, not before the fine.
+    expect(kadiWaitSatisfied(s, 0)).toBe(false);
+  });
+
+  it('late-call fine never draws over a live claim', () => {
+    const s = rigged([C('5', 'hearts', 'a'), C('5', 'diamonds', 'b')], C('9', 'hearts'), [C('4', 'clubs')]);
+    s.drawPile = Array.from({ length: 10 }, (_, i) => C('7', 'diamonds', `d${i}`));
+    expect(declareKadi(s, 0)).toBe(true);
+    expect(fineKadiDelay(s, 0)).toBe(0);
+    expect(s.kadiCalls[0]).toBe(true);
+    expect(s.hands[0].length).toBe(2);
   });
 
   it('picking up cards voids the KADI claim, stale calls cannot win later', () => {
@@ -1313,8 +1466,7 @@ describe('must end on one (single-card finish)', () => {
   it('a lone last card still wins when declared earlier', () => {
     const s = rigged([C('5', 'hearts', 'f')], C('9', 'hearts'), [C('4', 'clubs')], 2, ONE);
     declareKadi(s, 0);
-    s.turnNumber += 1;
-    s.currentPlayer = 0;
+    surviveRound(s);
     const r = playCombo(s, 0, [s.hands[0][0]]);
     expect(r.won).toBe(true);
     expect(s.gameOver).toBe(true);
@@ -1329,8 +1481,7 @@ describe('must end on one (single-card finish)', () => {
       ONE,
     );
     declareKadi(s, 0);
-    s.turnNumber += 1;
-    s.currentPlayer = 0;
+    surviveRound(s);
     const r = playCombo(s, 0, [s.hands[0][0], s.hands[0][1]]);
     expect(r.ok).toBe(true);
     expect(r.won).toBeFalsy();
@@ -1349,8 +1500,7 @@ describe('must end on one (single-card finish)', () => {
       ONE,
     );
     declareKadi(two, 0);
-    two.turnNumber += 1;
-    two.currentPlayer = 0;
+    surviveRound(two);
     expect(canFinishNow(two, 0)).toBe(false);
   });
 });

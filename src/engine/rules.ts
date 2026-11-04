@@ -51,7 +51,7 @@ export interface RulesConfig {
   unansweredQuestionPickCount: number;
   /** Ranks that alone can finish a game. */
   winningRanks: Rank[];
-  /** Must say Niko Kadi before finishing; same-turn calls count. */
+  /** Must say Niko Kadi before finishing; the call must survive a full round. */
   mustSayNikoKadi: boolean;
   /** Someone cardless at the table blocks every win. */
   cardlessBlocksWin: boolean;
@@ -71,7 +71,7 @@ export interface RulesConfig {
   invalidPlayPickCount: number;
   /** Strict tables: submitting an illegal combo draws the fine and passes the turn. */
   strictWrongPlay: boolean;
-  /** Going out clean without a valid prior Kadi call: win denied, draw this many. */
+  /** Shouting Kadi after the call-window, or going out clean without a prior call: draw this many. */
   lateCallPickCount: number;
   /** Calling Kadi without a legally winnable hand: call rejected, draw this many, locked until next turn. */
   falseKadiPickCount: number;

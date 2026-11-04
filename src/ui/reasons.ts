@@ -40,6 +40,8 @@ export function reasonText(
       return "Jump! Refuse with any single J to keep your turn, or accept the skip. Stacks can't be refused.";
     case "REVERSE_MUST_COUNTER_OR_ACCEPT":
       return "Kickback! Refuse with any single K to keep your turn, or accept the reversal. Stacks can't be refused.";
+    case "KADI_WAIT":
+      return "KADI called — all opponents must play before this dump can win.";
     case "UNMET_REQUEST":
       return "Super Ace demand: play the exact card, an Ace, or pick.";
     case "NOT_YOUR_TURN":

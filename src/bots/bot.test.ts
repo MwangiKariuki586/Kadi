@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BOM_NI_BOM, STANDARD_MAUA } from '../engine/rules';
 import { createGame } from '../engine/state';
-import { declareKadi, playCombo } from '../engine/validator';
+import { canFinishNow, declareKadi, passOrPick, playCombo, tryDeclareKadi } from '../engine/validator';
 import { bestSuit, chooseMove, chooseRequestCard, isDeclaredThreat, shouldDeclareKadi } from './bot';
 
 describe('bots', () => {
@@ -68,13 +68,36 @@ describe('bots', () => {
     expect(move?.cards[0].rank).toBe('J');
   });
 
-  it('declares Kadi with a winnable hand', () => {
+  it('declares Kadi when the table allows the dump and a safe setup exists', () => {
     const s = createGame({ numPlayers: 2, random: () => 0.1 });
+    s.discardPile = [{ id: '9-hearts-top', suit: 'hearts', rank: '9' }];
+    s.hands[0] = [
+      { id: 'q-hearts', suit: 'hearts', rank: 'Q' },
+      { id: '5-hearts', suit: 'hearts', rank: '5' },
+      { id: '4-hearts', suit: 'hearts', rank: '4' },
+    ];
+    expect(shouldDeclareKadi(s, 0, 'medium', () => 0.9)).toBe(true);
+  });
+
+  it('does not call early without a setup that keeps the hand winnable', () => {
+    const s = createGame({ numPlayers: 2, random: () => 0.1 });
+    s.discardPile = [{ id: 'k-clubs-top', suit: 'clubs', rank: 'K' }];
     s.hands[0] = [
       { id: 'q-hearts', suit: 'hearts', rank: 'Q' },
       { id: '5-hearts', suit: 'hearts', rank: '5' },
     ];
-    expect(shouldDeclareKadi(s, 0)).toBe(true);
+    expect(shouldDeclareKadi(s, 0, 'hard', () => 0.1)).toBe(false);
+    expect(shouldDeclareKadi(s, 0, 'easy', () => 0.2)).toBe(false);
+  });
+
+  it('does not call when the hand can never finish', () => {
+    const s = createGame({ numPlayers: 2, random: () => 0.1 });
+    s.discardPile = [{ id: 'k-clubs-top', suit: 'clubs', rank: 'K' }];
+    s.hands[0] = [
+      { id: 'q-hearts', suit: 'hearts', rank: 'Q' },
+      { id: '5-clubs', suit: 'clubs', rank: '5' },
+    ];
+    expect(shouldDeclareKadi(s, 0, 'hard', () => 0.1)).toBe(false);
   });
 
   it('does not declare when the table allows silent finishes', () => {
@@ -87,10 +110,61 @@ describe('bots', () => {
       { id: 'q-hearts', suit: 'hearts', rank: 'Q' },
       { id: '5-hearts', suit: 'hearts', rank: '5' },
     ];
-    expect(shouldDeclareKadi(s, 0)).toBe(false);
+    expect(shouldDeclareKadi(s, 0, 'medium', () => 0.1)).toBe(false);
   });
 
-  it('takes the same-turn winning dump after declaring', () => {
+  it('plays a setup after calling, then wins once every opponent has acted', () => {
+    const s = createGame({ numPlayers: 2, random: () => 0.1 });
+    s.discardPile = [{ id: '5-clubs-top', suit: 'clubs', rank: '5' }];
+    s.hands[0] = [
+      { id: 'q-hearts', suit: 'hearts', rank: 'Q' },
+      { id: '5-hearts', suit: 'hearts', rank: '5' },
+      { id: '4-hearts', suit: 'hearts', rank: '4' },
+    ];
+    s.hands[1] = [{ id: 'o1', suit: 'clubs', rank: '4' }];
+    s.currentPlayer = 0;
+    expect(tryDeclareKadi(s, 0).ok).toBe(true);
+    // The call turn is a setup: the bot must not empty its hand yet.
+    const setup = chooseMove(s, 0, 'hard', () => 0.1);
+    expect(setup?.cards).toHaveLength(1);
+    const r1 = playCombo(s, 0, setup!.cards, setup!.declaredSuit, setup!.requestedCard ?? null);
+    expect(r1.won).toBeFalsy();
+    // The opponent takes a turn; now the claim has survived the round.
+    passOrPick(s, 1);
+    s.currentPlayer = 0;
+    const move = chooseMove(s, 0, 'hard', () => 0.1);
+    expect(move?.cards).toHaveLength(2);
+    const r2 = playCombo(s, 0, move!.cards, move!.declaredSuit, move!.requestedCard ?? null);
+    expect(r2.won).toBe(true);
+  });
+
+  it('waits for every opponent on a 3-player table before finishing', () => {
+    const s = createGame({ numPlayers: 3, random: () => 0.1 });
+    s.discardPile = [{ id: '9-hearts-top', suit: 'hearts', rank: '9' }];
+    s.hands[0] = [
+      { id: '5-hearts', suit: 'hearts', rank: '5' },
+      { id: '5-diamonds', suit: 'diamonds', rank: '5' },
+    ];
+    s.hands[1] = [{ id: 'o1', suit: 'clubs', rank: '4' }];
+    s.hands[2] = [{ id: 'o2', suit: 'clubs', rank: '6' }];
+    s.currentPlayer = 0;
+    expect(declareKadi(s, 0)).toBe(true);
+    const setup = chooseMove(s, 0, 'hard', () => 0.1);
+    expect(setup?.cards).toHaveLength(1);
+    playCombo(s, 0, setup!.cards, setup!.declaredSuit, setup!.requestedCard ?? null);
+
+    passOrPick(s, 1);
+    expect(canFinishNow(s, 0)).toBe(false); // one opponent still owed a turn
+    passOrPick(s, 2);
+    expect(canFinishNow(s, 0)).toBe(true);
+
+    const move = chooseMove(s, 0, 'hard', () => 0.1);
+    expect(move?.cards).toHaveLength(1);
+    const r = playCombo(s, 0, move!.cards, move!.declaredSuit, move!.requestedCard ?? null);
+    expect(r.won).toBe(true);
+  });
+
+  it('does not take the winning dump on the call turn; finishes after the round', () => {
     const s = createGame({ numPlayers: 2, random: () => 0.1 });
     s.discardPile = [{ id: '9-hearts-top', suit: 'hearts', rank: '9' }];
     s.hands[0] = [
@@ -100,10 +174,16 @@ describe('bots', () => {
     s.hands[1] = [{ id: '4-clubs', suit: 'clubs', rank: '4' }];
     s.currentPlayer = 0;
     expect(declareKadi(s, 0)).toBe(true);
+    const setup = chooseMove(s, 0, 'hard', () => 0.1);
+    expect(setup?.cards).toHaveLength(1);
+    const r1 = playCombo(s, 0, setup!.cards, setup!.declaredSuit, setup!.requestedCard ?? null);
+    expect(r1.won).toBeFalsy();
+    passOrPick(s, 1);
+    s.currentPlayer = 0;
     const move = chooseMove(s, 0, 'hard', () => 0.1);
-    expect(move?.cards).toHaveLength(2);
-    const r = playCombo(s, 0, move!.cards, move!.declaredSuit, move!.requestedCard ?? null);
-    expect(r.won).toBe(true);
+    expect(move?.cards).toHaveLength(1);
+    const r2 = playCombo(s, 0, move!.cards, move!.declaredSuit, move!.requestedCard ?? null);
+    expect(r2.won).toBe(true);
   });
 
   it('bestSuit picks the majority suit', () => {
@@ -261,6 +341,9 @@ describe('bots', () => {
       { id: 'o2', suit: 'hearts', rank: '5' },
     ];
     s.currentPlayer = 0;
+    expect(declareKadi(s, 0)).toBe(true);
+    // Simulate the call having survived the only opponent's turn.
+    s.kadiSeen[0] = 0b10;
     const move = chooseMove(s, 0, 'hard', () => 0.0);
     expect(move?.cards.map((c) => c.id).sort()).toEqual(['a-diamonds', 'q-spades']);
     expect(move?.declaredSuit ?? null).toBeNull();

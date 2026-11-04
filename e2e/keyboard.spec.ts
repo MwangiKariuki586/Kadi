@@ -77,6 +77,12 @@ test("K declares KADI or locks a false call", async ({ page }) => {
   await expect(page.getByTestId("feed-panel")).toContainText(/KADI/);
   await expect(buzzer).toHaveAttribute("data-kadi-state", /^(called|locked)$/);
   await expect(buzzer).toBeDisabled();
+
+  if ((await buzzer.getAttribute("data-kadi-state")) === "called") {
+    // The human's own call is status-only: no big alert, just the buzzer
+    // state (and the feed line asserted above).
+    await expect(page.getByTestId("kadi-alert")).toHaveCount(0);
+  }
 });
 
 test("D picks or accepts the pending consequence on your turn", async ({

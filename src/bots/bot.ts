@@ -1,6 +1,6 @@
 import type { Card, Suit } from '../engine/cards';
 import { isJumpRank, isKickbackRank, isPenaltyRank, isWinningRank } from '../engine/rules';
-import { isAceAnswerCombo, isSuperAceCombo, comboLeavesQuestionOpen, canCallKadi, canDeclareKadi, canFinishNow, hasValidKadiCall, legalSingles, validateCombo, winningDumpOrder } from '../engine/validator';
+import { isAceAnswerCombo, isSuperAceCombo, comboLeavesQuestionOpen, canCallKadi, canDeclareKadi, canDumpWinningNow, canFinishNow, canHandFinishInOnePlay, isKadiLocked, legalSingles, validateCombo, winningDumpOrder } from '../engine/validator';
 import { topCard, type GameState } from '../engine/state';
 
 // Re-export for single import path (validator lives in engine/validator)
@@ -105,16 +105,62 @@ function withDeclarations(
   return { declaredSuit: ace ? bestSuit(rest) : null, requestedCard: null };
 }
 
-/** A seat is a live threat when it has a valid call and can finish now. */
+/** A seat is a live threat whenever it has an active KADI call and cards left. */
 export function isDeclaredThreat(state: GameState, playerIndex: number): boolean {
-  return canFinishNow(state, playerIndex);
+  return state.kadiCalls[playerIndex] === true && state.hands[playerIndex].length > 0;
 }
 
-export function shouldDeclareKadi(state: GameState, playerIndex: number): boolean {
-  // Single definition of "legally winnable hand" lives in the engine so
-  // humans (tryDeclareKadi) and bots agree. canDeclareKadi also covers silent
-  // tables, cardless players, and finished games.
-  return canDeclareKadi(state, playerIndex) && canCallKadi(state, playerIndex);
+/**
+ * A non-winning setup the bot can play on its call turn without emptying the
+ * hand or leaving a question open, and that leaves the rest of the hand able
+ * to finish in one legal play. Without one, calling would strand the claim.
+ */
+export function hasSetupMove(state: GameState, playerIndex: number): boolean {
+  const hand = state.hands[playerIndex];
+  if (hand.length < 2) return false;
+  const options: Card[][] = [
+    ...legalSingles(state, playerIndex).map((c) => [c]),
+    ...questionCombos(state, playerIndex),
+    ...pairCombos(state, playerIndex),
+  ];
+  return options.some((cards) => {
+    if (cards.length >= hand.length) return false;
+    if (comboLeavesQuestionOpen(cards, state)) return false;
+    const rest = hand.filter((h) => !cards.some((c) => c.id === h.id));
+    return canHandFinishInOnePlay(rest, state);
+  });
+}
+
+/**
+ * Bot call policy. This is a decision, not a rule: the bot uses the same
+ * checked declaration path as the human (`tryDeclareKadi`), so a call is
+ * legal only when the hand can eventually go out in one play. A ready call
+ * is taken (Easy sometimes hesitates); an early call stakes the claim before
+ * the table opens, with difficulty controlling the appetite for that risk.
+ * The bot only calls when it also has a setup that keeps the hand winnable,
+ * because every opponent must now take a turn before the claim can mature.
+ */
+export function shouldDeclareKadi(
+  state: GameState,
+  playerIndex: number,
+  difficulty: Difficulty = 'medium',
+  random: () => number = Math.random,
+): boolean {
+  if (!canDeclareKadi(state, playerIndex) || isKadiLocked(state, playerIndex)) {
+    return false;
+  }
+  // Same false-call gate as the human: the hand must be able to finish in one
+  // legal winning play, even if the current table does not allow it yet.
+  if (!canCallKadi(state, playerIndex)) return false;
+  // A claim is a promise to survive a full round. Without a safe setup the
+  // bot would be forced to pick (and void the claim) before it matures.
+  if (!hasSetupMove(state, playerIndex)) return false;
+  if (canDumpWinningNow(state, playerIndex)) {
+    return difficulty !== 'easy' || random() < 0.6;
+  }
+  const earlyCallChance =
+    difficulty === 'hard' ? 0.65 : difficulty === 'medium' ? 0.35 : 0.15;
+  return random() < earlyCallChance;
 }
 
 export function chooseMove(
@@ -124,9 +170,25 @@ export function chooseMove(
   random: () => number = Math.random,
 ): BotMove | null {
   const hand = state.hands[playerIndex];
+  const claimActive = state.kadiCalls[playerIndex] === true;
 
-  // 0. A valid call plus a whole-hand winner: take the win now.
-  if (hasValidKadiCall(state, playerIndex)) {
+  // A non-winning move must never empty the hand: it would strand a KADI
+  // claim or make the bot cardless. Step 0 takes the legal win instead.
+  const safe = (cards: Card[]): BotMove | null => {
+    if (cards.length >= hand.length) return null;
+    return { cards, ...withDeclarations(state, hand, cards) };
+  };
+
+  // While a claim is live, a setup must leave a hand that can still finish in
+  // one legal play; otherwise the claim is already dead and picking is safer.
+  const preservesClaim = (combo: Card[]): boolean => {
+    if (!claimActive) return true;
+    const rest = hand.filter((h) => !combo.some((c) => c.id === h.id));
+    return canHandFinishInOnePlay(rest, state);
+  };
+
+  // 0. A call that has survived every opponent plus a whole-hand winner.
+  if (canFinishNow(state, playerIndex)) {
     const winningDump = winningDumpOrder(state, playerIndex);
     if (winningDump) {
       return { cards: winningDump, ...withDeclarations(state, hand, winningDump) };
@@ -139,12 +201,11 @@ export function chooseMove(
     const stacks = answers.filter((c) => c.rank !== 'A');
     if (stacks.length > 0) {
       if (difficulty === 'easy' && random() < 0.35) return null; // easy sometimes eats it
-      return { cards: [randomOf(stacks, random)] };
+      return safe([randomOf(stacks, random)]);
     }
     const aces = answers.filter((c) => c.rank === 'A');
     if (aces.length > 0) {
-      const combo = [aces[0]];
-      return { cards: combo, ...withDeclarations(state, hand, combo) };
+      return safe([aces[0]]);
     }
     return null;
   }
@@ -153,7 +214,7 @@ export function chooseMove(
   if (state.pendingSkip > 0) {
     const jumps = hand.filter((c) => validateCombo([c], state, playerIndex).ok);
     if (jumps.length > 0 && (difficulty !== 'easy' || random() < 0.5)) {
-      return { cards: [randomOf(jumps, random)] };
+      return safe([randomOf(jumps, random)]);
     }
     return null;
   }
@@ -162,7 +223,7 @@ export function chooseMove(
   if ((state.pendingReverse ?? 0) > 0) {
     const kicks = hand.filter((c) => validateCombo([c], state, playerIndex).ok);
     if (kicks.length > 0 && (difficulty !== 'easy' || random() < 0.5)) {
-      return { cards: [randomOf(kicks, random)] };
+      return safe([randomOf(kicks, random)]);
     }
     return null;
   }
@@ -172,12 +233,11 @@ export function chooseMove(
     const req = state.activeCardRequest;
     const exact = hand.find((c) => c.rank === req.rank && c.suit === req.suit);
     if (exact && validateCombo([exact], state, playerIndex).ok) {
-      return { cards: [exact] };
+      return safe([exact]);
     }
     const downgrades = legalSingles(state, playerIndex).filter((c) => c.rank === 'A');
     if (downgrades.length > 0) {
-      const combo = [downgrades[0]];
-      return { cards: combo, ...withDeclarations(state, hand, combo) };
+      return safe([downgrades[0]]);
     }
     return null;
   }
@@ -207,24 +267,28 @@ export function chooseMove(
   };
 
   if (difficulty === 'easy') {
-    const options: Card[][] = [...singles.map((s) => [s]), ...qCombos];
+    const options: Card[][] = [...singles.map((s) => [s]), ...qCombos]
+      .filter((combo) => combo.length < hand.length)
+      .filter((combo) => !claimActive || !comboLeavesQuestionOpen(combo, state))
+      .filter(preservesClaim);
     if (options.length === 0) return null;
     // Easy still pressures a declarer next to act, just less reliably.
     if (declarerNext) {
       const attacks = options.filter(isAttack);
       if (attacks.length > 0 && random() < 0.6) {
-        const pick = randomOf(attacks, random);
-        return { cards: pick, ...withDeclarations(state, hand, pick) };
+        return safe(randomOf(attacks, random));
       }
     }
-    const pick = randomOf(options, random);
-    return { cards: pick, ...withDeclarations(state, hand, pick) };
+    return safe(randomOf(options, random));
   }
 
   // medium + hard: shed the most cards, prefer attacks when a rival is close to winning.
   const top = topCard(state);
   void top;
-  const allOptions: Card[][] = [...qCombos, ...pairs, ...singles.map((s) => [s])];
+  const allOptions: Card[][] = [...qCombos, ...pairs, ...singles.map((s) => [s])]
+    .filter((combo) => combo.length < hand.length)
+    .filter((combo) => !claimActive || !comboLeavesQuestionOpen(combo, state))
+    .filter(preservesClaim);
   if (allOptions.length === 0) return null;
 
   const score = (combo: Card[]): number => {
@@ -257,5 +321,5 @@ export function chooseMove(
       best = combo;
     }
   }
-  return { cards: best, ...withDeclarations(state, hand, best) };
+  return safe(best);
 }

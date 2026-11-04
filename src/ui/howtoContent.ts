@@ -73,7 +73,13 @@ export function buildPracticeTable(setup: BoardSetup): GameState {
   s.pendingPenaltyRank = (setup.pendingPenalty ?? 0) > 0 ? "2" : null;
   s.pendingSkip = setup.pendingSkip ?? 0;
   s.activeCardRequest = setup.request ? { ...setup.request } : null;
-  if (setup.kadiDeclared) s.kadiCalls = [true, false];
+  if (setup.kadiDeclared) {
+    s.kadiCalls = [true, false];
+    s.kadiCallTurn = [0, -1];
+    // Practice boards start after the call survived the only opponent, so the
+    // lesson is the winning dump rather than the wait itself.
+    s.kadiSeen = [0b10, 0];
+  }
   return s;
 }
 
@@ -86,7 +92,7 @@ export const PLAY_BOARDS: PlayBoard[] = [
   {
     kind: "play",
     id: "goal-pick-winner",
-    prompt: "Last card in hand, Niko Kadi said. Play the 5 and finish.",
+    prompt: "You called Niko Kadi last turn and survived. Play the 5 and finish.",
     setup: {
       top: cs("4", "clubs"),
       hand: [cs("5", "clubs")],
@@ -188,7 +194,7 @@ export const PLAY_BOARDS: PlayBoard[] = [
   {
     kind: "play",
     id: "win-clean",
-    prompt: "You called Niko Kadi. Dump both 5s and win.",
+    prompt: "You called Niko Kadi last turn and survived. Dump both 5s and win.",
     setup: {
       top: cs("5", "hearts"),
       hand: [cs("5", "clubs"), cs("5", "diamonds")],
@@ -228,7 +234,7 @@ export const PLAY_BOARDS: PlayBoard[] = [
       ["5-clubs", "5-diamonds"],
       ["5-diamonds", "5-clubs"],
     ],
-    winText: "No call, no win fined +1. Shout Niko Kadi first, then dump in the same turn.",
+    winText: "No call, no win — fined +1. Call Niko Kadi, survive all opponents, then dump.",
     expect: "fined",
     wrongs: [],
   },
@@ -259,12 +265,12 @@ export const CHOICE_BOARDS: ChoiceBoard[] = [
       {
         label: "Shout Niko Kadi 📢",
         correct: true,
-        feedback: "Perfect! Call first, then dump both 5s this same turn.",
+        feedback: "Perfect! Call first, then survive all opponents before dumping.",
       },
       {
         label: "Dump both now",
         correct: false,
-        feedback: "No call, no win you'd kula +1. Shout first, then dump.",
+        feedback: "No call, no win — you'd kula +1. Call first and survive the round.",
       },
     ],
   },
@@ -282,7 +288,7 @@ export const CHOICE_BOARDS: ChoiceBoard[] = [
       {
         label: "Keep playing",
         correct: true,
-        feedback: "Perfect! Only shout when every card can dump clean.",
+        feedback: "Perfect! Only shout when every card can dump clean and you can survive the round.",
       },
     ],
   },
