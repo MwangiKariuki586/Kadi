@@ -49,7 +49,6 @@ import {
   SuitPicker,
   Toast,
 } from "./ui/components";
-import { KadiAlert } from "./ui/kadiAlert";
 import { seatThreat } from "./ui/threat";
 import { SettingsScreen } from "./ui/settings";
 import { RulesBuilder } from "./ui/rulesBuilder";
@@ -125,7 +124,6 @@ export function App() {
   const [tick, setTick] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
-  const [kadiAlert, setKadiAlert] = useState<number | null>(null);
   const [kadiWindowOpen, setKadiWindowOpen] = useState(false);
   const [suitPickerFor, setSuitPickerFor] = useState<Card[] | null>(null);
   const [superPickerFor, setSuperPickerFor] = useState<Card[] | null>(null);
@@ -169,7 +167,6 @@ export function App() {
   const stateRef = useRef<GameState | null>(null);
   const recordedRef = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
-  const kadiAlertTimer = useRef<number | undefined>(undefined);
   const kadiTimerRef = useRef<number>(0);
   const kadiWindowRef = useRef<{
     /** Identifies the hand that opened this window. */
@@ -199,22 +196,9 @@ export function App() {
     toastTimer.current = window.setTimeout(() => setToast(null), 2200);
   }, []);
 
-  /** Large, non-blocking claim banner; auto-dismisses after 3s. */
-  const clearKadiAlert = useCallback(() => {
-    window.clearTimeout(kadiAlertTimer.current);
-    setKadiAlert(null);
-  }, []);
-
-  const showKadiAlert = useCallback((seat: number) => {
-    setKadiAlert(seat);
-    window.clearTimeout(kadiAlertTimer.current);
-    kadiAlertTimer.current = window.setTimeout(() => setKadiAlert(null), 3000);
-  }, []);
-
   useEffect(
     () => () => {
       window.clearTimeout(toastTimer.current);
-      window.clearTimeout(kadiAlertTimer.current);
       window.clearTimeout(kadiTimerRef.current);
     },
     [],
@@ -247,7 +231,6 @@ export function App() {
       setSelected([]);
       setSuitPickerFor(null);
       setSuperPickerFor(null);
-      clearKadiAlert();
       closeKadiWindow();
       setBusy(false);
       setScreen("game");
@@ -256,7 +239,7 @@ export function App() {
       ]);
       bump();
     },
-    [bump, clearKadiAlert, closeKadiWindow],
+    [bump, closeKadiWindow],
   );
 
   /**
@@ -284,12 +267,11 @@ export function App() {
         }
       }
       setConfirmQuit(false);
-      clearKadiAlert();
       stateRef.current = null;
       setScreen("home");
       bump();
     },
-    [bump, difficulty, preset, clearKadiAlert],
+    [bump, difficulty, preset],
   );
 
   const startGame = useCallback(() => {
@@ -310,14 +292,13 @@ export function App() {
     setSuitPickerFor(null);
     setSuperPickerFor(null);
     setConfirmQuit(false);
-    clearKadiAlert();
     closeKadiWindow();
     setScreen("game");
     setFeed([describeDeal(topCard(st), st.turnNumber)]);
     sfx.shuffle();
     haptics.tap();
     bump();
-  }, [numBots, preset, superAceOn, strictOn, jokersOn, bump, clearKadiAlert, closeKadiWindow]);
+  }, [numBots, preset, superAceOn, strictOn, jokersOn, bump, closeKadiWindow]);
 
   /** Single write-through for all Settings page + quick toggles. */
   const savePatch = useCallback((patch: Partial<Settings>) => {
@@ -494,7 +475,6 @@ export function App() {
           sfx.kadi();
           haptics.penalty();
           pushFeed(describeKadi(NAMES[me], s.turnNumber));
-          showKadiAlert(me);
           bump();
           id = window.setTimeout(runBot, 900);
           return;
@@ -566,7 +546,7 @@ export function App() {
     };
     id = window.setTimeout(runBot, 650 + Math.random() * 350);
     return () => window.clearTimeout(id);
-  }, [paused, screen, currentPlayer, gameOver, difficulty, bump, pushFeed, showKadiAlert]);
+  }, [paused, screen, currentPlayer, gameOver, difficulty, bump, pushFeed]);
 
   // ---- KADI call-window: shout within 2s of your hand becoming winnable ----
   // Opens once per winnable hand, even between turns: a setup that leaves a
@@ -1252,9 +1232,6 @@ export function App() {
     <div class="kadi-shell relative flex h-dvh flex-col overflow-hidden text-white safe-top safe-bottom">
       <PageBackdrop />
       <GameShortcutLayer layer={shortcutLayer} onAction={onShortcut} />
-      {!paused && kadiAlert !== null && (
-        <KadiAlert name={NAMES[kadiAlert] ?? `Player ${kadiAlert + 1}`} />
-      )}
       {suitPickerFor && (
         <SuitPicker
           onCancel={() => setSuitPickerFor(null)}

@@ -81,7 +81,7 @@ test("K declares KADI or locks a false call", async ({ page }) => {
   if ((await buzzer.getAttribute("data-kadi-state")) === "called") {
     // The human's own call is status-only: no big alert, just the buzzer
     // state (and the feed line asserted above).
-    await expect(page.getByTestId("kadi-center-alert")).toHaveCount(0);
+    await expect(page.getByTestId("kadi-alert")).toHaveCount(0);
   }
 });
 
