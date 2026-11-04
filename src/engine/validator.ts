@@ -1020,10 +1020,13 @@ export function passOrPick(state: GameState, playerIndex: number): { picked: num
     advanceTurn(state);
     return { picked: drawn.length, skipped: false };
   }
-  // Cannot meet an exact-card request: draw the configured count, demand spent.
+  // Cannot meet an exact-card request: draw the configured count, demand
+  // PERSISTS — the next player (and every player after, cycling back to the
+  // requester) must play the exact demanded card or draw again. Only an Ace
+  // (drops rank, keeps suit) or a fresh super ace (new suit + rank) can end
+  // the chain.
   if (state.activeCardRequest) {
     const req = state.activeCardRequest;
-    state.activeCardRequest = null;
     const drawn = drawCards(state, playerIndex, state.config.unmetRequestPickCount);
     state.lastEffect = `No ${req.rank}${suitGlyph(req.suit)}, picked ${drawn.length}`;
     markKadiTurn(state, playerIndex);
