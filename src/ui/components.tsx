@@ -310,6 +310,7 @@ export function OpponentSeat({
           : "One move from calling KADI"
         : "";
   const statusIcon = threat === "kadi" ? "📢" : threat ? "⚠" : "🂠";
+  const isKadi = threat === "kadi";
 
   return (
     <div
@@ -318,11 +319,12 @@ export function OpponentSeat({
       aria-label={`${name}, ${cards} cards${threatLabel ? `, ${threatLabel}` : ""}`}
       aria-current={isTurn ? "true" : undefined}
       title={threatLabel || undefined}
-      class={`flex min-w-0 w-full max-w-xs items-center gap-2 rounded-2xl border px-3 py-2 transition lg:max-w-[12rem] lg:px-4 lg:py-3 ${className} ${
-        isTurn
+      class={`flex min-w-0 w-full max-w-xs items-center gap-2 rounded-2xl border px-3 py-2 transition lg:max-w-[12rem] lg:px-4 lg:py-3 ${className} ${isKadi
+        ? "border-kadi-gold ring-2 ring-kadi-gold/70 bg-kadi-gold/15 anim-kadi-pulse shadow-[0_0_20px_rgba(245,197,24,0.2)]"
+        : isTurn
           ? "border-kadi-gold/75 bg-kadi-gold/10 shadow-[0_0_22px_rgba(245,197,24,0.12)]"
-          : "border-kadi-line/45 bg-kadi-deep/45"
-      }`}
+          : "border-kadi-line/45 bg-kadi-deep/45"}
+    `}
     >
       <Avatar name={name} size="md" highlight={isTurn} />
       <div class="min-w-0 flex-1">
@@ -332,8 +334,9 @@ export function OpponentSeat({
         <div class="flex items-center gap-1 text-[11px] text-white/55 md:text-xs">
           <span aria-hidden="true">{statusIcon}</span>
           {threat === "kadi" ? (
-            <span class="anim-kadi-pulse truncate font-black text-kadi-gold">
-              KADI! · {cards} cards
+            <span class="flex items-center gap-1 font-black text-kadi-gold">
+              📢 KADI!
+              <span class="text-[10px] font-black opacity-70">{cards} cards</span>
             </span>
           ) : threat === "finish" ? (
             <span

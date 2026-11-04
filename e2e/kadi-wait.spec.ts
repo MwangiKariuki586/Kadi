@@ -170,3 +170,61 @@ test("late KADI shout after the call-window still declares and draws the fine", 
   );
   await expect(hand.getByRole("button")).toHaveCount(3);
 });
+
+test("an opponent's KADI shows the center alert and a dominant on-card band", async ({
+  page,
+}) => {
+  const state = createGame({
+    numPlayers: 2,
+    config: STANDARD_MAUA,
+    random: () => 0.999,
+  });
+  state.hands = [
+    [C("5", "hearts", "e2e-5h"), C("5", "diamonds", "e2e-5d")],
+    [C("4", "clubs", "e2e-4c")],
+  ];
+  state.discardPile = [C("9", "hearts", "e2e-9h")];
+  state.drawPile = Array.from({ length: 12 }, (_, i) =>
+    C("7", "diamonds", `e2e-d${i}`),
+  );
+  state.currentPlayer = 0;
+  state.direction = 1;
+  state.pendingPenalty = 0;
+  state.pendingPenaltyRank = null;
+  state.pendingPenaltySuit = null;
+  state.activeSuit = null;
+  state.lastSuitBeforeRequest = null;
+  state.activeCardRequest = null;
+  state.pendingSkip = 0;
+  state.pendingReverse = 0;
+  // The opponent (seat 1) has already called KADI.
+  state.kadiCalls = [false, true];
+  state.kadiCallTurn = [-1, -1];
+  state.kadiSeen = [0, 0];
+  state.kadiFalseCalls = [false, false];
+  state.turnNumber = 0;
+  state.gameOver = false;
+  state.winnerIndex = null;
+  state.lastEffect = null;
+  const save: ActiveGameSave = {
+    state,
+    meta: {
+      numBots: 1,
+      difficulty: "easy",
+      presetName: STANDARD_MAUA.name,
+      superAce: false,
+      savedAt: Date.now(),
+    },
+  };
+
+  await seedSave(page, save);
+
+  // Center-stage alert is obvious right after the human's turn.
+  await expect(page.getByTestId("kadi-center-alert")).toBeVisible();
+  await expect(page.getByTestId("kadi-center-alert")).toContainText(
+    "JABARI IS KADI!",
+  );
+  // The opponent's seat card carries a dominant KADI band.
+  await expect(page.getByTestId("seat-left")).toContainText("KADI!");
+  await expect(page.getByTestId("seat-left")).toContainText("Jabari");
+});
