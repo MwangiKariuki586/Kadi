@@ -82,7 +82,7 @@ import { haptics, isHapticsEnabled, setHapticsEnabled } from "./ui/haptics";
 import { isMuted, setMuted, sfx } from "./ui/sounds";
 import { applyMotionPreference } from "./ui/motion";
 
-type Screen =
+export type Screen =
   | "home"
   | "lobby"
   | "game"
@@ -92,6 +92,19 @@ type Screen =
   | "games";
 
 const NAMES = [...PLAYER_NAMES];
+
+/**
+ * Decides whether the browser-level leave guard (beforeunload / pagehide)
+ * should be active. Guards only while a match is loaded and in progress;
+ * never on Home/Settings, and never after the game is over (result is
+ * already persisted / complete).
+ */
+export function shouldGuardOnExit(
+  screen: Screen,
+  state: GameState | null,
+): boolean {
+  return screen === "game" && state != null && !state.gameOver;
+}
 
 /**
  * Call-window: when your hand first becomes legally winnable you have this
@@ -685,6 +698,51 @@ export function App() {
       },
     });
   }, [screen, tick, difficulty, preset]);
+
+  // ---- browser-level leave guard: confirm before an abrupt exit (tab close,
+  // refresh, navigation) while a match is in progress. Auto-resume persists
+  // every committed move, but the native beforeunload dialog is the only
+  // reliable way to stop an accidental exit; a custom modal cannot run inside
+  // beforeunload, so the themed QuitConfirmModal stays the in-app surface.
+  const leaveGuardRef = useRef<{
+    handler: ((e: BeforeUnloadEvent) => void) | null;
+    active: boolean;
+  }>({ handler: null, active: false });
+
+  const onBeforeUnload = useCallback((e: BeforeUnloadEvent) => {
+    e.preventDefault();
+    e.returnValue = "";
+  }, []);
+
+  useEffect(() => {
+    const state = stateRef.current;
+    const shouldGuard = shouldGuardOnExit(screen, state);
+
+    if (shouldGuard && !leaveGuardRef.current.active) {
+      window.addEventListener("beforeunload", onBeforeUnload);
+      window.addEventListener("pagehide", onBeforeUnload);
+      leaveGuardRef.current.handler = onBeforeUnload;
+      leaveGuardRef.current.active = true;
+    } else if (!shouldGuard && leaveGuardRef.current.active) {
+      const handler = leaveGuardRef.current.handler;
+      if (handler) {
+        window.removeEventListener("beforeunload", handler);
+        window.removeEventListener("pagehide", handler);
+      }
+      leaveGuardRef.current.handler = null;
+      leaveGuardRef.current.active = false;
+    }
+
+    return () => {
+      const handler = leaveGuardRef.current.handler;
+      if (handler) {
+        window.removeEventListener("beforeunload", handler);
+        window.removeEventListener("pagehide", handler);
+      }
+      leaveGuardRef.current.handler = null;
+      leaveGuardRef.current.active = false;
+    };
+  }, [screen, tick, onBeforeUnload]);
 
   const hints = useMemo(() => {
     if (!state || state.currentPlayer !== 0 || state.gameOver)
