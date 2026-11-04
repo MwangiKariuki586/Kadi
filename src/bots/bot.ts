@@ -228,7 +228,8 @@ export function chooseMove(
     return null;
   }
 
-  // 3. Exact-card request outstanding: exact card > Ace downgrade > draw.
+  // 3. Exact-card request outstanding: exact card > Ace downgrade > super-ace
+  // redeclare > draw (demand persists, next player faces same demand).
   if (state.activeCardRequest) {
     const req = state.activeCardRequest;
     const exact = hand.find((c) => c.rank === req.rank && c.suit === req.suit);
@@ -238,6 +239,21 @@ export function chooseMove(
     const downgrades = legalSingles(state, playerIndex).filter((c) => c.rank === 'A');
     if (downgrades.length > 0) {
       return safe([downgrades[0]]);
+    }
+    // Super ace redeclare: 2+ aces (or special ace alone with mode on)
+    // replaces the demand with a fresh suit + rank.
+    const aces = hand.filter((c) => c.rank === 'A');
+    if (aces.length >= state.config.superAceMinAces) {
+      const combo = aces.slice(0, state.config.superAceMinAces);
+      if (validateCombo(combo, state, playerIndex).ok) {
+        return safe(combo);
+      }
+    }
+    if (state.config.superAceEnabled && aces.length >= 1) {
+      const special = aces.find((c) => c.suit === state.config.specialAceSuit);
+      if (special && validateCombo([special], state, playerIndex).ok) {
+        return safe([special]);
+      }
     }
     return null;
   }

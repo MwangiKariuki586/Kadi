@@ -884,14 +884,16 @@ describe('super ace', () => {
     expect(s.activeCardRequest).toBeNull();
   });
 
-  it('wrong card under exact request is UNMET; eating draws 1 and clears', () => {
+  it('wrong card under exact request is UNMET; eating draws 1, demand persists', () => {
     const ace = C('A', 'spades', 'as');
     const s = rigged([ace], C('9', 'hearts'), [C('6', 'clubs', 'o')], 2, SUPER);
     playCombo(s, 0, [ace], null, { rank: '5', suit: 'hearts' });
     expect(validateCombo([s.hands[1][0]], s, 1)).toMatchObject({ ok: false, reason: 'UNMET_REQUEST' });
     const r = passOrPick(s, 1);
     expect(r.picked).toBe(1);
-    expect(s.activeCardRequest).toBeNull();
+    // Demand PERSISTS — drawing does not clear it; next player faces same demand
+    expect(s.activeCardRequest).toEqual({ rank: '5', suit: 'hearts' });
+    expect(s.currentPlayer).toBe(0);
   });
 
   it('lone Ace lifts the rank but the demanded suit persists', () => {
@@ -995,6 +997,43 @@ describe('super ace', () => {
     expect(s.pendingPenalty).toBe(0);
     expect(s.activeCardRequest).toBeNull();
     expect(s.activeSuit).toBe('hearts');
+  });
+
+  it('exact-card demand persists across draws until someone plays it', () => {
+    const a1 = C('A', 'spades', 'a1');
+    const a2 = C('A', 'hearts', 'a2');
+    const s = rigged([a1, a2, C('4', 'clubs', 'k')], C('7', 'spades'), [C('6', 'clubs', 'o')], 2, SUPER);
+    playCombo(s, 0, [a1, a2], null, { rank: '5', suit: 'hearts' });
+    expect(s.activeCardRequest).toEqual({ rank: '5', suit: 'hearts' });
+
+    // Player 1 can't meet 5♥, draws — demand persists
+    const r1 = passOrPick(s, 1);
+    expect(r1.picked).toBe(1);
+    expect(s.activeCardRequest).toEqual({ rank: '5', suit: 'hearts' });
+    expect(s.currentPlayer).toBe(0);
+
+    // Turn comes back to player 0, still can't meet 5♥, draws — demand persists
+    const r0 = passOrPick(s, 0);
+    expect(r0.picked).toBe(1);
+    expect(s.activeCardRequest).toEqual({ rank: '5', suit: 'hearts' });
+    expect(s.currentPlayer).toBe(1);
+  });
+
+  it('super ace redeclares during an active exact-card demand', () => {
+    const a1 = C('A', 'spades', 'a1');
+    const a2 = C('A', 'hearts', 'a2');
+    const b1 = C('A', 'clubs', 'b1');
+    const b2 = C('A', 'diamonds', 'b2');
+    const s = rigged([a1, a2], C('7', 'spades'), [b1, b2], 2, SUPER);
+
+    // Player 0 demands 5♥
+    playCombo(s, 0, [a1, a2], null, { rank: '5', suit: 'hearts' });
+    expect(s.activeCardRequest).toEqual({ rank: '5', suit: 'hearts' });
+
+    // Player 1 redeclares with 2 aces, new demand 9♦
+    expect(playCombo(s, 1, [b1, b2], null, { rank: '9', suit: 'diamonds' }).ok).toBe(true);
+    expect(s.activeCardRequest).toEqual({ rank: '9', suit: 'diamonds' });
+    expect(s.lastEffect).toMatch(/Bring 9♦/);
   });
 });
 
