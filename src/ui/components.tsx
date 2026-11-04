@@ -19,6 +19,7 @@ import {
 import { describeRules } from "../engine/rules";
 import { Icon } from "./icons";
 import { Avatar } from "./theme";
+import type { SeatThreat } from "./threat";
 
 const GLYPH: Record<Suit, string> = {
   hearts: "♥",
@@ -288,7 +289,7 @@ export function OpponentSeat({
   cards,
   isTurn,
   thinking,
-  kadi,
+  threat,
   slot,
   className = "",
 }: {
@@ -296,33 +297,59 @@ export function OpponentSeat({
   cards: number;
   isTurn: boolean;
   thinking: boolean;
-  kadi: boolean;
+  threat: SeatThreat;
   slot: "left" | "top" | "right";
   className?: string;
 }) {
+  const threatLabel =
+    threat === "kadi"
+      ? "KADI called, survive all opponents"
+      : threat === "finish"
+        ? isTurn
+          ? "Can call KADI and finish"
+          : "One move from calling KADI"
+        : "";
+  const statusIcon = threat === "kadi" ? "📢" : threat ? "⚠" : "🂠";
+  const isKadi = threat === "kadi";
+
   return (
     <div
       data-testid={`seat-${slot}`}
+      role="group"
+      aria-label={`${name}, ${cards} cards${threatLabel ? `, ${threatLabel}` : ""}`}
       aria-current={isTurn ? "true" : undefined}
-      class={`flex min-w-0 w-full max-w-xs items-center gap-2 rounded-2xl border px-3 py-2 transition lg:max-w-[12rem] lg:px-4 lg:py-3 ${className} ${
-        isTurn
+      title={threatLabel || undefined}
+      class={`flex min-w-0 w-full max-w-xs items-center gap-2 rounded-2xl border px-3 py-2 transition lg:max-w-[12rem] lg:px-4 lg:py-3 ${className} ${isKadi
+        ? "border-red-500 ring-2 ring-red-500/70 bg-red-900/20 anim-kadi-pulse shadow-[0_0_20px_rgba(217,45,45,0.3)]"
+        : isTurn
           ? "border-kadi-gold/75 bg-kadi-gold/10 shadow-[0_0_22px_rgba(245,197,24,0.12)]"
-          : "border-kadi-line/45 bg-kadi-deep/45"
-      }`}
+          : "border-kadi-line/45 bg-kadi-deep/45"}
+    `}
     >
       <Avatar name={name} size="md" highlight={isTurn} />
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-1 truncate text-xs font-bold md:text-sm">
           <span class="truncate">{name}</span>
-          {kadi && (
-            <span class="shrink-0 text-[9px] font-black tracking-widest text-kadi-gold">
-              KADI!
-            </span>
-          )}
         </div>
         <div class="flex items-center gap-1 text-[11px] text-white/55 md:text-xs">
-          <span aria-hidden="true">🂠</span>
-          {thinking ? "thinking…" : `${cards} cards`}
+          <span aria-hidden="true">{statusIcon}</span>
+          {threat === "kadi" ? (
+            <span class="flex items-center gap-1 font-black text-red-300">
+              KADI!
+            </span>
+          ) : threat === "finish" ? (
+            <span
+              class={`truncate font-bold ${
+                isTurn ? "anim-kadi-pulse text-red-300" : "text-amber-300"
+              }`}
+            >
+              {isTurn ? "CAN CALL" : "1 move"} · {cards} cards
+            </span>
+          ) : thinking ? (
+            "thinking…"
+          ) : (
+            `${cards} cards`
+          )}
         </div>
       </div>
       {isTurn && (

@@ -83,6 +83,15 @@ export function resolveProfile(name: string, customs: RulesConfig[]): RulesConfi
  * contradicts the refreshed flags.
  */
 export function refreshResumeConfig(save: ActiveGameSave): void {
+  // Fields that did not exist when older saves were written. Normalise before
+  // the preset branch so custom tables get the same upgrades.
+  if (typeof save.state.pendingReverse !== 'number') save.state.pendingReverse = 0;
+  if (typeof save.state.pendingSkip !== 'number') save.state.pendingSkip = 0;
+  if (typeof save.state.pendingPenaltySuit === 'undefined') save.state.pendingPenaltySuit = null;
+  if (!Array.isArray(save.state.kadiSeen)) {
+    save.state.kadiSeen = Array(save.state.hands.length).fill(0);
+  }
+
   const preset = PRESETS.find((p) => p.name === save.meta.presetName);
   if (!preset) {
     save.state.config = migrateRules({ ...save.state.config, name: save.state.config.name });
@@ -93,10 +102,6 @@ export function refreshResumeConfig(save: ActiveGameSave): void {
     superAceEnabled: save.meta.superAce,
     strictWrongPlay: save.state.config.strictWrongPlay,
   };
-  // Fields that did not exist when older saves were written.
-  if (typeof save.state.pendingReverse !== 'number') save.state.pendingReverse = 0;
-  if (typeof save.state.pendingSkip !== 'number') save.state.pendingSkip = 0;
-  if (typeof save.state.pendingPenaltySuit === 'undefined') save.state.pendingPenaltySuit = null;
 }
 
 export interface GameStore {

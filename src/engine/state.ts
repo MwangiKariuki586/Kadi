@@ -25,6 +25,11 @@ export interface GameState {
   pendingReverse: number;
   kadiCalls: boolean[];
   kadiCallTurn: number[];
+  /**
+   * Bitmask per seat of opponents who have taken a turn since that seat's
+   * KADI call. A call only matures once every opponent has had a turn.
+   */
+  kadiSeen: number[];
   /** Players locked out of another KADI press until their next turn. */
   kadiFalseCalls: boolean[];
   turnNumber: number;
@@ -81,6 +86,7 @@ export function createGame({ numPlayers, config = STANDARD_MAUA, random = Math.r
     pendingReverse: 0,
     kadiCalls: Array(numPlayers).fill(false),
     kadiCallTurn: Array(numPlayers).fill(-1),
+    kadiSeen: Array(numPlayers).fill(0),
     kadiFalseCalls: Array(numPlayers).fill(false),
     turnNumber: 0,
     gameOver: false,
@@ -102,6 +108,20 @@ export function advanceTurn(state: GameState, opts?: { steps?: number; keepSkip?
   state.turnNumber += 1;
   // A false call locks only until the offender's next turn starts.
   if (state.kadiFalseCalls?.[next]) state.kadiFalseCalls[next] = false;
+}
+
+/**
+ * Record that `playerIndex` actually took a turn (played or picked) for every
+ * other seat's live KADI claim. Advancing the turn is not enough: a seat that
+ * is jumped over, or that sits out a skip, never gets marked.
+ */
+export function markKadiTurn(state: GameState, playerIndex: number): void {
+  if (!state.kadiSeen) state.kadiSeen = Array(state.hands.length).fill(0);
+  for (let i = 0; i < state.hands.length; i++) {
+    if (state.kadiCalls[i] && i !== playerIndex) {
+      state.kadiSeen[i] = (state.kadiSeen[i] ?? 0) | (1 << playerIndex);
+    }
+  }
 }
 
 /** Replenish draw pile from discards (keep top). No-op if impossible. */
@@ -127,6 +147,8 @@ export function drawCards(state: GameState, playerIndex: number, count: number):
   if (drawn.length > 0 && state.kadiCalls[playerIndex]) {
     state.kadiCalls[playerIndex] = false;
     state.kadiCallTurn[playerIndex] = -1;
+    if (!state.kadiSeen) state.kadiSeen = Array(state.hands.length).fill(0);
+    state.kadiSeen[playerIndex] = 0;
     state.lastEffect = (state.lastEffect ? state.lastEffect + ' • ' : '') + 'KADI void, picked cards';
   }
   return drawn;

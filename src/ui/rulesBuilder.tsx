@@ -379,7 +379,7 @@ export function RulesBuilder({
               on={draft.cardlessBlocksWin}
               onPress={() => set({ cardlessBlocksWin: !draft.cardlessBlocksWin })}
             />
-            <Stepper title="Win without calling: draw" sub="Clean finish, no prior call: draw this many." value={draft.lateCallPickCount} min={0} max={5} onChange={(v) => set({ lateCallPickCount: v })} />
+            <Stepper title="Late Kadi call: draw" sub="Shouted after the window, or finished clean with no prior call: draw this many." value={draft.lateCallPickCount} min={0} max={5} onChange={(v) => set({ lateCallPickCount: v })} />
             <Stepper title="Wrong Kadi call: draw" sub="No winning hand: draw this many, locked until your next turn." value={draft.falseKadiPickCount} min={0} max={5} onChange={(v) => set({ falseKadiPickCount: v })} />
           </Section>
 

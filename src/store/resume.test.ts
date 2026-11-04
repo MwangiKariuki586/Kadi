@@ -100,6 +100,14 @@ describe('resume guard', () => {  it('accepts a live, well-formed save', () => {
     expect(isResumable(save)).toBe(true);
   });
 
+  it('old saves without the KADI round mask load with an empty mask', () => {
+    const save = liveSave();
+    delete (save.state as unknown as Record<string, unknown>).kadiSeen;
+    refreshResumeConfig(save);
+    expect(save.state.kadiSeen).toEqual([0, 0, 0]);
+    expect(isResumable(save)).toBe(true);
+  });
+
   it('custom profiles keep their snapshotted config (never preset-reset)', () => {
     const save = liveSave();
     save.meta.presetName = 'Estate Sunday';
