@@ -30,10 +30,13 @@ test("renaming a custom table replaces the old profile and clearing restores Sta
   await page.getByRole("button", { name: "Back" }).click();
   await openLobby(page);
   await expect(
-    page.getByRole("button", { name: "Customize Estate Test" }),
+    page.getByRole("button", { name: /^Estate Test/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Customize rules" }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Customize Estate Test" }).click();
+  await page.getByRole("button", { name: "Customize rules" }).click();
   await expect(
     page.getByRole("heading", { name: "Custom rules" }),
   ).toBeVisible();
@@ -44,10 +47,10 @@ test("renaming a custom table replaces the old profile and clearing restores Sta
   await page.getByRole("button", { name: "Back" }).click();
   await openLobby(page);
   await expect(
-    page.getByRole("button", { name: "Customize Estate Renamed" }),
+    page.getByRole("button", { name: /^Estate Renamed/ }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Customize Estate Test" }),
+    page.getByRole("button", { name: /^Estate Test/ }),
   ).toHaveCount(0);
 
   await openSettings(page);
@@ -57,7 +60,7 @@ test("renaming a custom table replaces the old profile and clearing restores Sta
   await page.getByRole("button", { name: "Back" }).click();
   await openLobby(page);
   await expect(
-    page.getByRole("button", { name: /Customize Estate Renamed/ }),
+    page.getByRole("button", { name: "Customize rules" }),
   ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: /^Standard Maua/ }),

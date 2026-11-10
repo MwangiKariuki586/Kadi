@@ -239,6 +239,7 @@ export function RulesBuilder({
         title="Custom"
         accent="rules"
         subtitle={`${sourceName}. Changes apply to your next game.`}
+        maskSubtitle
         onBack={onBack}
       />
 

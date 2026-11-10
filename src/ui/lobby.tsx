@@ -177,7 +177,7 @@ export function LobbyScreen({
                         <Icon name={presetIcon(preset)} class="h-4 w-4" />
                       </span>
                       <span class="min-w-0">
-                        <span class="flex items-center gap-1.5 text-sm font-bold text-white">
+                        <span class="flex items-center gap-1.5 text-sm font-bold text-white" data-ph-mask>
                           {preset.name}
                           {custom && (
                             <span class="rounded-full bg-white/8 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-white/45">
@@ -185,7 +185,7 @@ export function LobbyScreen({
                             </span>
                           )}
                         </span>
-                        <span class="mt-0.5 block text-[11px] leading-snug text-white/50">
+                        <span class="mt-0.5 block text-[11px] leading-snug text-white/50" data-ph-mask>
                           {preset.description ?? describeRules(preset)}
                         </span>
                       </span>
@@ -203,7 +203,7 @@ export function LobbyScreen({
                   {custom && (
                     <button
                       type="button"
-                      aria-label={`Customize ${preset.name}`}
+                      aria-label="Customize rules"
                       onClick={() => onEditCustom(preset)}
                       class="absolute bottom-2.5 right-2.5 grid h-7 w-7 place-items-center rounded-lg border border-white/10 bg-white/5 text-white/60 transition hover:bg-white/10 hover:text-kadi-gold active:scale-95"
                     >

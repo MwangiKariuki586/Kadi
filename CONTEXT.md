@@ -4,7 +4,7 @@
 **Why:** No working Kadi app exists for Kenyan youth; existing ones are broken. Goals: (1) a new
 challenge when alone, (2) playable with no friends around (bots simulate 1–3 opponents).
 **Status:** Playable v1 on `http://localhost:5173` (dev, HMR) and LAN `http://192.168.100.8:5173`.
-Responsive from phone through wide desktop. Verified: **195/195 Vitest green,
+Responsive from phone through wide desktop. Verified: **291/291 Vitest green,
 `tsc -b` clean, production build green, Playwright smoke across six viewports.**
 
 ---
@@ -17,6 +17,7 @@ Responsive from phone through wide desktop. Verified: **195/195 Vitest green,
 | iOS | Skipped for v1 (audience ~90% Android) | saves $99/yr |
 | Backend v1 | None — solo vs on-device bots, IndexedDB storage | $0/mo |
 | Backend v2 (online) | Supabase free tier → Pro $25/mo only if traction demands it | $0 until growth |
+| Analytics | PostHog US Cloud; anonymous opt-out events + masked session replay | $0 up to 1M events + 5K replays/mo |
 | Year-1 total (offline) | Domain optional | ~3,250–5,200 KES |
 
 Key insight: online multiplayer is the only cost driver, so it was deferred. Solo + pass-and-play
@@ -31,6 +32,11 @@ need no server.
 * **Zero-asset media:** WebAudio-synthesized SFX (no mp3s), inline-SVG cards incl. a red/black
   Jester illustration, `navigator.vibrate` haptics. Total precache stays < 100 KB.
 * **Storage:** `idb-keyval` (stats, settings, custom rules, live-game saves).
+* **Analytics:** `posthog-js` (US Cloud) for explicit anonymous events and masked session
+  replay, lazy-loaded in a separate chunk. No autocapture, pageviews, heatmaps, surveys, error
+  tracking, or person profiles; `ip: false`; opt-out via Settings → Privacy; silent under Do Not
+  Track or `navigator.webdriver`. Events queue in a capped 100-item localStorage outbox while
+  offline. See `ANALYTICS.md`.
 * **Tests:** Vitest (`npm test`) for logic, Playwright (`npm run test:e2e`) for responsive
   smoke coverage; strict `tsc -b` on every build.
 
@@ -40,6 +46,7 @@ need no server.
 src/engine/  cards.ts, rules.ts (RulesConfig), state.ts, validator.ts   ← pure TS, UI-free
 src/bots/    bot.ts (easy/medium/hard), bot.test.ts
 src/store/   local.ts (GameStore interface + LocalStore, idb-keyval)
+src/analytics/ client.ts (lazy PostHog), events.ts (typed catalogue), outbox.ts
 src/ui/      components.tsx, layout.tsx (page shells + seat placement), feed.ts (narration),
              sounds.ts, haptics.ts
 src/app.tsx  screens + table + wiring (only stateful/impure layer)
@@ -167,6 +174,10 @@ cardless blocker. The call may happen anytime, but never wins on the same round 
   from `sm+`. Hover, visible `:focus-visible` rings, and native keyboard activation are
   supported; copy stays pointer-neutral ("Press", "Pick"). Dark battery-saving theme,
   Sheng-flavored copy, `prefers-reduced-motion` respected, 48dp targets, safe-area insets.
+* **Privacy toggle:** Settings → Privacy → "Usage stats & replays" is on by default. Off means
+  PostHog is not initialized on future boots, capture is opted out, replay stops, the anonymous
+  ID is reset, and the outbox is cleared. Custom rule names/descriptions are masked in replay
+  (`data-ph-mask`) and never sent as event properties.
 
 ## 7. Backend plan (v2, not built)
 
@@ -176,12 +187,14 @@ channels (~1 write/move for turn-based). Leaderboards/coins only on demand.
 
 ## 8. Verification
 
-* 195 Vitest tests across 9 files, including the validator's exhaustive proof that a broken
+* 291 Vitest tests across 19 files, including the validator's exhaustive proof that a broken
   chain fails in 5,000+ table states, bot legality fuzz, feed narration/coach, store resume
-  guards, and responsive seat placement. `tsc -b` strict-clean. `npm run build` green.
+  guards, responsive seat placement, and analytics config guards/event mapping/offline outbox.
+  `tsc -b` strict-clean. `npm run build` green.
 * Playwright smoke suite across six viewports (390×844, 844×390, 768×1024, 1024×768,
   1366×768, 1440×900) asserts page breakpoints, seat-ring geometry, bottom-rail containment,
-  feed-rail visibility, and keyboard focus rings. Run with `npm run test:e2e`.
+  feed-rail visibility, keyboard focus rings, and analytics opt-out persistence.
+  Run with `npm run test:e2e`.
 * Manual: dev on :5173, LAN-tested on phone via `--host` (needs one admin firewall rule —
   see below). Preview smoke-tested HTTP 200.
 

@@ -28,6 +28,8 @@ export interface Settings {
   haptics: boolean;
   /** Full card/buzzer animations. Off forces calm mode. On by default. */
   animations: boolean;
+  /** Anonymous gameplay events and session replays. On by default. */
+  analytics: boolean;
 }
 
 export interface ActiveGameMeta {
@@ -123,7 +125,7 @@ export interface GameStore {
 }
 
 const DEFAULT_STATS: Stats = { games: 0, wins: 0, bestStreak: 0, streak: 0 };
-export const DEFAULT_SETTINGS: Settings = { sound: true, difficulty: 'medium', presetName: 'Standard Maua', superAce: false, coach: false, strict: false, jokersEnabled: true, haptics: true, animations: true };
+export const DEFAULT_SETTINGS: Settings = { sound: true, difficulty: 'medium', presetName: 'Standard Maua', superAce: false, coach: false, strict: false, jokersEnabled: true, haptics: true, animations: true, analytics: true };
 
 export class LocalStore implements GameStore {
   async getStats(): Promise<Stats> {
