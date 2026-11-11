@@ -59,13 +59,17 @@ retention work across visits. It is not linked to a person.
 Settings → Privacy → **Usage stats & replays** controls analytics:
 
 - **On (default):** anonymous events and session replays are sent when online.
-- **Off:** PostHog is not initialized on future boots, session replay stops,
-  capture is opted out, the anonymous ID is reset, and the offline outbox is
-  cleared.
+- **Off:** PostHog is not initialized on future boots, buffered replay is
+  discarded without flushing, capture is opted out, queued SDK requests and the
+  offline outbox are cleared, and the anonymous ID is reset. Once consent is
+  withdrawn, no further requests are sent.
 
 The SDK also starts opted out by default and is explicitly opted in only while
 the app setting is on, so resetting consent can never silently re-enable capture.
 No `$opt_in` event is sent.
+
+Events are sent immediately instead of being batched, so a queued batch cannot
+flush after the setting is switched off.
 
 The app also stays silent when the browser sends Do Not Track, or when
 `navigator.webdriver` is true (Playwright/browser automation).
@@ -81,7 +85,9 @@ Session replay is enabled with:
   recorded.
 - No console logs are recorded.
 
-Replay needs PostHog's `/flags` endpoint, so `advanced_disable_flags` is not set.
+Replay needs PostHog's `/flags` endpoint. Flags stay enabled while analytics is
+on; opting out disables remote flags before resetting so the toggle cannot fire a
+`/flags` request, and opting back in re-enables them.
 
 ## Offline behaviour
 

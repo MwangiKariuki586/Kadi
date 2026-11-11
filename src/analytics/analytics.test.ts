@@ -188,6 +188,10 @@ describe("buildPostHogConfig", () => {
     expect(config.session_recording?.recordHeaders).toBe(false);
   });
 
+  it("sends events immediately so nothing is queued across an opt-out", () => {
+    expect(config.request_batching).toBe(false);
+  });
+
   it("does not disable flags, which replay depends on", () => {
     expect(config.advanced_disable_flags).toBeUndefined();
   });

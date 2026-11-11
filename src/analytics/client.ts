@@ -72,6 +72,11 @@ export function buildPostHogConfig(host: string): Partial<PostHogConfig> {
     respect_dnt: true,
     opt_out_capturing_by_default: true,
 
+    // Send each event immediately instead of batching for up to 3 seconds.
+    // A batch held at the moment the user opts out would otherwise flush after
+    // consent was withdrawn.
+    request_batching: false,
+
     // Session replay. Inputs and anything marked data-ph-mask are masked.
     disable_session_recording: false,
     enable_recording_console_log: false,
@@ -119,6 +124,93 @@ let config: AnalyticsConfig | null = null;
 let configured = false;
 let enabled = false;
 let onlineBound = false;
+
+/**
+ * posthog-js holds queued HTTP requests and the lazy replay buffer behind
+ * private fields. Both are deliberately cleared on opt-out so nothing captured
+ * before the toggle can leave the browser afterwards.
+ */
+interface PendingRequestQueues {
+  _requestQueue?: {
+    _queue?: unknown[];
+    _flushTimeout?: ReturnType<typeof setTimeout>;
+  };
+  _retryQueue?: {
+    _queue?: unknown[];
+    _poller?: ReturnType<typeof setTimeout>;
+  };
+}
+
+interface RecordingInternals {
+  _discardRecording?: (discardProducerEvents?: boolean) => void;
+}
+
+function discardPendingRequests(posthog: PostHog): void {
+  const queues = posthog as unknown as PendingRequestQueues;
+
+  const requestQueue = queues._requestQueue;
+  if (requestQueue) {
+    requestQueue._queue = [];
+    if (requestQueue._flushTimeout !== undefined) {
+      clearTimeout(requestQueue._flushTimeout);
+      requestQueue._flushTimeout = undefined;
+    }
+  }
+
+  const retryQueue = queues._retryQueue;
+  if (retryQueue) {
+    retryQueue._queue = [];
+    if (retryQueue._poller !== undefined) {
+      clearTimeout(retryQueue._poller);
+      retryQueue._poller = undefined;
+    }
+  }
+}
+
+/**
+ * Drop buffered replay data without disposing the extension, so opting back in
+ * can restart recording in the same page load.
+ */
+function discardRecording(posthog: PostHog): void {
+  const recording = posthog.sessionRecording as RecordingInternals | undefined;
+  if (recording?._discardRecording) {
+    recording._discardRecording(true);
+    return;
+  }
+  posthog.stopSessionRecording();
+}
+
+/** Opt out, drop every pending request and reset the anonymous identity. */
+function disableClient(posthog: PostHog): void {
+  const bestEffort = (action: () => void) => {
+    try {
+      action();
+    } catch {
+      /* privacy cleanup must not stop the remaining steps */
+    }
+  };
+
+  // Revoke consent first: if any later cleanup step fails, capture is still off.
+  bestEffort(() => posthog.opt_out_capturing());
+  // reset() reloads feature flags for the new identity. Disable remote flags
+  // first so opting out cannot fire a /flags request.
+  bestEffort(() => posthog.set_config({ advanced_disable_flags: true }));
+  // Discard the replay buffer without flushing it, then stop recording.
+  bestEffort(() => discardRecording(posthog));
+  bestEffort(() => posthog.stopSessionRecording());
+  bestEffort(() => discardPendingRequests(posthog));
+  bestEffort(() => posthog.reset());
+  bestEffort(() => discardPendingRequests(posthog));
+}
+
+/** Re-enable flags, consent and replay after a previous opt-out. */
+function resumeClient(posthog: PostHog): void {
+  posthog.set_config({ advanced_disable_flags: false });
+  posthog.opt_in_capturing({ captureEventName: false });
+  posthog.reloadFeatureFlags();
+  posthog.startSessionRecording();
+  flush();
+}
 
 function configure(): AnalyticsConfig | null {
   if (configured) return config;
@@ -193,6 +285,7 @@ export function initAnalytics(on: boolean): void {
   if (!on) {
     enabled = false;
     clearOutbox(getOutboxStorage());
+    if (client) disableClient(client);
     return;
   }
 
@@ -204,6 +297,10 @@ export function initAnalytics(on: boolean): void {
 
   enabled = true;
   bindOnline();
+  if (client) {
+    resumeClient(client);
+    return;
+  }
   void ensureClient();
 }
 
@@ -212,15 +309,7 @@ export function setAnalyticsEnabled(on: boolean): void {
   if (!on) {
     enabled = false;
     clearOutbox(getOutboxStorage());
-    if (client) {
-      try {
-        client.stopSessionRecording();
-        client.opt_out_capturing();
-        client.reset();
-      } catch {
-        /* best-effort privacy cleanup */
-      }
-    }
+    if (client) disableClient(client);
     return;
   }
 
@@ -234,9 +323,7 @@ export function setAnalyticsEnabled(on: boolean): void {
   bindOnline();
   void ensureClient().then((posthog) => {
     if (!posthog || !enabled) return;
-    posthog.opt_in_capturing({ captureEventName: false });
-    posthog.startSessionRecording();
-    flush();
+    resumeClient(posthog);
   });
 }
 
