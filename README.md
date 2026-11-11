@@ -47,7 +47,7 @@ Phone testing on the same Wi-Fi: `npm run dev -- --port 5173 --strictPort --host
 
 ## Tests
 
-291 Vitest tests across engine (validator incl. exhaustive proof), bots (incl.
+292 Vitest tests across engine (validator incl. exhaustive proof), bots (incl.
 legality fuzz), narration feed, store resume guards, responsive seat placement,
 and analytics (config guards, event mapping, offline outbox, privacy defaults).
 `npm run test:e2e` adds Playwright smoke coverage for six viewports (phone

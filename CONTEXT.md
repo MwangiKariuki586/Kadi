@@ -4,7 +4,7 @@
 **Why:** No working Kadi app exists for Kenyan youth; existing ones are broken. Goals: (1) a new
 challenge when alone, (2) playable with no friends around (bots simulate 1–3 opponents).
 **Status:** Playable v1 on `http://localhost:5173` (dev, HMR) and LAN `http://192.168.100.8:5173`.
-Responsive from phone through wide desktop. Verified: **291/291 Vitest green,
+Responsive from phone through wide desktop. Verified: **292/292 Vitest green,
 `tsc -b` clean, production build green, Playwright smoke across six viewports.**
 
 ---
@@ -187,7 +187,7 @@ channels (~1 write/move for turn-based). Leaderboards/coins only on demand.
 
 ## 8. Verification
 
-* 291 Vitest tests across 19 files, including the validator's exhaustive proof that a broken
+* 292 Vitest tests across 19 files, including the validator's exhaustive proof that a broken
   chain fails in 5,000+ table states, bot legality fuzz, feed narration/coach, store resume
   guards, responsive seat placement, and analytics config guards/event mapping/offline outbox.
   `tsc -b` strict-clean. `npm run build` green.
