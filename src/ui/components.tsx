@@ -829,8 +829,8 @@ export function PresetPill({
         {preset.jokersEnabled ? (preset.penaltyMatchMode === "any" ? "💣" : "🃏") : "🚫"}
       </span>
       <div class="min-w-0 flex-1">
-        <span class="block truncate text-sm font-bold text-white">{preset.name}</span>
-        <span class="block truncate text-[10px] text-white/55">{desc}</span>
+        <span class="block truncate text-sm font-bold text-white" data-ph-mask>{preset.name}</span>
+        <span class="block truncate text-[10px] text-white/55" data-ph-mask>{desc}</span>
       </div>
       {showCustomize && onCustomize && (
         <button
@@ -840,7 +840,7 @@ export function PresetPill({
             onCustomize();
           }}
           class="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/70 transition hover:bg-white/10 active:scale-95"
-          aria-label={`Customize ${preset.name}`}
+          aria-label="Customize rules"
         >
           <Icon name="edit" class="h-3.5 w-3.5" />
         </button>

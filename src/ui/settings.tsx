@@ -52,6 +52,7 @@ export function ToggleRow({
   on,
   onPress,
   badge,
+  testId,
 }: {
   icon: string;
   title: string;
@@ -59,12 +60,14 @@ export function ToggleRow({
   on: boolean;
   onPress: () => void;
   badge?: string;
+  testId?: string;
 }) {
   return (
     <button
       type="button"
       aria-pressed={on}
       onClick={onPress}
+      data-testid={testId}
       class={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition active:scale-[0.99] ${
         on
           ? "border-kadi-gold/60 bg-kadi-gold/10 hover:border-kadi-gold"
@@ -277,6 +280,21 @@ export function SettingsScreen({
               <InstallSettingsRow />
             </Section>
           )}
+
+          <Section
+            level="🔒"
+            title="Privacy"
+            sub="Anonymous stats only. Off means no analytics requests."
+          >
+            <ToggleRow
+              icon={settings.analytics ? "📊" : "🚫"}
+              title="Usage stats & replays"
+              sub="Anonymous gameplay events and session replays when online. No names or personal data."
+              on={settings.analytics}
+              onPress={() => onSave({ analytics: !settings.analytics })}
+              testId="analytics-toggle"
+            />
+          </Section>
 
           <Section
             level="3"

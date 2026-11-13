@@ -36,12 +36,14 @@ export function PageHeader({
   title,
   accent,
   subtitle,
+  maskSubtitle = false,
   onBack,
   right,
 }: {
   title: string;
   accent?: string;
   subtitle?: string;
+  maskSubtitle?: boolean;
   onBack: () => void;
   right?: ComponentChildren;
 }) {
@@ -63,7 +65,12 @@ export function PageHeader({
         {accent && <span class="text-kadi-gold"> {accent}</span>}
       </h2>
       {subtitle && (
-        <p class="mt-1 text-xs text-white/55 md:text-sm">{subtitle}</p>
+        <p
+          class="mt-1 text-xs text-white/55 md:text-sm"
+          data-ph-mask={maskSubtitle ? "true" : undefined}
+        >
+          {subtitle}
+        </p>
       )}
     </div>
   );

@@ -8,6 +8,11 @@ describe('settings defaults', () => {
     expect(DEFAULT_SETTINGS.animations).toBe(true);
   });
 
+  it('analytics is on by default and can be opted out', () => {
+    expect(DEFAULT_SETTINGS.analytics).toBe(true);
+    expect({ ...DEFAULT_SETTINGS, analytics: false }.analytics).toBe(false);
+  });
+
   it('legacy presets still default casual (no strict, no babu)', () => {
     expect(DEFAULT_SETTINGS.strict).toBe(false);
     expect(DEFAULT_SETTINGS.superAce).toBe(false);

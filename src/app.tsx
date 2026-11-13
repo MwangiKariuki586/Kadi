@@ -81,6 +81,14 @@ import {
 import { haptics, isHapticsEnabled, setHapticsEnabled } from "./ui/haptics";
 import { isMuted, setMuted, sfx } from "./ui/sounds";
 import { applyMotionPreference } from "./ui/motion";
+import { initAnalytics, setAnalyticsEnabled, track } from "./analytics/client";
+import {
+  customRuleChanges,
+  displayMode,
+  gameConfigProps,
+  presetKey,
+  settingsChanges,
+} from "./analytics/events";
 
 export type Screen =
   | "home"
@@ -112,6 +120,28 @@ export function shouldGuardOnExit(
  * with the `.anim-kadi-window` drain animation in index.css.
  */
 const KADI_WINDOW_MS = 2000;
+
+interface GameMetrics {
+  startedAt: number;
+  moves: number;
+  picks: number;
+  invalidPlays: number;
+  kadiCalls: number;
+  falseKadi: number;
+  resumed: boolean;
+}
+
+function freshGameMetrics(resumed: boolean): GameMetrics {
+  return {
+    startedAt: Date.now(),
+    moves: 0,
+    picks: 0,
+    invalidPlays: 0,
+    kadiCalls: 0,
+    falseKadi: 0,
+    resumed,
+  };
+}
 
 export function App() {
   const [screen, setScreen] = useState<Screen>("home");
@@ -152,9 +182,11 @@ export function App() {
   const [jokersOn, setJokersOn] = useState(true);
   const [hapticsOn, setHapticsOn] = useState(isHapticsEnabled());
   const [animationsOn, setAnimationsOn] = useState(true);
+  const [analyticsOn, setAnalyticsOn] = useState(true);
   const [settingsOrigin, setSettingsOrigin] = useState<"home" | "game">("home");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const customsRef = useRef<RulesConfig[]>([]);
+  const metricsRef = useRef<GameMetrics | null>(null);
   /** True when the active table is a saved custom, its flags stand alone. */
   const isCustomActive = !PRESETS.some((p) => p.name === preset.name);
 
@@ -252,6 +284,7 @@ export function App() {
     (save: ActiveGameSave) => {
       stateRef.current = save.state;
       recordedRef.current = false;
+      metricsRef.current = freshGameMetrics(true);
       setNumBots(save.meta.numBots);
       setDifficulty(save.meta.difficulty);
       setPreset(resolveProfile(save.meta.presetName, customsRef.current));
@@ -267,6 +300,14 @@ export function App() {
       setFeed([
         describeResume(save.state.currentPlayer, NAMES, save.state.turnNumber),
       ]);
+      track("game_resumed", {
+        ...gameConfigProps(
+          save.state.config,
+          save.meta.numBots,
+          save.meta.difficulty,
+        ),
+        turns: save.state.turnNumber,
+      });
       bump();
     },
     [bump, clearKadiAlert, closeKadiWindow],
@@ -278,11 +319,18 @@ export function App() {
    */
   const quitToHome = useCallback(
     (abandon: boolean) => {
+      const st = stateRef.current;
+      if (st) {
+        track("game_left", {
+          ...gameConfigProps(st.config, st.hands.length - 1, difficulty),
+          saved: !abandon && !st.gameOver,
+          turns: st.turnNumber,
+        });
+      }
       if (abandon) {
         void store.clearActiveGame();
         setResumable(null);
       } else {
-        const st = stateRef.current;
         if (st && !st.gameOver) {
           setResumable({
             state: JSON.parse(JSON.stringify(st)) as GameState,
@@ -296,6 +344,7 @@ export function App() {
           });
         }
       }
+      metricsRef.current = null;
       setConfirmQuit(false);
       clearKadiAlert();
       stateRef.current = null;
@@ -319,6 +368,7 @@ export function App() {
     const st = createGame({ numPlayers: 1 + numBots, config });
     stateRef.current = st;
     recordedRef.current = false;
+    metricsRef.current = freshGameMetrics(false);
     setSelected([]);
     setSuitPickerFor(null);
     setSuperPickerFor(null);
@@ -327,10 +377,11 @@ export function App() {
     closeKadiWindow();
     setScreen("game");
     setFeed([describeDeal(topCard(st), st.turnNumber)]);
+    track("game_started", gameConfigProps(config, numBots, difficulty));
     sfx.shuffle();
     haptics.tap();
     bump();
-  }, [numBots, preset, superAceOn, strictOn, jokersOn, bump, clearKadiAlert, closeKadiWindow]);
+  }, [numBots, preset, superAceOn, strictOn, jokersOn, difficulty, bump, clearKadiAlert, closeKadiWindow]);
 
   /** Single write-through for all Settings page + quick toggles. */
   const savePatch = useCallback((patch: Partial<Settings>) => {
@@ -356,6 +407,13 @@ export function App() {
     if (patch.animations !== undefined) {
       setAnimationsOn(patch.animations);
       applyMotionPreference(patch.animations);
+    }
+    if (patch.analytics !== undefined) {
+      setAnalyticsOn(patch.analytics);
+      setAnalyticsEnabled(patch.analytics);
+    }
+    for (const change of settingsChanges(patch)) {
+      track("setting_changed", change);
     }
     void store.saveSettings(patch);
   }, []);
@@ -388,6 +446,8 @@ export function App() {
 
   const saveCustomProfile = useCallback(
     (profile: RulesConfig, previousName: string | null) => {
+      const basePreset = presetKey(preset.name);
+      const changes = customRuleChanges(preset, profile);
       void store.saveCustomRules(profile, previousName).then((next) => {
         setCustoms(next);
         customsRef.current = next;
@@ -395,10 +455,24 @@ export function App() {
         void store.saveSettings({ presetName: profile.name });
         setBuilderInit(null);
         setScreen("settings");
+        const editing = previousName != null;
+        track("custom_rules_saved", {
+          editing,
+          base_preset: basePreset,
+          changed_count: changes.length,
+        });
+        for (const change of changes) {
+          track("custom_rule_changed", {
+            field: change.field,
+            value: change.value,
+            editing,
+            base_preset: basePreset,
+          });
+        }
         flash("Table rules saved 💾");
       });
     },
-    [flash],
+    [flash, preset],
   );
 
   const deleteCustomProfile = useCallback(
@@ -410,6 +484,7 @@ export function App() {
         void store.saveSettings({ presetName: STANDARD_MAUA.name });
         setBuilderInit(null);
         setScreen("settings");
+        track("custom_rules_deleted", { editing: true });
         flash("Profile deleted 🗑");
       });
     },
@@ -438,6 +513,15 @@ export function App() {
           setAnimationsOn(settings.animations);
           applyMotionPreference(settings.animations);
         }
+        const analyticsEnabled = settings?.analytics ?? true;
+        setAnalyticsOn(analyticsEnabled);
+        initAnalytics(analyticsEnabled);
+        track("app_opened", {
+          display_mode: displayMode(),
+          online: typeof navigator === "undefined" || navigator.onLine !== false,
+          has_saved_game: save != null,
+          resumed: save != null,
+        });
         if (save) {
           setResumable(save);
           restoreSave(save);
@@ -447,6 +531,12 @@ export function App() {
       .catch(() => undefined)
       .finally(() => setBooted(true));
   }, [restoreSave, flash]);
+
+  // ---- screen views: one event per committed screen change ----
+  useEffect(() => {
+    if (!booted) return;
+    track("screen_viewed", { screen });
+  }, [screen, booted]);
 
   // ---- bot loop: any non-human turn advances after a thinking delay ----
   // A refusal keeps the turn, so the bot may act several times in a row
@@ -555,6 +645,11 @@ export function App() {
               s.turnNumber,
             ),
           );
+          track("bot_stall", {
+            difficulty,
+            card_count: move.cards.length,
+            turn: s.turnNumber,
+          });
         }
       } else {
         const pr = passOrPick(s, me);
@@ -661,6 +756,20 @@ export function App() {
       void store.clearActiveGame();
       setResumable(null);
       const won = state.winnerIndex === 0;
+      const metrics = metricsRef.current;
+      track("game_finished", {
+        ...gameConfigProps(state.config, state.hands.length - 1, difficulty),
+        won,
+        turns: state.turnNumber,
+        duration_ms: metrics ? Date.now() - metrics.startedAt : 0,
+        moves: metrics?.moves ?? 0,
+        picks: metrics?.picks ?? 0,
+        invalid_plays: metrics?.invalidPlays ?? 0,
+        kadi_calls: metrics?.kadiCalls ?? 0,
+        false_kadi: metrics?.falseKadi ?? 0,
+        resumed: metrics?.resumed ?? false,
+      });
+      metricsRef.current = null;
       if (won) {
         sfx.win();
         haptics.win();
@@ -868,6 +977,7 @@ export function App() {
             jokersEnabled: jokersOn,
             haptics: hapticsOn,
             animations: animationsOn,
+            analytics: analyticsOn,
           }}
           stats={stats}
           hasSave={settingsOrigin === "home" && resumable !== null}
@@ -882,18 +992,21 @@ export function App() {
           onClearHistory={() => {
             void store.clearMatchHistory().then(() => {
               setHistory([]);
+              track("settings_action", { action: "clear_history" });
               flash("Match history cleared");
             });
           }}
           onResetStats={() => {
             void store.resetStats().then((s) => {
               setStats(s);
+              track("settings_action", { action: "reset_stats" });
               flash("Stats cleared 🧹");
             });
           }}
           onClearSave={() => {
             void store.clearActiveGame().then(() => {
               setResumable(null);
+              track("settings_action", { action: "clear_save" });
               flash("Saved match forfeited ⏸");
             });
           }}
@@ -905,6 +1018,7 @@ export function App() {
                 setPreset({ ...STANDARD_MAUA });
                 void store.saveSettings({ presetName: STANDARD_MAUA.name });
               }
+              track("settings_action", { action: "clear_customs" });
               flash("Custom rules cleared 🗑");
             });
           }}
@@ -1065,6 +1179,18 @@ export function App() {
       (!kadiCalled || kadiWait)
     ) {
       sfx.error();
+      const metrics = metricsRef.current;
+      if (metrics) metrics.invalidPlays += 1;
+      track("invalid_play", {
+        reason: kadiLocked
+          ? "KADI_LOCKED"
+          : kadiCalled
+            ? "KADI_WAIT"
+            : "KADI_REQUIRED",
+        card_count: cards.length,
+        strict: state.config.strictWrongPlay,
+        turn: state.turnNumber,
+      });
       pushNotice(
         kadiLocked
           ? "False KADI - this dump cannot win until your next turn."
@@ -1080,6 +1206,14 @@ export function App() {
     if (!r.ok) {
       sfx.error();
       haptics.penalty();
+      const metrics = metricsRef.current;
+      if (metrics) metrics.invalidPlays += 1;
+      track("invalid_play", {
+        reason: r.reason ?? "UNKNOWN",
+        card_count: cards.length,
+        strict: state.config.strictWrongPlay,
+        turn: state.turnNumber,
+      });
       // Strict tables fine the attempt (draw + turn passes); casual rejects free.
       // The reason is already shown inline + in the coach line, no toast: the
       // feed (strict fine) is the only panel entry.
@@ -1100,6 +1234,8 @@ export function App() {
         fined: r.fined,
       }),
     );
+    const metrics = metricsRef.current;
+    if (metrics) metrics.moves += 1;
     setSelected([]);
     setSuitPickerFor(null);
     setSuperPickerFor(null);
@@ -1159,6 +1295,8 @@ export function App() {
     );
     sfx.pick();
     haptics.tap();
+    const metrics = metricsRef.current;
+    if (metrics) metrics.picks += 1;
     setSelected([]);
     bump();
   };
@@ -1192,6 +1330,13 @@ export function App() {
     if (latePress && kadiCallable) {
       const fined = fineKadiDelay(state, 0);
       declareKadi(state, 0);
+      const metrics = metricsRef.current;
+      if (metrics) metrics.kadiCalls += 1;
+      track("kadi_called", {
+        late: true,
+        turn: state.turnNumber,
+        winnable: true,
+      });
       pushFeed(describeDelayKadi("You", fined, state.turnNumber));
       pushFeed(describeKadi("You", state.turnNumber));
       sfx.penalty();
@@ -1201,16 +1346,29 @@ export function App() {
     }
     const r = tryDeclareKadi(state, 0);
     if (r.ok) {
+      const metrics = metricsRef.current;
+      if (metrics) metrics.kadiCalls += 1;
+      track("kadi_called", {
+        late: false,
+        turn: state.turnNumber,
+        winnable: true,
+      });
       sfx.kadi();
       haptics.play();
       pushFeed(describeKadi("You", state.turnNumber));
       bump();
     } else if (r.falseCall && r.fined) {
+      const metrics = metricsRef.current;
+      if (metrics) metrics.falseKadi += 1;
+      track("kadi_false", { turn: state.turnNumber, fined: r.fined });
       sfx.penalty();
       haptics.penalty();
       pushFeed(describeFalseKadi("You", r.fined, state.turnNumber));
       bump();
     } else if (r.falseCall) {
+      const metrics = metricsRef.current;
+      if (metrics) metrics.falseKadi += 1;
+      track("kadi_false", { turn: state.turnNumber, fined: 0 });
       sfx.error();
       haptics.penalty();
       pushNotice(

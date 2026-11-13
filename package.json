@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "idb-keyval": "^6.3.0",
+    "posthog-js": "1.447.9",
     "preact": "^10.29.8"
   },
   "devDependencies": {

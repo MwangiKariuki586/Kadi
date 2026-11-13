@@ -83,7 +83,7 @@ export function MyGamesScreen({
                           <Icon name="users" class="h-3 w-3" />
                           {rivals.join(", ")}
                         </span>
-                        <span>{match.presetName}</span>
+                        <span data-ph-mask>{match.presetName}</span>
                         <span class="capitalize">{match.difficulty}</span>
                         <span>{match.turns} turns</span>
                       </div>
