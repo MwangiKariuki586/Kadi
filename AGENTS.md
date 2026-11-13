@@ -6,10 +6,21 @@ interaction involving code changes. Do NOT skip or relax these.
 ## Git & Branching
 
 - Never commit directly to `main`.
-- Always create a feature branch: `feat/<short-desc>` or `fix/<short-desc>`.
+- Always create a branch named for the change type:
+  `feat/<short-desc>`, `fix/<short-desc>`, `docs/<short-desc>`,
+  `chore/<short-desc>`, `refactor/<short-desc>`, or `test/<short-desc>`.
 - Keep branches short-lived (target: < 1 day of work).
-- Commit messages follow Conventional Commits: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
-- Squash-merge into `main`. Delete the branch after merge.
+- Commit messages follow Conventional Commits: `feat:`, `fix:`, `chore:`,
+  `docs:`, `refactor:`, `test:`.
+- Squash-merge the `staging/integration-*` → `main` PR into `main`. Delete the
+  integration branch after merge.
+
+## Commit timing (verification first)
+
+- Implement and stop. "Proceed" means implement only, not commit.
+- Do not commit until I explicitly confirm the changes work.
+- After my confirmation, commit locally on the change branch.
+- Never push unless I explicitly say "push".
 
 ## Pushing (explicit permission only)
 
@@ -20,16 +31,18 @@ interaction involving code changes. Do NOT skip or relax these.
 - This applies to every branch, including feature branches and `staging/*`.
 - Never force-push.
 
-## Pull Requests (even for yourself)
+## Pull Requests (`staging/integration-*` → `main` only)
 
-- Every change goes through a PR, no exceptions.
+- The only PR is `staging/integration-*` → `main`.
+- Change branches merge into `staging/integration-*` locally; they do not get
+  PRs.
 - PR title = the squash-merge commit message.
 - PR body must include: what changed, why, and how to verify.
 - Before merging, re-read the full diff as a reviewer would.
 
 ## CI (GitHub Actions)
 
-- A PR must pass all checks before merge:
+- The `staging/integration-*` → `main` PR must pass all checks before merge:
   - Lint (eslint / ruff / etc.)
   - Unit tests
   - Build succeeds
@@ -45,34 +58,44 @@ interaction involving code changes. Do NOT skip or relax these.
 
 ## Environments
 
-- **Staging:** auto-deployed on merge to `main`. I smoke-test here.
+- **Staging:** the environment sourced from `staging/integration-*`. Pushing
+  that branch (only on my explicit command) deploys it; I test changes here
+  before they go to `main`.
 - **Production:** deployed only after I explicitly confirm staging is good.
 - The same artifact (image/binary) goes to both. Never rebuild for prod.
 
-## Staging merging rules (`staging/*` is a testing env)
+## Staging merging rules (`staging/integration-*` is the staging environment)
 
-- Merging feature/fix branches into `staging` is allowed at any time — no PR
-  required, CI is not a gate there.
-- Merge locally (`git merge --no-ff`) and stop; push only on my explicit
-  command. If I ask for a PR with base `staging` for visibility on bigger
-  changes, that request includes permission to push that branch.
+- `staging/integration-*` is the integration branch and the source of the
+  staging environment. Staging exists to keep `main` safe.
+- After I confirm the implementation works on the feature/fix branch, merge
+  that branch into `staging/integration-*` locally with `git merge --no-ff`.
+- No PR and no CI gate for feature/fix → staging merges.
+- Stop after the local merge; push only on my explicit command. Pushing
+  `staging/integration-*` deploys staging for me to test.
 - Never force-push a shared branch. Never commit directly to `main`.
-- Feature branches may be deleted right after merging to `staging`.
-- `main` rules stay strict no matter what staging allowed: every change via
-  PR, all checks green, squash-merge, branch deleted after merge.
+- Change branches may be deleted right after merging into staging.
+- `staging/integration-*` → `main` requires a PR. Open it only after I confirm
+  staging works. I approve the PR only when all checks are green; squash-merge
+  and delete the integration branch after merge.
 
 ## Code Quality
 
 - No `console.log` / `print()` / `TODO` left in merged code.
 - No commented-out code blocks.
 - New features require at least one test.
-- If a change is > 200 lines, suggest splitting into smaller PRs.
+- If a change is > 200 lines, suggest splitting it into smaller branches/PRs.
 
 ## What I want from you
 
-- When I say "I'm done with X", help me: commit locally, then stop and ask
-  before pushing. Only after I explicitly say "push" do you push, open the PR,
-  and verify CI.
-- When I say "merge it", verify the PR is green first. If not, tell me what's failing.
+- When I say "I'm done with X" or confirm the changes work, commit locally on
+  the change branch. Do not commit before that.
+- Stop and ask before pushing. Only after I explicitly say "push" do you push.
+- When I say "merge it" for a change branch, merge locally into
+  `staging/integration-*` with `git merge --no-ff`; no PR or CI gate. Stop
+  there; pushing staging deploys it and needs my explicit "push".
+- When I say "merge it" for the staging → `main` PR, verify the PR and all
+  checks are green first; I approve the PR. If not, tell me what's failing.
 - When I say "deploy", confirm I've validated staging before touching prod.
-- If I try to push to `main` directly or skip a PR, stop me and explain why.
+- If I try to push to `main` directly or skip the staging → `main` PR, stop me
+  and explain why.
