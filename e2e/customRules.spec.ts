@@ -30,13 +30,13 @@ test("renaming a custom table replaces the old profile and clearing restores Sta
   await page.getByRole("button", { name: "Back" }).click();
   await openLobby(page);
   await expect(
-    page.getByRole("button", { name: /^Estate Test/ }),
+    page.getByRole("button", { name: /^Estate Test custom/ }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Customize rules" }),
+    page.getByRole("button", { name: "Estate Test", exact: true }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Customize rules" }).click();
+  await page.getByRole("button", { name: "Estate Test", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Custom rules" }),
   ).toBeVisible();
@@ -47,7 +47,7 @@ test("renaming a custom table replaces the old profile and clearing restores Sta
   await page.getByRole("button", { name: "Back" }).click();
   await openLobby(page);
   await expect(
-    page.getByRole("button", { name: /^Estate Renamed/ }),
+    page.getByRole("button", { name: /^Estate Renamed custom/ }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: /^Estate Test/ }),
@@ -60,7 +60,7 @@ test("renaming a custom table replaces the old profile and clearing restores Sta
   await page.getByRole("button", { name: "Back" }).click();
   await openLobby(page);
   await expect(
-    page.getByRole("button", { name: "Customize rules" }),
+    page.locator('button[aria-labelledby^="preset-name-"]'),
   ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: /^Standard Maua/ }),

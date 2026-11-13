@@ -10,6 +10,7 @@ import {
 } from "./events";
 import {
   buildPostHogConfig,
+  guardRetryQueue,
   REPLAY_SAMPLE_RATE,
   resolveAnalyticsConfig,
 } from "./client";
@@ -234,7 +235,6 @@ describe("resolveAnalyticsConfig", () => {
 
 describe("buildPostHogConfig", () => {
   const config = buildPostHogConfig("https://us.i.posthog.com");
-
   it("disables every automatic capture surface", () => {
     expect(config.autocapture).toBe(false);
     expect(config.capture_pageview).toBe(false);
@@ -276,5 +276,80 @@ describe("buildPostHogConfig", () => {
 
   it("does not disable flags, which replay depends on", () => {
     expect(config.advanced_disable_flags).toBeUndefined();
+  });
+});
+
+describe("guardRetryQueue", () => {
+  type GuardTarget = Parameters<typeof guardRetryQueue>[0];
+
+  function fakeQueue() {
+    const calls = { enqueue: 0, flush: 0, unload: 0 };
+    const queue = {
+      _queue: [{ url: "/e" }] as unknown[],
+      _isPolling: true,
+      _poller: 123 as unknown as ReturnType<typeof setTimeout>,
+      _enqueue: (_requestOptions: unknown, _retryAfterMs?: number) => {
+        calls.enqueue += 1;
+      },
+      _flush: () => {
+        calls.flush += 1;
+      },
+      unload: () => {
+        calls.unload += 1;
+      },
+    };
+    return { queue, calls };
+  }
+
+  function guard(
+    queue: ReturnType<typeof fakeQueue>["queue"],
+    isEnabled: () => boolean,
+  ): void {
+    guardRetryQueue(
+      { _retryQueue: queue } as unknown as GuardTarget,
+      isEnabled,
+    );
+  }
+
+  it("drops failed-request retries and stops polling after opt-out", () => {
+    const { queue, calls } = fakeQueue();
+    guard(queue, () => false);
+
+    queue._enqueue({ url: "/e" });
+    queue._flush();
+
+    expect(calls.enqueue).toBe(0);
+    expect(calls.flush).toBe(0);
+    expect(queue._queue).toEqual([]);
+    expect(queue._isPolling).toBe(false);
+    expect(queue._poller).toBeUndefined();
+  });
+
+  it("passes retries through while analytics is on", () => {
+    const { queue, calls } = fakeQueue();
+    guard(queue, () => true);
+
+    queue._enqueue({ url: "/e" });
+    queue._flush();
+
+    expect(calls.enqueue).toBe(1);
+    expect(calls.flush).toBe(1);
+  });
+
+  it("empties queued retries before the SDK's unload beacon flush", () => {
+    const { queue, calls } = fakeQueue();
+    const originalUnload = queue.unload;
+    let queuedAtUnload: unknown[] | undefined;
+    queue.unload = () => {
+      queuedAtUnload = [...queue._queue];
+      originalUnload();
+    };
+    guard(queue, () => false);
+
+    queue.unload();
+
+    expect(queuedAtUnload).toEqual([]);
+    expect(calls.unload).toBe(1);
+    expect(queue._isPolling).toBe(false);
   });
 });

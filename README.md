@@ -13,7 +13,7 @@ No account, no server, no network needed after first load.
   bottom action rail on laptops, and a live match-log rail on wide screens
 - Installable PWA (offline precache, auto-update, standalone, any orientation)
 - Zero-asset media: WebAudio-synthesized SFX, inline-SVG cards, haptics via `navigator.vibrate`
-- Optional anonymous analytics (PostHog) with a Privacy toggle, masked session replays, and no personal data
+- Optional anonymous analytics (PostHog) with a Privacy toggle, masked session replays, and no accounts or person profiles
 
 ## Tech stack
 
@@ -47,10 +47,11 @@ Phone testing on the same Wi-Fi: `npm run dev -- --port 5173 --strictPort --host
 
 ## Tests
 
-302 Vitest tests across engine (validator incl. exhaustive proof), bots (incl.
+306 Vitest tests across engine (validator incl. exhaustive proof), bots (incl.
 legality fuzz), narration feed, store resume guards, responsive seat placement,
 and analytics (config guards, event budget, custom-rule diffs, offline outbox
-with UUID dedupe, replay sampling, privacy defaults).
+with UUID dedupe, replay sampling, retry-queue opt-out guards, atomic settings
+merges, privacy defaults).
 `npm run test:e2e` adds Playwright smoke coverage for six viewports (phone
 portrait/landscape, tablet portrait/landscape, laptop, wide desktop), checking
 page breakpoints, the seat ring, the bottom action rail, the feed rail, and the
@@ -85,10 +86,12 @@ the event list, event budget, privacy guarantees, and `VITE_POSTHOG_*` setup.
 
 ## CI/CD
 
-Every change goes through a pull request against `main` (see `AGENTS.md`).
-PRs must pass lint, typecheck, unit tests, Playwright e2e, and build. Merges to
-`main` auto-deploy staging; production is promoted from a validated staging
-deployment — same artifact, never rebuilt.
+Every change lands on a short-lived branch and merges locally into
+`staging/integration-*` (see `AGENTS.md`). Pushing that integration branch
+updates the staging preview through Vercel's Git integration. The only pull
+request is `staging/integration-*` → `main`; it must pass lint, typecheck, unit
+tests, Playwright e2e, and build. Production is promoted from a validated
+staging deployment — same artifact, never rebuilt.
 
 ## Docs
 

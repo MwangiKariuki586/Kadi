@@ -1,4 +1,4 @@
-import { del, get, set } from 'idb-keyval';
+import { del, get, set, update } from 'idb-keyval';
 import { migrateRules, PRESETS, STANDARD_MAUA, type RulesConfig } from '../engine/rules';
 import type { GameState } from '../engine/state';
 import { appendMatch, normalizeHistory, type MatchRecord } from './history';
@@ -181,9 +181,13 @@ export class LocalStore implements GameStore {
   }
 
   async saveSettings(s: Partial<Settings>): Promise<Settings> {
-    const cur = await this.getSettings();
-    const next = { ...cur, ...s };
-    await set('kadi-settings', next);
+    // Merge inside a single readwrite transaction so overlapping saves (for
+    // example, toggling two settings quickly) cannot lose an update.
+    let next = { ...DEFAULT_SETTINGS, ...s };
+    await update<Partial<Settings>>('kadi-settings', (stored) => {
+      next = { ...DEFAULT_SETTINGS, ...stored, ...s };
+      return next;
+    });
     return next;
   }
 

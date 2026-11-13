@@ -158,7 +158,9 @@ network returns. Kadi keeps a capped outbox (100 events) in `localStorage`:
    that setting is present.
 
 `posthog-js` is pinned to an exact version because opt-out cleanup uses private
-SDK request and recording queues. Review those internals before upgrading.
+SDK request and recording queues. The retry queue is wrapped so a failed
+in-flight request cannot re-enqueue, poll, or beacon-send after opt-out. Review
+those internals before upgrading.
 
 ## Environment variables
 
