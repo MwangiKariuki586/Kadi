@@ -58,9 +58,9 @@ interaction involving code changes. Do NOT skip or relax these.
 
 ## Environments
 
-- **Staging:** the environment sourced from `staging/integration-*`. Pushing
-  that branch (only on my explicit command) deploys it; I test changes here
-  before they go to `main`.
+- **Staging:** the environment sourced from `staging/integration-*`. Vercel's
+  Git integration builds a preview for every push to that branch (only on my
+  explicit command); I test changes there before they go to `main`.
 - **Production:** deployed only after I explicitly confirm staging is good.
 - The same artifact (image/binary) goes to both. Never rebuild for prod.
 
@@ -72,7 +72,7 @@ interaction involving code changes. Do NOT skip or relax these.
   that branch into `staging/integration-*` locally with `git merge --no-ff`.
 - No PR and no CI gate for feature/fix → staging merges.
 - Stop after the local merge; push only on my explicit command. Pushing
-  `staging/integration-*` deploys staging for me to test.
+  `staging/integration-*` updates its Vercel preview (staging) for me to test.
 - Never force-push a shared branch. Never commit directly to `main`.
 - Change branches may be deleted right after merging into staging.
 - `staging/integration-*` → `main` requires a PR. Open it only after I confirm

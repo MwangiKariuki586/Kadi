@@ -151,9 +151,10 @@ export function LobbyScreen({
         <section class="mt-4 lg:mt-0">
           <SectionLabel icon="book">Game rules</SectionLabel>
           <div class="mt-2 grid gap-2 md:grid-cols-2">
-            {allPresets.map((preset) => {
+            {allPresets.map((preset, index) => {
               const active = presetName === preset.name;
               const custom = customs.some((c) => c.name === preset.name);
+              const nameId = `preset-name-${index}`;
               return (
                 <div class="relative" key={preset.name}>
                   <button
@@ -178,7 +179,7 @@ export function LobbyScreen({
                       </span>
                       <span class="min-w-0">
                         <span class="flex items-center gap-1.5 text-sm font-bold text-white" data-ph-mask>
-                          {preset.name}
+                          <span id={nameId}>{preset.name}</span>
                           {custom && (
                             <span class="rounded-full bg-white/8 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-white/45">
                               custom
@@ -203,7 +204,7 @@ export function LobbyScreen({
                   {custom && (
                     <button
                       type="button"
-                      aria-label="Customize rules"
+                      aria-labelledby={nameId}
                       onClick={() => onEditCustom(preset)}
                       class="absolute bottom-2.5 right-2.5 grid h-7 w-7 place-items-center rounded-lg border border-white/10 bg-white/5 text-white/60 transition hover:bg-white/10 hover:text-kadi-gold active:scale-95"
                     >

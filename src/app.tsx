@@ -446,8 +446,12 @@ export function App() {
 
   const saveCustomProfile = useCallback(
     (profile: RulesConfig, previousName: string | null) => {
-      const basePreset = presetKey(preset.name);
-      const changes = customRuleChanges(preset, profile);
+      // The builder can edit a profile that is not the active table (for
+      // example, a custom rule opened from Settings). Diff against what the
+      // builder started with, never the currently selected preset.
+      const baseline = builderInit?.initial ?? preset;
+      const basePreset = presetKey(baseline.name);
+      const changes = customRuleChanges(baseline, profile);
       void store.saveCustomRules(profile, previousName).then((next) => {
         setCustoms(next);
         customsRef.current = next;
@@ -472,7 +476,7 @@ export function App() {
         flash("Table rules saved 💾");
       });
     },
-    [flash, preset],
+    [builderInit, flash, preset],
   );
 
   const deleteCustomProfile = useCallback(

@@ -139,19 +139,80 @@ let onlineBound = false;
  * private fields. Both are deliberately cleared on opt-out so nothing captured
  * before the toggle can leave the browser afterwards.
  */
+interface RetryQueueInternals {
+  _queue?: unknown[];
+  _isPolling?: boolean;
+  _poller?: ReturnType<typeof setTimeout>;
+  _enqueue?: (requestOptions: unknown, retryAfterMs?: number) => void;
+  _flush?: () => void;
+  unload?: () => void;
+}
+
 interface PendingRequestQueues {
   _requestQueue?: {
     _queue?: unknown[];
     _flushTimeout?: ReturnType<typeof setTimeout>;
   };
-  _retryQueue?: {
-    _queue?: unknown[];
-    _poller?: ReturnType<typeof setTimeout>;
-  };
+  _retryQueue?: RetryQueueInternals;
 }
 
 interface RecordingInternals {
   _discardRecording?: (discardProducerEvents?: boolean) => void;
+}
+
+function clearRetryQueue(retryQueue: RetryQueueInternals): void {
+  retryQueue._queue = [];
+  if (retryQueue._poller !== undefined) {
+    clearTimeout(retryQueue._poller);
+    retryQueue._poller = undefined;
+  }
+  retryQueue._isPolling = false;
+}
+
+/**
+ * The pinned SDK's retry queue re-enqueues a failed in-flight request after
+ * opt-out, and its unload path flushes queued retries with sendBeacon. Neither
+ * path checks consent, so wrap them and drop retries while analytics is off.
+ * Checked against posthog-js 1.447.9's RetryQueue implementation.
+ */
+export function guardRetryQueue(
+  posthog: PostHog,
+  isEnabled: () => boolean = () => enabled,
+): void {
+  const retryQueue = (posthog as unknown as PendingRequestQueues)._retryQueue;
+  if (!retryQueue) return;
+
+  const originalEnqueue = retryQueue._enqueue;
+  if (originalEnqueue) {
+    retryQueue._enqueue = (requestOptions, retryAfterMs) => {
+      if (!isEnabled()) {
+        clearRetryQueue(retryQueue);
+        return;
+      }
+      originalEnqueue.call(retryQueue, requestOptions, retryAfterMs);
+    };
+  }
+
+  const originalFlush = retryQueue._flush;
+  if (originalFlush) {
+    retryQueue._flush = () => {
+      if (!isEnabled()) {
+        clearRetryQueue(retryQueue);
+        return;
+      }
+      originalFlush.call(retryQueue);
+    };
+  }
+
+  const originalUnload = retryQueue.unload;
+  if (originalUnload) {
+    retryQueue.unload = () => {
+      // Empty the queue first so the SDK's beacon flush has nothing to send,
+      // then let it clean up its online/offline listeners.
+      if (!isEnabled()) clearRetryQueue(retryQueue);
+      originalUnload.call(retryQueue);
+    };
+  }
 }
 
 function discardPendingRequests(posthog: PostHog): void {
@@ -166,14 +227,7 @@ function discardPendingRequests(posthog: PostHog): void {
     }
   }
 
-  const retryQueue = queues._retryQueue;
-  if (retryQueue) {
-    retryQueue._queue = [];
-    if (retryQueue._poller !== undefined) {
-      clearTimeout(retryQueue._poller);
-      retryQueue._poller = undefined;
-    }
-  }
+  if (queues._retryQueue) clearRetryQueue(queues._retryQueue);
 }
 
 /**
@@ -254,6 +308,7 @@ async function ensureClient(): Promise<PostHog | null> {
       if (!enabled || !config) return null;
 
       posthog.init(config.key, buildPostHogConfig(config.host));
+      guardRetryQueue(posthog);
       posthog.opt_in_capturing({ captureEventName: false });
       client = posthog;
       flush();
