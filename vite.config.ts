@@ -35,9 +35,27 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ogg,mp3,woff2}'],
+        // posthog-js is a lazy analytics chunk. Keep it out of the offline
+        // precache so the game's install size stays small and analytics never
+        // becomes a boot dependency.
+        globIgnores: ['**/analytics-*.js'],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       },
     }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (
+            id.includes("node_modules/posthog-js") ||
+            id.includes("node_modules/@posthog/")
+          ) {
+            return "analytics";
+          }
+        },
+      },
+    },
+  },
   test: { environment: 'node', include: ['src/**/*.test.ts'] },
 })

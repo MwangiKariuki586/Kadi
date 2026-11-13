@@ -13,11 +13,13 @@ No account, no server, no network needed after first load.
   bottom action rail on laptops, and a live match-log rail on wide screens
 - Installable PWA (offline precache, auto-update, standalone, any orientation)
 - Zero-asset media: WebAudio-synthesized SFX, inline-SVG cards, haptics via `navigator.vibrate`
+- Optional anonymous analytics (PostHog) with a Privacy toggle, masked session replays, and no accounts or person profiles
 
 ## Tech stack
 
 Vite 8 + TypeScript (strict) + Preact 10 + Tailwind CSS 4, PWA via `vite-plugin-pwa`
-(Workbox), storage via `idb-keyval`, tests via Vitest and Playwright.
+(Workbox), storage via `idb-keyval`, analytics via `posthog-js`, tests via Vitest
+and Playwright.
 
 ## Getting started
 
@@ -45,13 +47,16 @@ Phone testing on the same Wi-Fi: `npm run dev -- --port 5173 --strictPort --host
 
 ## Tests
 
-195 Vitest tests across engine (validator incl. exhaustive proof), bots (incl.
-legality fuzz), narration feed, store resume guards, and responsive seat
-placement. `npm run test:e2e` adds Playwright smoke coverage for six viewports
-(phone portrait/landscape, tablet portrait/landscape, laptop, wide desktop),
-checking page breakpoints, the seat ring, the bottom action rail, and the feed
-rail. `npm run build` also type-checks strictly, so green tests + green build =
-shippable.
+306 Vitest tests across engine (validator incl. exhaustive proof), bots (incl.
+legality fuzz), narration feed, store resume guards, responsive seat placement,
+and analytics (config guards, event budget, custom-rule diffs, offline outbox
+with UUID dedupe, replay sampling, retry-queue opt-out guards, atomic settings
+merges, privacy defaults).
+`npm run test:e2e` adds Playwright smoke coverage for six viewports (phone
+portrait/landscape, tablet portrait/landscape, laptop, wide desktop), checking
+page breakpoints, the seat ring, the bottom action rail, the feed rail, and the
+analytics opt-out toggle. `npm run build` also type-checks strictly, so green
+tests + green build = shippable.
 
 ## Project structure
 
@@ -59,6 +64,7 @@ shippable.
 src/engine/  cards, rules (versioned RulesConfig), state, validator  <- pure TS, UI-free
 src/bots/    easy / medium / hard bot policies
 src/store/   GameStore interface + LocalStore (idb-keyval)
+src/analytics/ lazy PostHog client, event catalogue, offline outbox
 src/ui/      components, layout, feed narration, sounds, haptics
 src/app.tsx  screens + table wiring (only stateful layer)
 e2e/         Playwright responsive smoke tests
@@ -68,14 +74,27 @@ The engine never hardcodes card meanings — behaviour comes from a versioned
 `RulesConfig`, so house rules are data, not code. UI touches storage only through
 the `GameStore` interface.
 
+## Analytics
+
+Anonymous, opt-out PostHog events plus masked, 10%-sampled session replays.
+Analytics is intentionally lean: per-turn moves and picks are aggregated into
+`game_finished` rather than sent individually. It is off in local dev unless
+`VITE_POSTHOG_DEV=true`, stays silent under Do Not Track or browser automation,
+and never blocks gameplay or offline play. Turning it off in Settings → Privacy
+stops all PostHog requests and clears the offline queue. See `ANALYTICS.md` for
+the event list, event budget, privacy guarantees, and `VITE_POSTHOG_*` setup.
+
 ## CI/CD
 
-Every change goes through a pull request against `main` (see `AGENTS.md`).
-PRs must pass lint, typecheck, unit tests, Playwright e2e, and build. Merges to
-`main` auto-deploy staging; production is promoted from a validated staging
-deployment — same artifact, never rebuilt.
+Every change lands on a short-lived branch and merges locally into
+`staging/integration-*` (see `AGENTS.md`). Pushing that integration branch
+updates the staging preview through Vercel's Git integration. The only pull
+request is `staging/integration-*` → `main`; it must pass lint, typecheck, unit
+tests, Playwright e2e, and build. Production is promoted from a validated
+staging deployment — same artifact, never rebuilt.
 
 ## Docs
 
 - `AGENTS.md` — development workflow (branching, PRs, CI, environments)
 - `CONTEXT.md` — product context, locked decisions, architecture, open items
+- `ANALYTICS.md` — PostHog event taxonomy, privacy, setup, and dashboards

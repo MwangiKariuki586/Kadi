@@ -8,6 +8,11 @@ vi.mock('idb-keyval', () => ({
   set: vi.fn(async (key: string, value: unknown) => {
     memory.set(key, value);
   }),
+  update: vi.fn(
+    async (key: string, updater: (value: unknown) => unknown) => {
+      memory.set(key, updater(memory.get(key)));
+    },
+  ),
   del: vi.fn(async (key: string) => {
     memory.delete(key);
   }),
@@ -38,5 +43,24 @@ describe('custom rule profiles', () => {
       { name: 'Other Table' },
       { name: 'New Table' },
     ]);
+  });
+});
+
+describe('settings', () => {
+  it('merges concurrent partial saves without losing an update', async () => {
+    const store = new LocalStore();
+
+    await Promise.all([
+      store.saveSettings({ sound: false }),
+      store.saveSettings({ haptics: false }),
+      store.saveSettings({ analytics: false }),
+    ]);
+
+    await expect(store.getSettings()).resolves.toMatchObject({
+      sound: false,
+      haptics: false,
+      analytics: false,
+      difficulty: 'medium',
+    });
   });
 });

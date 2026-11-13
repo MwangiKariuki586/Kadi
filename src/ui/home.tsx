@@ -87,7 +87,7 @@ function RecentGamesCard({
                   <span class="block truncate text-xs font-bold text-white/80">
                     {opponentLine(match)}
                   </span>
-                  <span class="block truncate text-[10px] text-white/35">
+                  <span class="block truncate text-[10px] text-white/35" data-ph-mask>
                     {match.presetName} · {relativeTime(match.at)}
                   </span>
                 </span>

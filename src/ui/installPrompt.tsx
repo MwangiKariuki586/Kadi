@@ -10,6 +10,7 @@ import {
   type InstallGuidance,
 } from "./install";
 import { Panel } from "./theme";
+import { track } from "../analytics/client";
 
 export type InstallGuide =
   | "chrome-menu"
@@ -76,8 +77,12 @@ function guideFor(guidance: InstallGuidance): InstallGuide {
   return guidance;
 }
 
-async function activateInstall(openHelp: () => void): Promise<void> {
+async function activateInstall(
+  openHelp: () => void,
+  placement: string,
+): Promise<void> {
   const outcome = await promptInstall();
+  track("install_prompt_result", { outcome, placement });
   if (outcome === "unavailable") openHelp();
 }
 
@@ -94,7 +99,7 @@ export function InstallButton() {
         type="button"
         data-testid="install-button"
         aria-label="Install Kadi"
-        onClick={() => void activateInstall(() => setHelpOpen(true))}
+        onClick={() => void activateInstall(() => setHelpOpen(true), "header")}
         class="inline-flex h-11 items-center gap-1.5 rounded-xl border border-kadi-gold/45 bg-kadi-gold/10 px-3 text-xs font-black text-kadi-gold transition hover:border-kadi-gold/80 hover:bg-kadi-gold/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kadi-gold active:scale-95"
       >
         <Icon name="download" class="h-4 w-4" />
@@ -174,7 +179,7 @@ export function InstallCard({
           <button
             type="button"
             data-testid={`install-cta-${placement}`}
-            onClick={() => void activateInstall(() => setHelpOpen(true))}
+            onClick={() => void activateInstall(() => setHelpOpen(true), placement)}
             class="kadi-gold-button flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-black"
           >
             <Icon name="download" class="h-4 w-4" />
@@ -184,7 +189,10 @@ export function InstallCard({
             <button
               type="button"
               data-testid={`install-dismiss-${placement}`}
-              onClick={dismissInstall}
+              onClick={() => {
+                dismissInstall();
+                track("install_dismissed", { placement });
+              }}
               class="rounded-lg px-2 py-1 text-[11px] font-bold text-white/45 transition hover:text-white/70"
             >
               Not now
@@ -242,7 +250,7 @@ export function InstallSettingsRow() {
       <button
         type="button"
         data-testid="install-settings-row"
-        onClick={() => void activateInstall(() => setHelpOpen(true))}
+        onClick={() => void activateInstall(() => setHelpOpen(true), "settings")}
         class="flex w-full items-center gap-3 rounded-2xl border border-kadi-line/45 bg-kadi-deep/30 p-3 text-left transition hover:border-kadi-gold/40 active:scale-[0.99]"
       >
         <span class="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-kadi-gold/40 bg-kadi-gold/10 text-kadi-gold">
