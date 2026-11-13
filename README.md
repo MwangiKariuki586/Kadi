@@ -47,9 +47,10 @@ Phone testing on the same Wi-Fi: `npm run dev -- --port 5173 --strictPort --host
 
 ## Tests
 
-292 Vitest tests across engine (validator incl. exhaustive proof), bots (incl.
+302 Vitest tests across engine (validator incl. exhaustive proof), bots (incl.
 legality fuzz), narration feed, store resume guards, responsive seat placement,
-and analytics (config guards, event mapping, offline outbox, privacy defaults).
+and analytics (config guards, event budget, custom-rule diffs, offline outbox
+with UUID dedupe, replay sampling, privacy defaults).
 `npm run test:e2e` adds Playwright smoke coverage for six viewports (phone
 portrait/landscape, tablet portrait/landscape, laptop, wide desktop), checking
 page breakpoints, the seat ring, the bottom action rail, the feed rail, and the
@@ -74,12 +75,13 @@ the `GameStore` interface.
 
 ## Analytics
 
-Anonymous, opt-out PostHog events plus masked session replays. Analytics is off
-in local dev unless `VITE_POSTHOG_DEV=true`, stays silent under Do Not Track or
-browser automation, and never blocks gameplay or offline play. Turning it off in
-Settings → Privacy stops all PostHog requests and clears the offline queue. See
-`ANALYTICS.md` for the event list, privacy guarantees, and `VITE_POSTHOG_*`
-setup.
+Anonymous, opt-out PostHog events plus masked, 10%-sampled session replays.
+Analytics is intentionally lean: per-turn moves and picks are aggregated into
+`game_finished` rather than sent individually. It is off in local dev unless
+`VITE_POSTHOG_DEV=true`, stays silent under Do Not Track or browser automation,
+and never blocks gameplay or offline play. Turning it off in Settings → Privacy
+stops all PostHog requests and clears the offline queue. See `ANALYTICS.md` for
+the event list, event budget, privacy guarantees, and `VITE_POSTHOG_*` setup.
 
 ## CI/CD
 

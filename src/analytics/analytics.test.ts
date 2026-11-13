@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { PRESETS, STANDARD_MAUA, type RulesConfig } from "../engine/rules";
 import {
+  customRuleChanges,
   displayMode,
   gameConfigProps,
   presetKey,
   settingsChanges,
+  type AnalyticsEventName,
 } from "./events";
 import {
   buildPostHogConfig,
+  REPLAY_SAMPLE_RATE,
   resolveAnalyticsConfig,
 } from "./client";
 
@@ -93,9 +96,82 @@ describe("settingsChanges", () => {
   });
 });
 
+describe("customRuleChanges", () => {
+  it("reports only structured fields that differ", () => {
+    const next: RulesConfig = {
+      ...STANDARD_MAUA,
+      jokersEnabled: false,
+      penaltyMatchMode: "any",
+      penaltyPicks: { "2": 4, "3": 3 },
+    };
+
+    expect(customRuleChanges(STANDARD_MAUA, next)).toEqual([
+      { field: "jokersEnabled", value: "false" },
+      { field: "penaltyPicks", value: "2:4,3:3" },
+      { field: "penaltyMatchMode", value: "any" },
+    ]);
+  });
+
+  it("does not report the Joker pick when Jokers are toggled", () => {
+    const noJokers: RulesConfig = {
+      ...STANDARD_MAUA,
+      jokersEnabled: false,
+      penaltyPicks: { "2": 2, "3": 3 },
+    };
+    expect(customRuleChanges(STANDARD_MAUA, noJokers)).toEqual([
+      { field: "jokersEnabled", value: "false" },
+    ]);
+    expect(customRuleChanges(noJokers, STANDARD_MAUA)).toEqual([
+      { field: "jokersEnabled", value: "true" },
+    ]);
+  });
+
+  it("treats rank lists as sets", () => {
+    const next: RulesConfig = {
+      ...STANDARD_MAUA,
+      questionRanks: [...STANDARD_MAUA.questionRanks].reverse(),
+    };
+
+    expect(customRuleChanges(STANDARD_MAUA, next)).toEqual([]);
+  });
+
+  it("never reports name, description, or version", () => {
+    const next: RulesConfig = {
+      ...STANDARD_MAUA,
+      name: "Sunday Table",
+      description: "Family rules",
+      version: 99,
+    };
+
+    expect(customRuleChanges(STANDARD_MAUA, next)).toEqual([]);
+  });
+
+  it("serializes numbers and booleans as stable strings", () => {
+    const next: RulesConfig = {
+      ...STANDARD_MAUA,
+      dealCount: 7,
+      strictWrongPlay: true,
+    };
+
+    expect(customRuleChanges(STANDARD_MAUA, next)).toEqual([
+      { field: "dealCount", value: "7" },
+      { field: "strictWrongPlay", value: "true" },
+    ]);
+  });
+});
+
 describe("displayMode", () => {
   it("falls back to browser outside a DOM", () => {
     expect(displayMode()).toBe("browser");
+  });
+});
+
+describe("event budget", () => {
+  it("does not capture per-turn move or pick events", () => {
+    // Compile-time guard: reintroducing either event fails `tsc -b`.
+    type Removed = Extract<AnalyticsEventName, "move_played" | "cards_picked">;
+    const removed: [Removed] extends [never] ? true : false = true;
+    expect(removed).toBe(true);
   });
 });
 
@@ -178,6 +254,12 @@ describe("buildPostHogConfig", () => {
     expect(config.ip).toBe(false);
     expect(config.respect_dnt).toBe(true);
     expect(config.opt_out_capturing_by_default).toBe(true);
+  });
+
+  it("samples replay to stay within the recording quota", () => {
+    expect(REPLAY_SAMPLE_RATE).toBeGreaterThan(0);
+    expect(REPLAY_SAMPLE_RATE).toBeLessThan(1);
+    expect(config.session_recording?.sampleRate).toBe(REPLAY_SAMPLE_RATE);
   });
 
   it("enables replay with input and custom-text masking", () => {

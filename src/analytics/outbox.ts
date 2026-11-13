@@ -12,6 +12,11 @@ export const OUTBOX_CAP = 100;
 export type OutboxProperties = Record<string, string | number | boolean | null>;
 
 export interface OutboxEvent {
+  /**
+   * Stable event UUID. Passed to PostHog so a retry after a crash can be
+   * deduplicated instead of recorded twice. Legacy entries may omit it.
+   */
+  id?: string;
   event: string;
   properties: OutboxProperties;
   timestamp: number;
@@ -47,6 +52,12 @@ function isOutboxEvent(raw: unknown): raw is OutboxEvent {
   if (!raw || typeof raw !== "object") return false;
   const candidate = raw as Partial<OutboxEvent>;
   if (typeof candidate.event !== "string" || candidate.event.length === 0) return false;
+  if (
+    candidate.id !== undefined &&
+    (typeof candidate.id !== "string" || candidate.id.length === 0)
+  ) {
+    return false;
+  }
   if (typeof candidate.timestamp !== "number" || !Number.isFinite(candidate.timestamp)) {
     return false;
   }
@@ -86,13 +97,27 @@ function writeOutbox(storage: OutboxStorage, events: OutboxEvent[]): boolean {
   }
 }
 
+/** UUID v4 for deduplicating retried events. Not an identity. */
+function newEventId(): string {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi && typeof cryptoApi.randomUUID === "function") {
+    return cryptoApi.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = char === "x" ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
 /** Add one event, dropping the oldest when the cap is reached. */
 export function enqueueOutbox(
   storage: OutboxStorage | null,
   event: OutboxEvent,
 ): OutboxEvent[] {
   if (!storage) return [];
-  const next = [...readOutbox(storage), event].slice(-OUTBOX_CAP);
+  const queued = { ...event, id: event.id ?? newEventId() };
+  const next = [...readOutbox(storage), queued].slice(-OUTBOX_CAP);
   writeOutbox(storage, next);
   return next;
 }

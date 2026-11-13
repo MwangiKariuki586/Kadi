@@ -82,7 +82,13 @@ import { haptics, isHapticsEnabled, setHapticsEnabled } from "./ui/haptics";
 import { isMuted, setMuted, sfx } from "./ui/sounds";
 import { applyMotionPreference } from "./ui/motion";
 import { initAnalytics, setAnalyticsEnabled, track } from "./analytics/client";
-import { displayMode, gameConfigProps, settingsChanges } from "./analytics/events";
+import {
+  customRuleChanges,
+  displayMode,
+  gameConfigProps,
+  presetKey,
+  settingsChanges,
+} from "./analytics/events";
 
 export type Screen =
   | "home"
@@ -440,6 +446,8 @@ export function App() {
 
   const saveCustomProfile = useCallback(
     (profile: RulesConfig, previousName: string | null) => {
+      const basePreset = presetKey(preset.name);
+      const changes = customRuleChanges(preset, profile);
       void store.saveCustomRules(profile, previousName).then((next) => {
         setCustoms(next);
         customsRef.current = next;
@@ -447,11 +455,24 @@ export function App() {
         void store.saveSettings({ presetName: profile.name });
         setBuilderInit(null);
         setScreen("settings");
-        track("custom_rules_saved", { editing: previousName != null });
+        const editing = previousName != null;
+        track("custom_rules_saved", {
+          editing,
+          base_preset: basePreset,
+          changed_count: changes.length,
+        });
+        for (const change of changes) {
+          track("custom_rule_changed", {
+            field: change.field,
+            value: change.value,
+            editing,
+            base_preset: basePreset,
+          });
+        }
         flash("Table rules saved 💾");
       });
     },
-    [flash],
+    [flash, preset],
   );
 
   const deleteCustomProfile = useCallback(
@@ -1215,12 +1236,6 @@ export function App() {
     );
     const metrics = metricsRef.current;
     if (metrics) metrics.moves += 1;
-    track("move_played", {
-      card_count: cards.length,
-      turn: state.turnNumber,
-      penalty_answer: before.pendingPenalty > 0,
-      kept_turn: r.keptTurn === true,
-    });
     setSelected([]);
     setSuitPickerFor(null);
     setSuperPickerFor(null);
@@ -1282,11 +1297,6 @@ export function App() {
     haptics.tap();
     const metrics = metricsRef.current;
     if (metrics) metrics.picks += 1;
-    track("cards_picked", {
-      count: r.picked,
-      skipped: r.skipped,
-      turn: state.turnNumber,
-    });
     setSelected([]);
     bump();
   };

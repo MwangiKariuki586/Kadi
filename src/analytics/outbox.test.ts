@@ -32,12 +32,45 @@ function event(index: number): OutboxEvent {
   };
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 describe("analytics outbox", () => {
   it("keeps events in order", () => {
     const storage = memoryStorage();
     enqueueOutbox(storage, event(1));
     enqueueOutbox(storage, event(2));
     expect(readOutbox(storage).map((e) => e.properties.index)).toEqual([1, 2]);
+  });
+
+  it("assigns a unique UUID to each queued event", () => {
+    const storage = memoryStorage();
+    enqueueOutbox(storage, event(1));
+    enqueueOutbox(storage, event(2));
+
+    const queued = readOutbox(storage);
+    expect(queued[0].id).toMatch(UUID_RE);
+    expect(queued[1].id).toMatch(UUID_RE);
+    expect(queued[0].id).not.toBe(queued[1].id);
+  });
+
+  it("keeps an existing event id", () => {
+    const storage = memoryStorage();
+    const id = "00000000-0000-4000-8000-000000000001";
+    enqueueOutbox(storage, { ...event(1), id });
+
+    expect(readOutbox(storage)[0].id).toBe(id);
+  });
+
+  it("preserves ids for events left behind by a failed flush", () => {
+    const storage = memoryStorage();
+    enqueueOutbox(storage, event(1));
+    enqueueOutbox(storage, event(2));
+    const ids = readOutbox(storage).map((queued) => queued.id);
+
+    flushOutbox(storage, (queued) => queued.properties.index !== 2);
+
+    expect(readOutbox(storage)[0].id).toBe(ids[1]);
   });
 
   it("caps the queue and drops the oldest events", () => {
@@ -61,6 +94,12 @@ describe("analytics outbox", () => {
       JSON.stringify([{ event: "ok", properties: {}, timestamp: 1 }, { nope: true }]),
     );
     expect(readOutbox(storage)).toHaveLength(1);
+
+    storage.setItem(
+      OUTBOX_KEY,
+      JSON.stringify([{ id: 42, event: "ok", properties: {}, timestamp: 1 }]),
+    );
+    expect(readOutbox(storage)).toEqual([]);
   });
 
   it("does not throw when storage is blocked", () => {

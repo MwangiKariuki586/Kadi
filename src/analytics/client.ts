@@ -27,6 +27,13 @@ export interface AnalyticsConfig {
 
 const DEFAULT_HOST = "https://us.i.posthog.com";
 
+/**
+ * Record roughly one in ten sessions. Replay is the expensive PostHog surface
+ * (5K recordings/month on the free tier), so aggregate events stay complete
+ * while visual recordings are sampled.
+ */
+export const REPLAY_SAMPLE_RATE = 0.1;
+
 /** Resolve build-time config. Analytics is opt-out, never opt-in by default. */
 export function resolveAnalyticsConfig(
   env: AnalyticsEnv,
@@ -77,10 +84,12 @@ export function buildPostHogConfig(host: string): Partial<PostHogConfig> {
     // consent was withdrawn.
     request_batching: false,
 
-    // Session replay. Inputs and anything marked data-ph-mask are masked.
+    // Session replay is sampled so the free recording quota lasts. Inputs and
+    // anything marked data-ph-mask are masked.
     disable_session_recording: false,
     enable_recording_console_log: false,
     session_recording: {
+      sampleRate: REPLAY_SAMPLE_RATE,
       maskAllInputs: true,
       maskTextSelector: "[data-ph-mask]",
       recordBody: false,
@@ -228,6 +237,7 @@ function flush(): void {
   flushOutbox(getOutboxStorage(), (event) => {
     const captured = client!.capture(event.event, event.properties, {
       timestamp: new Date(event.timestamp),
+      ...(event.id ? { uuid: event.id } : {}),
     });
     return captured !== undefined;
   });

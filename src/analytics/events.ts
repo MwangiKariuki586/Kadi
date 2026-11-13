@@ -8,6 +8,10 @@ import type { Settings } from "../store/local";
  * Keep this list explicit: no autocapture, no pageviews, no free text. Every
  * property here is safe to send to PostHog. User-generated rule names and
  * descriptions never leave the device.
+ *
+ * Per-turn moves and picks are intentionally not captured. `game_finished`
+ * carries their totals, so the event budget stays bounded without losing the
+ * aggregate product metrics.
  */
 
 export type AnalyticsScreen =
@@ -51,6 +55,16 @@ export interface SettingChange {
   value: string | boolean;
 }
 
+type RuleFieldKey = Exclude<keyof RulesConfig, "version" | "name" | "description">;
+
+/** Structured custom-rule fields; free-text name/description are excluded. */
+export type RuleField = RuleFieldKey;
+
+export interface CustomRuleChange {
+  field: RuleField;
+  value: string;
+}
+
 export interface AnalyticsEventMap {
   app_opened: {
     display_mode: "standalone" | "browser";
@@ -73,17 +87,6 @@ export interface AnalyticsEventMap {
     false_kadi: number;
     resumed: boolean;
   };
-  move_played: {
-    card_count: number;
-    turn: number;
-    penalty_answer: boolean;
-    kept_turn: boolean;
-  };
-  cards_picked: {
-    count: number;
-    skipped: boolean;
-    turn: number;
-  };
   invalid_play: {
     reason: string;
     card_count: number;
@@ -105,7 +108,17 @@ export interface AnalyticsEventMap {
     turn: number;
   };
   setting_changed: SettingChange;
-  custom_rules_saved: { editing: boolean };
+  custom_rules_saved: {
+    editing: boolean;
+    base_preset: PresetKey;
+    changed_count: number;
+  };
+  custom_rule_changed: {
+    field: RuleField;
+    value: string;
+    editing: boolean;
+    base_preset: PresetKey;
+  };
   custom_rules_deleted: { editing: boolean };
   settings_action: {
     action: "reset_stats" | "clear_save" | "clear_customs" | "clear_history";
@@ -177,6 +190,89 @@ export function settingsChanges(patch: Partial<Settings>): SettingChange[] {
   }
   if (patch.analytics === true) changes.push({ key: "analytics", value: true });
 
+  return changes;
+}
+
+/**
+ * Every structured custom-rule field. `version`, `name`, and `description` are
+ * deliberately absent so free text and schema details never reach PostHog.
+ * The `Record` type makes adding a `RulesConfig` field a compile error until it
+ * is classified here.
+ */
+const RULE_FIELDS: Record<RuleFieldKey, true> = {
+  dealCount: true,
+  jokersEnabled: true,
+  penaltyPicks: true,
+  allowPenaltyStacking: true,
+  penaltyAccumulates: true,
+  penaltyMatchMode: true,
+  dodgePenaltyWithJumpKickback: true,
+  aceBlocksPenalty: true,
+  aceCallsSuit: true,
+  jumpRanks: true,
+  jumpCounterable: true,
+  kickbackRanks: true,
+  kickbackCounterable: true,
+  questionRanks: true,
+  mustAnswerSameSuit: true,
+  aceAnswersQuestion: true,
+  unansweredQuestionPickCount: true,
+  winningRanks: true,
+  mustSayNikoKadi: true,
+  cardlessBlocksWin: true,
+  winningDumpMustBeSingle: true,
+  starterBlacklist: true,
+  twoPlayerJumpAsQuestion: true,
+  twoPlayerKickbackAsQuestion: true,
+  invalidPlayPickCount: true,
+  strictWrongPlay: true,
+  lateCallPickCount: true,
+  falseKadiPickCount: true,
+  superAceEnabled: true,
+  specialAceSuit: true,
+  superAceMinAces: true,
+  unmetRequestPickCount: true,
+};
+
+/** Stable string form so booleans, numbers, rank lists, and picks compare. */
+function ruleValue(
+  config: RulesConfig,
+  field: RuleFieldKey,
+  includeJokerPick: boolean,
+): string {
+  if (field === "penaltyPicks") {
+    const parts: string[] = [];
+    for (const rank of ["2", "3", "JOKER"] as const) {
+      if (rank === "JOKER" && !includeJokerPick) continue;
+      const count = config.penaltyPicks[rank];
+      if (count != null) parts.push(`${rank}:${count}`);
+    }
+    return parts.join(",");
+  }
+  const value = config[field];
+  return Array.isArray(value) ? [...value].sort().join(",") : String(value);
+}
+
+/**
+ * Structured diff between the table a player started from and the saved table.
+ * Rank lists are treated as sets. Name/description are never included.
+ *
+ * The Joker pick count only exists while Jokers are enabled, so it is compared
+ * only when both tables deal Jokers. Otherwise disabling Jokers would also be
+ * reported as a `penaltyPicks` change, inflating the rule players customize most.
+ */
+export function customRuleChanges(
+  base: RulesConfig,
+  next: RulesConfig,
+): CustomRuleChange[] {
+  const includeJokerPick = base.jokersEnabled && next.jokersEnabled;
+  const changes: CustomRuleChange[] = [];
+  for (const field of Object.keys(RULE_FIELDS) as RuleFieldKey[]) {
+    const value = ruleValue(next, field, includeJokerPick);
+    if (ruleValue(base, field, includeJokerPick) !== value) {
+      changes.push({ field, value });
+    }
+  }
   return changes;
 }
 
